@@ -40,10 +40,11 @@ pub fn install() -> Result<Option<OtelStarterGuard>, OtelError> {
   install_from_config(config).map(Some)
 }
 
-/// What the logs never show: `password` / `token` / `secret` fields (by name, any case), the
-/// cookies and authorization headers, and the secrets of `config` wherever they appear.
+/// What the logs never show: the recommended fields (sessions, CSRF tokens, API and private keys,
+/// ...), `password` / `token` / `secret` fields (by name, any case), the cookies and authorization
+/// headers, and the secrets of `config` wherever they appear.
 pub fn redaction(config: &LedgerConfig) -> RedactionPolicy {
-  let policy = RedactionPolicy::new()
+  let policy = RedactionPolicy::recommended()
     .glob("*password*")
     .glob("*token*")
     .glob("*secret*")

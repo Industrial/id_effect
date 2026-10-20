@@ -12,6 +12,7 @@ use id_effect_kit::config::ConfigError;
 use id_effect_kit::redis::RedisError;
 use id_effect_kit::sql::SqlError;
 use id_effect_kit::sql::migrate::MigrateError;
+use id_effect_kit::workflow::WorkflowError;
 
 /// Why a request failed. Every variant renders as `application/problem+json`.
 #[derive(Debug)]
@@ -40,6 +41,9 @@ pub enum ApiError {
   Totp(TotpError),
   /// Issuing or checking a token failed.
   Auth(AuthError),
+  /// Starting, signalling or reading a workflow failed (404 for an unknown instance, 503 when
+  /// its store is away).
+  Workflow(WorkflowError),
 }
 
 impl ApiError {
@@ -68,6 +72,7 @@ impl fmt::Display for ApiError {
       Self::Password(e) => write!(f, "{e}"),
       Self::Totp(e) => write!(f, "{e}"),
       Self::Auth(e) => write!(f, "{e}"),
+      Self::Workflow(e) => write!(f, "{e}"),
     }
   }
 }
@@ -149,6 +154,13 @@ impl IntoResponse for ApiError {
       Self::Password(_) | Self::Totp(_) => {
         problem(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
       }
+      Self::Workflow(WorkflowError::NotFound(_)) => {
+        problem(StatusCode::NOT_FOUND, "no such closure")
+      }
+      Self::Workflow(WorkflowError::Sql(_) | WorkflowError::Jobs(_)) => {
+        problem(StatusCode::SERVICE_UNAVAILABLE, "workflows unavailable")
+      }
+      Self::Workflow(_) => problem(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
     }
   }
 }

@@ -4,6 +4,9 @@
 //!
 //! - [`SqlClient`] returns `Effect`s; the capability is [`SqlClientService`]
 //!   ([`SqlClientEnv`]), read by [`query`] / [`execute`] / [`transaction`](fn@transaction).
+//! - [`query`] / [`execute`] take [`Sql`]: a literal or a `const`, never a run-time `String`.
+//!   SQL built at run time is a [`RawSql`] for [`query_raw`] / [`execute_raw`], which need the
+//!   [`RawSqlCapability`] (see [`raw`]).
 //! - The client is a scoped `Layer`: [`sql_client_layer`] connects it when built and closes it
 //!   when the scope closes (`pg::PgSqlClient::layer` opens and closes a pool).
 //! - A transaction is a bracket ([`with_transaction`], [`transaction`](fn@transaction)) or a
@@ -59,6 +62,7 @@ pub mod error;
 pub mod from_row;
 pub mod health;
 pub mod metrics;
+pub mod raw;
 pub mod row;
 pub mod transaction;
 pub mod value;
@@ -72,8 +76,6 @@ pub mod migrate;
 #[cfg(feature = "proptest")]
 pub mod testing;
 
-#[allow(deprecated)]
-pub use client::SqlParam;
 pub use client::{
   SqlClient, SqlClientEnv, SqlClientService, TestSqlClient, execute, provide_sql_client, query,
   sql_client_env, sql_client_layer,
@@ -82,6 +84,7 @@ pub use error::{SQLSTATE_UNIQUE_VIOLATION, SqlError};
 pub use from_row::{FromRow, query_as, query_one_as, query_opt_as};
 /// Derive [`FromRow`] for a struct with named fields (see [`from_row`]).
 pub use id_effect_proc_macro::FromRow;
+pub use raw::{RawSql, RawSqlCapability, RawSqlEnv, Sql, execute_raw, query_raw};
 pub use row::{ColumnIndex, SqlColumn, SqlRow};
 pub use value::{FromSqlValue, Json, SqlType, SqlValue, ToSqlValue, ValueError};
 

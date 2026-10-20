@@ -14,6 +14,8 @@
 //!   coordination ([`Queue`], [`Channel`], [`Deferred`], [`Semaphore`], [`PubSub`], [`Ref`], …),
 //!   resources ([`Pool`], [`Cache`]), metrics and spans ([`MetricRegistry`], `with_span`),
 //!   request batching and caching.
+//! - **[`mod@stm`]** — software transactional memory ([`stm::TRef`], [`stm::TMap`],
+//!   [`stm::commit`], …); a retrying transaction parks its fiber until a cell it read changes.
 //! - **Kernel-independent** — [`failure`] (`Cause`, `Exit`, `Defect`, `Or`), [`foundation`]
 //!   ([`Pipe`], `pipe!`), [`schema`], [`scheduling`] (`Duration`, `UtcDateTime`), [`match_`].
 //!
@@ -27,7 +29,7 @@
 //! - **`proptest`** — `testing::property`: proptest strategies for framework types and schemas,
 //!   effect-aware properties under [`TestExecutor`], stateful (model-based) testing.
 //!
-//! Algebraic type classes, persistent (`im`) collections and STM live in the maintenance-tier
+//! Algebraic type classes and persistent (`im`) collections live in the maintenance-tier
 //! `id_effect_fp` crate.
 
 #![forbid(unsafe_code)]
@@ -115,6 +117,8 @@ pub mod scheduling;
 pub mod scope;
 pub mod streaming;
 pub mod testing;
+// Not glob re-exported: `commit`, `Outcome`, `Txn` are too generic for the root namespace.
+pub mod stm;
 
 pub use capability::*;
 pub use compute::*;

@@ -10,7 +10,7 @@ use serde_json::{Map, Value, json};
 use super::model::{
   Components, MediaType, Operation, Parameter, ParameterIn, PathItem, RequestBody, Response,
 };
-use crate::route::{BodyKind, PROBLEM_JSON, RouteInfo, SchemaRef};
+use crate::route::{BodyKind, PROBLEM_JSON, RouteAccess, RouteInfo, SchemaRef};
 
 /// Media type of documented (`Route::response`) bodies.
 const JSON: &str = "application/json";
@@ -118,6 +118,10 @@ impl Generator {
     if !info.policies.is_empty() {
       self.problem_response(&mut op, StatusCode::UNAUTHORIZED);
       self.problem_response(&mut op, StatusCode::FORBIDDEN);
+    }
+    if info.access == RouteAccess::Public {
+      // Declared public: an empty requirement list, "no authentication" (OpenAPI 3.1 §4.8.10).
+      op.security = Some(Vec::new());
     }
     if op.responses.is_empty() {
       op.responses

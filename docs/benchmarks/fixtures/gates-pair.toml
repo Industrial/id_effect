@@ -1,0 +1,13 @@
+# A `pair` gate for `bench-compare.sh --self-test` only. The shipped gates.toml gates the
+# secure stack with a `delta` gate since 0.11 (owner decision 2026-10-19); `pair` stays
+# supported and is tested here with the old 0.11 ratio limit.
+
+metric = "median"
+noise = 0.05
+
+[[gate]]
+id = "gate/axum_request_secure_stack"
+kind = "pair"
+over = "gate/axum_request_bare"
+limit = 1.15
+noise = 0

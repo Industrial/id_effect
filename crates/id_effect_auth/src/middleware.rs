@@ -7,7 +7,7 @@
 //!
 //! | Request | Outcome |
 //! |---|---|
-//! | no credential of a configured scheme (or an expired session) | continues as [`Anonymous`](id_effect_authz::Anonymous); the route guard decides (401 when it needs a login) |
+//! | no credential of a configured scheme (or an expired session) | continues as [`Anonymous`](id_effect_authz::Anonymous): it reaches **public** typed routes only; a guarded typed route answers 401 (see below) |
 //! | a valid credential | continues as that [`AuthPrincipal`] |
 //! | an invalid credential (bad signature, expired token, wrong password, unknown key) | **401** Problem Details with `WWW-Authenticate` challenges, at once |
 //! | a backend failure (user store, JWKS endpoint) | **503** Problem Details |
@@ -22,6 +22,11 @@
 //! run with `execute_with_request_caps` can `need::<CurrentPrincipal>()`), and the
 //! [`AuthPrincipal`] itself as an extension (`Extension<AuthPrincipal>`). Add `Authenticate`
 //! with `Router::layer`, outside the per-route guards.
+//!
+//! Continuing as `Anonymous` does not open anything: every typed route declares its access
+//! (`id_effect_axum::route::Route::public` or `Route::guard`), a typed route's guard answers the
+//! anonymous principal **401** before its policy runs, and a route that declares neither does not
+//! compile. A request without credentials therefore reaches only the routes declared public.
 //!
 //! ```
 //! # #[cfg(feature = "jwt")] {
@@ -56,8 +61,8 @@ use http::request::Parts;
 use http::{HeaderName, HeaderValue, Request, StatusCode};
 use id_effect::{Cause, Effect, Exit, HNil};
 use id_effect_authz::CurrentPrincipal;
-use id_effect_axum::RequestCaps;
 use id_effect_axum::route::Problem;
+use id_effect_axum::{EffectExecutor, RequestCaps};
 use serde_json::json;
 use tower_layer::Layer;
 use tower_service::Service;
@@ -232,7 +237,8 @@ impl Authenticate {
     &self,
     parts: &mut Parts,
   ) -> Result<Option<AuthPrincipal>, (AuthScheme, AuthError)> {
-    for scheme in self.schemes() {
+    let schemes = self.order.iter().copied().filter(|s| self.configured(*s));
+    for scheme in schemes {
       let check = match scheme {
         AuthScheme::Session => {
           if let Some(principal) = self.session_principal(parts).await {
@@ -241,7 +247,10 @@ impl Authenticate {
           None
         }
         AuthScheme::Bearer => self.bearer(parts),
-        AuthScheme::ApiKey => self.api_key_check(parts),
+        AuthScheme::ApiKey => match self.api_key_now(parts) {
+          Some(outcome) => return outcome.map(Some).map_err(|e| (scheme, e)),
+          None => self.api_key_check(parts),
+        },
         AuthScheme::Basic => self.basic_check(parts),
       };
       if let Some(check) = check {
@@ -287,6 +296,15 @@ impl Authenticate {
   #[cfg(not(feature = "jwt"))]
   fn bearer(&self, _parts: &Parts) -> Option<Effect<AuthPrincipal, AuthError>> {
     None
+  }
+
+  /// The API-key outcome answered inline, when the request carries an ASCII key and the store
+  /// looks keys up without I/O ([`ApiKeyStore::find_now`](crate::ApiKeyStore::find_now)): no
+  /// fiber for an in-process store. `None` otherwise ([`Self::api_key_check`] then decides).
+  fn api_key_now(&self, parts: &Parts) -> Option<Result<AuthPrincipal, AuthError>> {
+    let keys = self.api_keys.as_ref()?;
+    let key = parts.headers.get(&self.api_key_header)?.to_str().ok()?;
+    keys.verify_now(key.trim())
   }
 
   fn api_key_check(&self, parts: &Parts) -> Option<Effect<AuthPrincipal, AuthError>> {
@@ -395,7 +413,7 @@ fn authorization<'p>(parts: &'p Parts, scheme: &str) -> Option<&'p str> {
 
 /// Runs a credential check on the request's fiber.
 async fn run(check: Effect<AuthPrincipal, AuthError>) -> Result<AuthPrincipal, AuthError> {
-  match id_effect_axum::run_with_env(HNil, move |_| check).await {
+  match EffectExecutor::global().run_effect(check).await {
     Exit::Success(p) => Ok(p),
     Exit::Failure(Cause::Fail(e)) => Err(e),
     Exit::Failure(other) => Err(AuthError::Unavailable(format!(
@@ -427,7 +445,7 @@ impl<Svc> Layer<Svc> for Authenticate {
   fn layer(&self, inner: Svc) -> Self::Service {
     AuthenticateService {
       inner,
-      auth: self.clone(),
+      auth: Arc::new(self.clone()),
     }
   }
 }
@@ -436,7 +454,7 @@ impl<Svc> Layer<Svc> for Authenticate {
 #[derive(Clone)]
 pub struct AuthenticateService<Svc> {
   inner: Svc,
-  auth: Authenticate,
+  auth: Arc<Authenticate>,
 }
 
 impl<Svc> fmt::Debug for AuthenticateService<Svc> {
@@ -466,7 +484,7 @@ where
     // The clone that was polled ready serves this request (the usual Tower hand-off).
     let ready = self.inner.clone();
     let mut inner = std::mem::replace(&mut self.inner, ready);
-    let auth = self.auth.clone();
+    let auth = Arc::clone(&self.auth);
     let (mut parts, body) = req.into_parts();
     Box::pin(async move {
       match auth.authenticate(&mut parts).await {

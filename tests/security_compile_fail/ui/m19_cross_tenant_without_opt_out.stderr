@@ -1,0 +1,9 @@
+error[E0119]: conflicting implementations of trait `TenantScope` for type `Account`
+  --> ui/m19_cross_tenant_without_opt_out.rs:16:1
+   |
+16 | impl TenantScope for Account {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: conflicting implementation in crate `id_effect_authz`:
+           - impl<T> TenantScope for T
+             where T: Tenanted, T: ?Sized;

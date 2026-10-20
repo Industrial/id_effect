@@ -1,0 +1,15 @@
+error[E0061]: this method takes 2 arguments but 1 argument was supplied
+ --> ui/r10_accepted_risk_without_reason.rs:6:32
+  |
+6 |   let _ = AcceptedRisks::new().accept("id_effect_sql::RawSqlCapability::layer_dangerous");
+  |                                ^^^^^^---------------------------------------------------- argument #2 is missing
+  |
+note: method defined here
+ --> $WORKSPACE/crates/id_effect_kit/src/posture.rs
+  |
+  |   pub fn accept(mut self, id: impl Into<String>, reason: impl Into<String>) -> Self {
+  |          ^^^^^^
+help: provide the argument
+  |
+6 |   let _ = AcceptedRisks::new().accept("id_effect_sql::RawSqlCapability::layer_dangerous", /* reason */);
+  |                                                                                         ++++++++++++++

@@ -1,0 +1,39 @@
+warning: SQL passed to a `SqlClient` / `SqlTransaction` `&str` method is not a literal or a `const`
+  --> $DIR/raw_sql_non_literal_fix.rs:17:19
+   |
+LL |   let _ = c.query(&"SELECT 3".to_string(), &[]);
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(raw_sql_non_literal)]` on by default
+help: pass the literal itself
+   |
+LL -   let _ = c.query(&"SELECT 3".to_string(), &[]);
+LL +   let _ = c.query("SELECT 3", &[]);
+   |
+
+warning: SQL passed to a `SqlClient` / `SqlTransaction` `&str` method is not a literal or a `const`
+  --> $DIR/raw_sql_non_literal_fix.rs:18:19
+   |
+LL |   let _ = c.query(&"SELECT 4".to_owned(), &[]);
+   |                   ^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: pass the literal itself
+   |
+LL -   let _ = c.query(&"SELECT 4".to_owned(), &[]);
+LL +   let _ = c.query("SELECT 4", &[]);
+   |
+
+warning: SQL passed to a `SqlClient` / `SqlTransaction` `&str` method is not a literal or a `const`
+  --> $DIR/raw_sql_non_literal_fix.rs:19:21
+   |
+LL |   let _ = c.execute(&String::from("DELETE FROM t"), &[]);
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: pass the literal itself
+   |
+LL -   let _ = c.execute(&String::from("DELETE FROM t"), &[]);
+LL +   let _ = c.execute("DELETE FROM t", &[]);
+   |
+
+warning: 3 warnings emitted
+

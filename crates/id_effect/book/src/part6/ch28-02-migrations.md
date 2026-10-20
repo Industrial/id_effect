@@ -3,7 +3,7 @@
 A schema changes with the code that uses it. `id_effect_sql::migrate` (feature `migrate`) keeps those changes as **versioned SQL scripts**: each is applied once, in order, and recorded in a tracking table, so every database (laptop, CI, staging, production) can say which scripts it has and whether they are the ones in the repository. A script with a `.down.sql` partner can be **reverted**. The same engine runs as a startup layer of your service, from the `id-effect migrate` command, and as plain `Effect`s.
 
 ```toml
-id_effect_sql = { version = "0.10", features = ["pg", "migrate"] }
+id_effect_sql = { version = "0.11", features = ["pg", "migrate"] }
 ```
 
 The engine speaks PostgreSQL (advisory lock, `BYTEA`, `TIMESTAMPTZ`, `$n` placeholders). It runs on any `SqlClient`, so the in-memory `TestSqlClient` exercises it without a database.

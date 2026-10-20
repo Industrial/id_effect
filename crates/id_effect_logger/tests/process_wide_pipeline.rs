@@ -43,7 +43,7 @@ fn policy_and_composite_installed_on_one_thread_apply_on_every_thread() {
 
   // Installed on this (the "startup") thread only, the way a service's main does it.
   let pipeline = provide_composite_logger::<Never>(composite).merge(provide_redaction_policy(
-    RedactionPolicy::new().redacted(&api_key),
+    RedactionPolicy::dangerous_empty().redacted(&api_key),
   ));
   pipeline.build().block_on().into_result().expect("pipeline");
 

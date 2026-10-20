@@ -1,0 +1,11 @@
+error: use of deprecated method `id_effect_axum::route::Router::<S>::route_unchecked`: declare access with `Route::public()` or `Route::guard(..)` and use `Router::route`; `route_unchecked` is removed in 0.12
+  --> tests/ui/fail/h8_route_unchecked_is_deprecated.rs:14:25
+   |
+14 |   let _ = Router::new().route_unchecked(Route::get("/hello").handler(hello));
+   |                         ^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> tests/ui/fail/h8_route_unchecked_is_deprecated.rs:2:9
+   |
+ 2 | #![deny(deprecated)]
+   |         ^^^^^^^^^^

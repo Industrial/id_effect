@@ -100,6 +100,8 @@ pub fn policies(events: AuthzEvents) -> Policies {
     .define::<()>("ledger.read", rbac.require("ledger:read"))
     .define::<()>("ledger.post", rbac.require("ledger:post"))
     .define::<()>("accounts.open", rbac.require("accounts:open"))
+    // Approving or rejecting an account's closure (`crate::closure`).
+    .define::<()>("accounts.close", rbac.require("accounts:manage"))
     .define::<()>("tokens.issue", rbac.require("tokens:issue"))
     .define::<()>(
       "users.manage",

@@ -3,7 +3,7 @@
 `id_effect_redis` puts Redis behind the same effect-and-layer shape as the SQL client: a pooled `RedisClient` capability, typed stores for key-value, hash and JSON data, a backend for the core `Cache`, pub/sub as a `Stream`, a Redis Streams `MessageBroker` for `id_effect_messaging`, and Redis-backed session and rate-limit stores for `id_effect_auth` and `id_effect_axum`.
 
 ```toml
-id_effect_redis = { version = "0.10", features = ["streams", "session", "rate-limit"] }
+id_effect_redis = { version = "0.11", features = ["streams", "session", "rate-limit"] }
 ```
 
 It is built on [redis-rs](https://crates.io/crates/redis) with tokio connections, so its effects run on a tokio runtime (`id_effect_tokio::TokioRuntime`, or the one your axum server runs on). Every operation is a lazy `Effect<_, RedisError>`; `RedisError` separates `Config`, `Connection` (unreachable, dropped, timed out), `Command` (the server said no) and `Decode` (a reply or a stored value is not the type you asked for).

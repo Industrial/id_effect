@@ -9,6 +9,12 @@
 //! layer, so an operator signs in like anyone else; an anonymous caller gets `401` and any other
 //! user `403`, and neither learns which console routes exist. A `PUT log-level` from a session
 //! needs the CSRF header like every other unsafe request.
+//!
+//! Being on the main listener, it needs no `ConsoleConfig::check_host_and_origin` (that check is
+//! for a console on a loopback listener of its own, which trusts the connection): here a caller
+//! is authenticated by its session, and a cross-site request is stopped by the CSRF check.
+//! `console.enabled` mounts it in `dev` and the tests only; in `prod` it is absent, and the
+//! startup posture check reports it so (`Surface::Absent`, [`crate::app::posture`]).
 
 use id_effect_kit::authz::{Guard, Policies};
 use id_effect_kit::axum::HealthRegistry;

@@ -6,8 +6,15 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 
+use axum::http::StatusCode;
+use axum::http::request::Parts;
+use axum::response::IntoResponse;
+use id_effect::observability::posture::dangerous_opt_outs;
 use id_effect::schema::json_schema_for;
-use id_effect_axum::openapi::{DEFAULT_SCALAR_URL, OpenApi, OpenApiUi, openapi_router};
+use id_effect_axum::openapi::{
+  DEFAULT_SCALAR_INTEGRITY, DEFAULT_SCALAR_URL, OpenApi, OpenApiUi, openapi_router,
+};
+use id_effect_axum::route::{GuardFuture, RouteGuard};
 use id_effect_axum::server::security::{CookieKey, SecurityLayer};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -135,11 +142,10 @@ async fn docs_page_loads_scalar_under_a_strict_policy() {
   assert_eq!(reply.header("content-type"), "text/html; charset=utf-8");
   assert_eq!(reply.header("x-content-type-options"), "nosniff");
   assert!(reply.body.contains("<title>Ledger</title>"));
-  assert!(
-    reply
-      .body
-      .contains(&format!("<script src=\"{DEFAULT_SCALAR_URL}\"></script>"))
-  );
+  assert!(reply.body.contains(&format!(
+    "<script src=\"{DEFAULT_SCALAR_URL}\" integrity=\"{DEFAULT_SCALAR_INTEGRITY}\" \
+     crossorigin=\"anonymous\"></script>"
+  )));
   assert!(
     reply
       .body
@@ -284,5 +290,106 @@ async fn a_mirrored_bundle_under_custom_paths() {
       .await
       .body
       .contains("<title>Mirror</title>")
+  );
+}
+
+/// M7: the default bundle is an exact version, loaded with its Subresource Integrity hash; a
+/// mirror drops the default hash unless one is given.
+#[test]
+fn m7_scalar_bundle_pinned_with_integrity() {
+  let version = DEFAULT_SCALAR_URL
+    .strip_prefix("https://cdn.jsdelivr.net/npm/@scalar/api-reference@")
+    .and_then(|rest| rest.split('/').next())
+    .expect("a jsDelivr @scalar/api-reference URL");
+  assert_eq!(version.split('.').count(), 3, "{version} is not exact");
+  assert!(
+    version.split('.').all(|n| n.parse::<u32>().is_ok()),
+    "{version}"
+  );
+  assert!(DEFAULT_SCALAR_INTEGRITY.starts_with("sha384-"));
+  assert_eq!(DEFAULT_SCALAR_INTEGRITY.len(), "sha384-".len() + 64);
+
+  let doc = OpenApi::new();
+  let html = OpenApiUi::scalar().html(&doc);
+  assert!(html.contains(&format!(
+    "src=\"{DEFAULT_SCALAR_URL}\" integrity=\"{DEFAULT_SCALAR_INTEGRITY}\" \
+     crossorigin=\"anonymous\""
+  )));
+  let mirror = OpenApiUi::scalar().cdn_url("/assets/scalar.js").html(&doc);
+  assert!(mirror.contains("<script src=\"/assets/scalar.js\"></script>"));
+  let pinned = OpenApiUi::scalar()
+    .integrity("sha384-mirror")
+    .cdn_url("/assets/scalar.js")
+    .html(&doc);
+  assert!(pinned.contains("integrity=\"sha384-mirror\""));
+}
+
+/// Admits requests carrying `x-operator: yes`.
+struct Operator;
+
+impl RouteGuard for Operator {
+  fn policy(&self) -> &str {
+    "operator"
+  }
+
+  fn check<'a>(&'a self, parts: &'a Parts) -> GuardFuture<'a> {
+    let operator = parts.headers.get("x-operator").is_some_and(|v| v == "yes");
+    Box::pin(async move {
+      if operator {
+        Ok(())
+      } else {
+        Err(StatusCode::UNAUTHORIZED.into_response())
+      }
+    })
+  }
+}
+
+/// M7: outside `dev` and `test` an unguarded UI mounts nothing; a guarded one is mounted behind
+/// its guard; `public_dangerous` mounts it for anyone and is recorded.
+#[tokio::test]
+async fn m7_docs_disabled_in_prod_unless_guarded() {
+  let doc = OpenApi::new().title("Prod");
+  for profile in ["dev", "test"] {
+    assert!(
+      OpenApiUi::scalar().profile(profile).is_mounted(),
+      "{profile}"
+    );
+  }
+  for profile in ["prod", "staging"] {
+    let ui = OpenApiUi::scalar().profile(profile);
+    assert!(!ui.is_mounted(), "{profile}");
+    let server = serve(openapi_router(&doc, ui)).await;
+    for target in ["/openapi.json", "/docs"] {
+      assert_eq!(
+        get(&server, target, &[]).await.status,
+        404,
+        "{profile} {target}"
+      );
+    }
+  }
+
+  let guarded = OpenApiUi::scalar().profile("prod").guard(Operator);
+  assert!(guarded.is_mounted());
+  let server = serve(openapi_router(&doc, guarded)).await;
+  for target in ["/openapi.json", "/docs"] {
+    assert_eq!(get(&server, target, &[]).await.status, 401, "{target}");
+    let operator = get(&server, target, &[("x-operator", "yes")]).await;
+    assert_eq!(operator.status, 200, "{target}");
+  }
+  // A guard applies in dev too.
+  let dev = serve(openapi_router(
+    &doc,
+    OpenApiUi::scalar().profile("dev").guard(Operator),
+  ))
+  .await;
+  assert_eq!(get(&dev, "/docs", &[]).await.status, 401);
+
+  let public = OpenApiUi::scalar().profile("prod").public_dangerous();
+  let server = serve(openapi_router(&doc, public)).await;
+  assert_eq!(get(&server, "/docs", &[]).await.status, 200);
+  assert!(
+    dangerous_opt_outs()
+      .iter()
+      .any(|(id, _)| *id == "id_effect_axum::openapi::OpenApiUi::public_dangerous")
   );
 }

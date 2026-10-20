@@ -3,11 +3,11 @@
 //! is empty.
 //!
 //! Buckets live in a [`RateLimitStore`]. The admission check is an effect run on the effect
-//! runtime, so a store can do I/O: [`MemoryRateLimitStore`] keeps one
-//! [`id_effect_resilience::RateLimiter`] (token bucket) per key in process; a shared store (e.g.
-//! Redis, for several instances) implements the same trait. A store that dies or is interrupted
-//! lets the request through (fail open): the limiter protects capacity, it is not an access
-//! control.
+//! runtime, so a store can do I/O: [`MemoryRateLimitStore`] keeps one token bucket per key in
+//! process (and answers inline, through [`RateLimitStore::try_acquire_now`], without the effect
+//! runtime); a shared store (e.g. Redis, for several instances) implements the same trait. A
+//! store that dies or is interrupted lets the request through (fail open): the limiter protects
+//! capacity, it is not an access control.
 //!
 //! The default key is the client IP: the connection's peer (`ConnectInfo<SocketAddr>`, which
 //! [`serve`](crate::serve) and the other server entry points record on every request, as does
@@ -41,16 +41,16 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
+use std::hash::{BuildHasher, RandomState};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::extract::Request;
 use axum::http::{HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use id_effect::{Cause, Effect, Exit, HNil};
+use id_effect::{Cause, Ctx, Effect, Exit, HNil};
 use tower_layer::Layer;
 use tower_service::Service;
 
@@ -65,30 +65,80 @@ use crate::request_caps::RequestCaps;
 pub trait RateLimitStore: Send + Sync + 'static {
   /// Take one token from `key`'s bucket, or fail with [`RateLimitError`] when it is empty.
   fn acquire(&self, key: &str) -> Effect<(), RateLimitError, HNil>;
+
+  /// [`Self::acquire`] without an effect, for a store whose check needs no I/O: `Some(outcome)`
+  /// of taking the token now (wall clock), or `None` (the default) to run [`Self::acquire`].
+  /// [`RateLimitLayer`] tries it first, so an in-process store skips the executor round trip.
+  fn try_acquire_now(&self, _key: &str) -> Option<Result<(), RateLimitError>> {
+    None
+  }
 }
 
 impl<T: RateLimitStore + ?Sized> RateLimitStore for Arc<T> {
   fn acquire(&self, key: &str) -> Effect<(), RateLimitError, HNil> {
     (**self).acquire(key)
   }
+
+  fn try_acquire_now(&self, key: &str) -> Option<Result<(), RateLimitError>> {
+    (**self).try_acquire_now(key)
+  }
 }
 
-/// In-process store: one [`RateLimiter`] per key (`rate` tokens/second, burst `burst`), at most
-/// [`Self::max_keys`] keys (the least recently used bucket is dropped first).
+/// In-process store: one token bucket per key (`rate` tokens/second, burst `burst`, the
+/// arithmetic of [`RateLimiter`]), at most [`Self::max_keys`] keys (the least recently used
+/// bucket is dropped first).
+///
+/// The keys are split over [`Self::shards`] shards by hash, each behind its own mutex, so
+/// requests for different keys rarely contend. Each shard keeps its buckets in recency order
+/// (a linked list over a slab), so a lookup and an eviction are O(1): a full store drops the
+/// least recently used bucket of the new key's shard without looking at the others.
+///
+/// [`RateLimitLayer`] checks it inline ([`RateLimitStore::try_acquire_now`], wall clock);
+/// [`RateLimitStore::acquire`] refills on the running fiber's executor clock.
 pub struct MemoryRateLimitStore {
+  max_keys: usize,
+  shard_count: usize,
+  buckets: Arc<Buckets>,
+}
+
+/// The shared part of a [`MemoryRateLimitStore`] (an [`RateLimitStore::acquire`] effect holds it).
+struct Buckets {
   rate: f64,
   burst: f64,
-  max_keys: usize,
-  clock: AtomicU64,
-  buckets: Mutex<HashMap<String, (RateLimiter, u64)>>,
+  hasher: RandomState,
+  shards: Box<[Mutex<LruShard>]>,
+}
+
+impl Buckets {
+  fn shard(&self, key: &str) -> &Mutex<LruShard> {
+    let len = self.shards.len() as u64;
+    // `len` fits in `usize`, so the remainder does too.
+    let i = usize::try_from(self.hasher.hash_one(key) % len).unwrap_or(0);
+    &self.shards[i]
+  }
+
+  /// Takes one token from `key`'s bucket at `now`, creating the bucket (full; evicting the least
+  /// recently used one of its shard when that is full) if missing.
+  fn take(&self, key: &str, now: Instant) -> Result<(), RateLimitError> {
+    let mut shard = lock(self.shard(key));
+    if shard
+      .bucket(key, self.burst)
+      .take(now, self.rate, self.burst)
+    {
+      Ok(())
+    } else {
+      Err(RateLimitError)
+    }
+  }
 }
 
 impl fmt::Debug for MemoryRateLimitStore {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_struct("MemoryRateLimitStore")
-      .field("rate", &self.rate)
-      .field("burst", &self.burst)
+      .field("rate", &self.buckets.rate)
+      .field("burst", &self.buckets.burst)
       .field("max_keys", &self.max_keys)
+      .field("shards", &self.buckets.shards.len())
       .field("keys", &self.len())
       .finish()
   }
@@ -98,27 +148,57 @@ impl MemoryRateLimitStore {
   /// Default [`Self::max_keys`].
   pub const DEFAULT_MAX_KEYS: usize = 100_000;
 
+  /// Most shards of the default [`Self::shards`]: 64.
+  pub const MAX_DEFAULT_SHARDS: usize = 64;
+
   /// Buckets refilling `rate` tokens per second up to `burst` tokens (each starts full).
   pub fn new(rate: f64, burst: f64) -> Self {
     Self {
-      rate,
-      burst,
       max_keys: Self::DEFAULT_MAX_KEYS,
-      clock: AtomicU64::new(0),
-      buckets: Mutex::new(HashMap::new()),
+      shard_count: Self::default_shards(),
+      buckets: Arc::new(Buckets {
+        rate,
+        burst,
+        hasher: RandomState::new(),
+        shards: Box::new([]),
+      }),
     }
+    .reshard()
+  }
+
+  /// Four shards per available CPU, rounded up to a power of two, at most
+  /// [`Self::MAX_DEFAULT_SHARDS`].
+  pub fn default_shards() -> usize {
+    let cpus = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    cpus
+      .saturating_mul(4)
+      .next_power_of_two()
+      .min(Self::MAX_DEFAULT_SHARDS)
   }
 
   /// Keep at most `n` (at least 1) buckets.
   #[must_use]
   pub fn max_keys(mut self, n: usize) -> Self {
     self.max_keys = n.max(1);
-    self
+    self.reshard()
+  }
+
+  /// Split the keys over `n` (at least 1, at most [`Self::max_keys`]) shards; `1` makes the
+  /// eviction order exactly least recently used across all keys.
+  #[must_use]
+  pub fn shards(mut self, n: usize) -> Self {
+    self.shard_count = n.max(1);
+    self.reshard()
   }
 
   /// Buckets currently held.
   pub fn len(&self) -> usize {
-    self.lock().len()
+    self
+      .buckets
+      .shards
+      .iter()
+      .map(|shard| lock(shard).index.len())
+      .sum()
   }
 
   /// Whether no bucket is held.
@@ -126,35 +206,205 @@ impl MemoryRateLimitStore {
     self.len() == 0
   }
 
-  fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, (RateLimiter, u64)>> {
-    self.buckets.lock().unwrap_or_else(PoisonError::into_inner)
+  /// Empty shards for the current settings: the `max_keys` split as evenly as possible.
+  fn reshard(mut self) -> Self {
+    let count = self.shard_count.min(self.max_keys);
+    let (each, extra) = (self.max_keys / count, self.max_keys % count);
+    self.buckets = Arc::new(Buckets {
+      rate: self.buckets.rate,
+      burst: self.buckets.burst,
+      hasher: self.buckets.hasher.clone(),
+      shards: (0..count)
+        .map(|i| Mutex::new(LruShard::new(each + usize::from(i < extra))))
+        .collect(),
+    });
+    self
   }
 
-  /// The bucket of `key`, created (evicting the least recently used one when full) if missing.
-  fn bucket(&self, key: &str) -> RateLimiter {
-    let now = self.clock.fetch_add(1, Ordering::Relaxed);
-    let mut buckets = self.lock();
-    if let Some((limiter, used)) = buckets.get_mut(key) {
-      *used = now;
-      return limiter.clone();
+  /// Touches `key`'s bucket (taking a token).
+  #[cfg(test)]
+  fn bucket(&self, key: &str) {
+    let _ = self.buckets.take(key, Instant::now());
+  }
+
+  #[cfg(test)]
+  fn keys(&self) -> Vec<String> {
+    let mut keys: Vec<String> = self
+      .buckets
+      .shards
+      .iter()
+      .flat_map(|shard| {
+        lock(shard)
+          .index
+          .keys()
+          .map(|k| k.to_string())
+          .collect::<Vec<_>>()
+      })
+      .collect();
+    keys.sort();
+    keys
+  }
+
+  #[cfg(test)]
+  fn eviction_visits(&self) -> usize {
+    self
+      .buckets
+      .shards
+      .iter()
+      .map(|shard| lock(shard).visits)
+      .sum()
+  }
+}
+
+fn lock(shard: &Mutex<LruShard>) -> MutexGuard<'_, LruShard> {
+  shard.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// No slot (the end of the recency list).
+const NIL: usize = usize::MAX;
+
+/// A token bucket: `tokens` left, refilled since `last` (unset until the first take).
+#[derive(Clone, Copy, Debug)]
+struct Bucket {
+  tokens: f64,
+  last: Option<Instant>,
+}
+
+impl Bucket {
+  fn full(burst: f64) -> Self {
+    Self {
+      tokens: burst,
+      last: None,
     }
-    if buckets.len() >= self.max_keys
-      && let Some(oldest) = buckets
-        .iter()
-        .min_by_key(|(_, (_, used))| *used)
-        .map(|(k, _)| k.clone())
-    {
-      buckets.remove(&oldest);
+  }
+
+  /// Refills up to `burst` at `rate` tokens per second until `now`, then takes one token;
+  /// `false` when less than one is left (as [`RateLimiter::acquire`]).
+  fn take(&mut self, now: Instant, rate: f64, burst: f64) -> bool {
+    let tokens = match self.last {
+      Some(last) => {
+        (self.tokens + now.saturating_duration_since(last).as_secs_f64() * rate).min(burst)
+      }
+      None => self.tokens,
+    };
+    self.last = Some(now);
+    if tokens >= 1.0 {
+      self.tokens = tokens - 1.0;
+      true
+    } else {
+      self.tokens = tokens;
+      false
     }
-    let limiter = RateLimiter::new(self.rate, self.burst);
-    buckets.insert(key.to_owned(), (limiter.clone(), now));
-    limiter
+  }
+}
+
+/// One bucket in a shard's recency list.
+struct Node {
+  key: Arc<str>,
+  bucket: Bucket,
+  /// The next more recently used slot.
+  newer: usize,
+  /// The next less recently used slot.
+  older: usize,
+}
+
+/// One shard of a [`MemoryRateLimitStore`]: at most `capacity` buckets in a slab, linked from the
+/// most recently used (`newest`) to the least (`oldest`), with an index from key to slot.
+struct LruShard {
+  capacity: usize,
+  index: HashMap<Arc<str>, usize>,
+  nodes: Vec<Node>,
+  newest: usize,
+  oldest: usize,
+  /// Slots looked at to pick an eviction victim (the O(1) eviction test).
+  #[cfg(test)]
+  visits: usize,
+}
+
+impl LruShard {
+  fn new(capacity: usize) -> Self {
+    Self {
+      capacity: capacity.max(1),
+      index: HashMap::new(),
+      nodes: Vec::new(),
+      newest: NIL,
+      oldest: NIL,
+      #[cfg(test)]
+      visits: 0,
+    }
+  }
+
+  /// The bucket of `key`, now the most recently used; a missing key gets a full bucket of
+  /// `burst`, in a new slot or, when the shard is full, in the least recently used one.
+  fn bucket(&mut self, key: &str, burst: f64) -> &mut Bucket {
+    if let Some(&slot) = self.index.get(key) {
+      if slot != self.newest {
+        self.unlink(slot);
+        self.push_newest(slot);
+      }
+      return &mut self.nodes[slot].bucket;
+    }
+    let key: Arc<str> = Arc::from(key);
+    let slot = if self.nodes.len() < self.capacity {
+      self.nodes.push(Node {
+        key: Arc::clone(&key),
+        bucket: Bucket::full(burst),
+        newer: NIL,
+        older: NIL,
+      });
+      self.nodes.len() - 1
+    } else {
+      let slot = self.oldest;
+      #[cfg(test)]
+      {
+        self.visits += 1;
+      }
+      self.unlink(slot);
+      let node = &mut self.nodes[slot];
+      let evicted = std::mem::replace(&mut node.key, Arc::clone(&key));
+      node.bucket = Bucket::full(burst);
+      self.index.remove(&evicted);
+      slot
+    };
+    self.push_newest(slot);
+    self.index.insert(key, slot);
+    &mut self.nodes[slot].bucket
+  }
+
+  fn unlink(&mut self, slot: usize) {
+    let (newer, older) = (self.nodes[slot].newer, self.nodes[slot].older);
+    match newer {
+      NIL => self.newest = older,
+      n => self.nodes[n].older = older,
+    }
+    match older {
+      NIL => self.oldest = newer,
+      o => self.nodes[o].newer = newer,
+    }
+  }
+
+  fn push_newest(&mut self, slot: usize) {
+    let previous = self.newest;
+    self.nodes[slot].newer = NIL;
+    self.nodes[slot].older = previous;
+    match previous {
+      NIL => self.oldest = slot,
+      p => self.nodes[p].newer = slot,
+    }
+    self.newest = slot;
   }
 }
 
 impl RateLimitStore for MemoryRateLimitStore {
   fn acquire(&self, key: &str) -> Effect<(), RateLimitError, HNil> {
-    self.bucket(key).acquire()
+    let (buckets, key) = (Arc::clone(&self.buckets), key.to_owned());
+    Effect::from_ctx(move |ctx: Ctx<HNil>| {
+      std::future::ready(buckets.take(&key, ctx.fiber().executor().now()))
+    })
+  }
+
+  fn try_acquire_now(&self, key: &str) -> Option<Result<(), RateLimitError>> {
+    Some(self.buckets.take(key, Instant::now()))
   }
 }
 
@@ -341,8 +591,15 @@ impl RateLimitLayer {
     S::Response: IntoResponse,
   {
     if let Some(key) = self.key.key(&request) {
-      let exit = self.executor.run_effect(self.store.acquire(&key)).await;
-      if let Exit::Failure(Cause::Fail(RateLimitError)) = exit {
+      let limited = match self.store.try_acquire_now(&key) {
+        // An in-process store answers inline: no executor round trip.
+        Some(outcome) => outcome.is_err(),
+        None => matches!(
+          self.executor.run_effect(self.store.acquire(&key)).await,
+          Exit::Failure(Cause::Fail(RateLimitError))
+        ),
+      };
+      if limited {
         return self.too_many(request.uri().path());
       }
     }
@@ -408,17 +665,90 @@ mod tests {
 
   #[test]
   fn memory_store_evicts_the_least_recently_used_bucket() {
-    let store = MemoryRateLimitStore::new(1.0, 1.0).max_keys(2);
+    let store = MemoryRateLimitStore::new(1.0, 1.0).shards(1).max_keys(2);
     assert!(store.is_empty());
     store.bucket("a");
     store.bucket("b");
     store.bucket("a");
     store.bucket("c");
     assert_eq!(store.len(), 2);
-    let keys = store.lock();
-    assert!(keys.contains_key("a") && keys.contains_key("c"));
-    drop(keys);
+    assert_eq!(store.keys(), ["a", "c"]);
     assert!(format!("{store:?}").contains("max_keys: 2"));
+  }
+
+  #[test]
+  fn m8_eviction_does_not_scan_all_keys() {
+    let store = MemoryRateLimitStore::new(1.0, 1.0)
+      .shards(1)
+      .max_keys(10_000);
+    for i in 0..10_000 {
+      store.bucket(&format!("k{i}"));
+    }
+    assert_eq!(store.eviction_visits(), 0);
+    // A full store: each new key evicts by looking at one slot, not at all 10,000.
+    for i in 10_000..11_000 {
+      store.bucket(&format!("k{i}"));
+    }
+    assert_eq!(store.len(), 10_000);
+    assert_eq!(store.eviction_visits(), 1_000);
+    // A hit moves its key to the front and evicts nothing.
+    store.bucket("k10999");
+    assert_eq!(store.eviction_visits(), 1_000);
+  }
+
+  #[test]
+  fn inline_and_effect_checks_share_the_bucket() {
+    let store = MemoryRateLimitStore::new(0.0, 2.0);
+    assert_eq!(store.try_acquire_now("k"), Some(Ok(())));
+    assert!(matches!(store.acquire("k").block_on(), Exit::Success(())));
+    assert_eq!(store.try_acquire_now("k"), Some(Err(RateLimitError)));
+    assert!(matches!(
+      store.acquire("k").block_on(),
+      Exit::Failure(Cause::Fail(RateLimitError))
+    ));
+    // Refill: 50 tokens per second, a burst of one.
+    let fast = MemoryRateLimitStore::new(50.0, 1.0);
+    assert_eq!(fast.try_acquire_now("k"), Some(Ok(())));
+    assert_eq!(fast.try_acquire_now("k"), Some(Err(RateLimitError)));
+    std::thread::sleep(Duration::from_millis(40));
+    assert_eq!(fast.try_acquire_now("k"), Some(Ok(())));
+    // A store without an inline check leaves the layer to run its effect.
+    struct Remote;
+    impl RateLimitStore for Remote {
+      fn acquire(&self, _key: &str) -> Effect<(), RateLimitError, HNil> {
+        id_effect::succeed(())
+      }
+    }
+    assert_eq!(Arc::new(Remote).try_acquire_now("k"), None);
+  }
+
+  #[test]
+  fn shards_split_max_keys_and_hold_it() {
+    let store = MemoryRateLimitStore::new(1.0, 1.0).shards(8).max_keys(20);
+    let caps: Vec<usize> = store
+      .buckets
+      .shards
+      .iter()
+      .map(|s| lock(s).capacity)
+      .collect();
+    assert_eq!(caps.iter().sum::<usize>(), 20);
+    assert!(caps.iter().all(|&c| c == 2 || c == 3));
+    for i in 0..1_000 {
+      store.bucket(&format!("k{i}"));
+    }
+    assert!(store.len() <= 20);
+    // Never more shards than keys.
+    assert_eq!(
+      MemoryRateLimitStore::new(1.0, 1.0)
+        .max_keys(3)
+        .shards(16)
+        .buckets
+        .shards
+        .len(),
+      3
+    );
+    assert!(MemoryRateLimitStore::default_shards() <= MemoryRateLimitStore::MAX_DEFAULT_SHARDS);
+    assert!(MemoryRateLimitStore::default_shards().is_power_of_two());
   }
 
   #[test]
@@ -515,9 +845,7 @@ mod tests {
     assert_eq!(status(Some("acme")).await, StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(status(Some("globex")).await, StatusCode::OK);
     assert_eq!(status(None).await, StatusCode::OK);
-    let mut keys: Vec<String> = store.lock().keys().cloned().collect();
-    keys.sort();
-    assert_eq!(keys, ["global", "tenant:acme", "tenant:globex"]);
+    assert_eq!(store.keys(), ["global", "tenant:acme", "tenant:globex"]);
   }
 
   #[test]

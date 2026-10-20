@@ -92,12 +92,14 @@ fn routes() -> Router<Store> {
   Router::new()
     .route(
       Route::get("/accounts/{id}")
+        .public()
         .path::<AccountId>()
         .response::<Account>(AxumStatus::OK)
         .handler(show),
     )
     .route(
       Route::post("/accounts")
+        .public()
         .body::<NewAccount>()
         .response::<Account>(AxumStatus::CREATED)
         .handler(open),

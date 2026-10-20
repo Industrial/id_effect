@@ -1,0 +1,154 @@
+# Developer Certificate of Origin (0.11.0.md finding S6; CONTRIBUTING.md "Developer Certificate of
+# Origin"): every commit a pull request adds must carry a `Signed-off-by:` trailer naming the
+# commit author's email. Only the pull request's own commits are checked (base..head, merge commits
+# skipped), and commits older than this workflow (ancestors of the commit that added this file) are
+# not, so history from before DCO enforcement never fails a pull request. Commits authored by
+# dependabot[bot] are exempt: its sign-off names support@github.com, not the author email. The check
+# is plain git (no third-party action). A commit without its own sign-off also passes when a later
+# signed-off commit of the pull request by the same email is an individual DCO remediation commit
+# for it (the probot/dco format), so published commits never have to be rewritten:
+#   DCO Remediation Commit for Name <email>
+#
+#   I, Name <email>, hereby add my Signed-off-by to this commit: <full sha>
+#   (one such line per commit)
+#
+#   Signed-off-by: Name <email>
+# The step s6_dco_check_rejects_unsigned_off_commit runs the check on a fixture repository first,
+# so a broken check cannot pass silently. Commit subjects and messages are never echoed, so a
+# crafted message cannot inject workflow commands.
+name: DCO
+on:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  dco:
+    name: Signed-off-by on every commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Write the DCO check
+        run: |
+          cat > "$RUNNER_TEMP/dco-check.sh" <<'SCRIPT'
+          #!/usr/bin/env bash
+          # Usage: dco-check.sh <base> <head>, run inside the repository.
+          # Fails when a non-merge commit in base..head, other than the commits older than
+          # .github/workflows/dco.yml, has no Signed-off-by trailer naming its author email.
+          set -euo pipefail
+          base=$1
+          head=$2
+          # The oldest commit in head's history that added this workflow; its parents and their
+          # ancestors predate DCO enforcement.
+          intro=$(git log --diff-filter=A --format=%H "$head" -- .github/workflows/dco.yml | tail -n 1)
+          exclude=("^$base")
+          if [ -n "$intro" ]; then
+            while read -r parent; do
+              [ -n "$parent" ] && exclude+=("^$parent")
+            done < <(git rev-parse "$intro^@")
+          fi
+          mapfile -t commits < <(git rev-list --no-merges "$head" "${exclude[@]}")
+          signed_off() { # sha author-email
+            local signoffs
+            signoffs=$(git show -s --format='%(trailers:key=Signed-off-by,valueonly)' "$1")
+            grep -qiF "<$2>" <<<"$signoffs"
+          }
+          # Individual remediation commits (the probot/dco format): a signed-off commit of the
+          # pull request whose message has, for an earlier commit by the same author email, the line
+          #   I, Name <email>, hereby add my Signed-off-by to this commit: <full sha>
+          # signs that commit off without rewriting it. The line's email must be the remediation
+          # commit's author email, and that commit must be by the same email.
+          declare -A remediated=()
+          line_re='^I, .+ <([^<>]+)>, hereby add my Signed-off-by to this commit: ([0-9a-fA-F]{40})[[:space:]]*$'
+          for sha in "${commits[@]}"; do
+            [ -n "$sha" ] || continue
+            author=$(git show -s --format=%ae "$sha")
+            signed_off "$sha" "$author" || continue
+            while IFS= read -r line; do
+              if [[ $line =~ $line_re ]] && [ "${BASH_REMATCH[1],,}" = "${author,,}" ]; then
+                remediated["${BASH_REMATCH[2],,} ${author,,}"]=$sha
+              fi
+            done < <(git show -s --format=%B "$sha")
+          done
+          checked=0
+          missing=0
+          for sha in "${commits[@]}"; do
+            [ -n "$sha" ] || continue
+            author=$(git show -s --format=%ae "$sha")
+            case "$author" in
+              *'dependabot[bot]@users.noreply.github.com')
+                echo "skip ${sha:0:12}: authored by dependabot[bot]"
+                continue
+                ;;
+            esac
+            checked=$((checked + 1))
+            remedy=${remediated["$sha ${author,,}"]:-}
+            if signed_off "$sha" "$author"; then
+              echo "ok   ${sha:0:12}"
+            elif [ -n "$remedy" ]; then
+              echo "ok   ${sha:0:12}: signed off by remediation commit ${remedy:0:12}"
+            else
+              missing=$((missing + 1))
+              echo "::error title=DCO::commit ${sha:0:12} has no 'Signed-off-by:' trailer with its author email"
+            fi
+          done
+          echo "checked $checked commit(s), $missing without a matching sign-off"
+          if [ "$missing" -gt 0 ]; then
+            echo "Sign off with 'git commit --amend -s' (last commit) or 'git rebase --signoff <base>' (all), then force-push;" >&2
+            echo "or, without rewriting, push a signed-off DCO remediation commit (see the comment in dco.yml)." >&2
+            exit 1
+          fi
+          SCRIPT
+          chmod +x "$RUNNER_TEMP/dco-check.sh"
+      - name: s6_dco_check_rejects_unsigned_off_commit
+        run: |
+          set -euo pipefail
+          check="$RUNNER_TEMP/dco-check.sh"
+          fixture="$RUNNER_TEMP/dco-fixture"
+          git init -q -b main "$fixture"
+          cd "$fixture"
+          export GIT_AUTHOR_NAME=Ada GIT_AUTHOR_EMAIL=ada@example.com
+          export GIT_COMMITTER_NAME=Ada GIT_COMMITTER_EMAIL=ada@example.com
+          commit() { echo "$1" >> file; git add file; git commit -q "${@:2}" -m "$1"; }
+          commit "unsigned, before DCO 1"
+          old=$(git rev-parse HEAD)
+          commit "unsigned, before DCO 2"
+          mkdir -p .github/workflows && touch .github/workflows/dco.yml && git add .github/workflows
+          commit "add dco.yml" -s
+          base=$(git rev-parse HEAD)
+          commit "signed" -s
+          "$check" "$base" HEAD || { echo "FAIL: a signed-off commit was rejected"; exit 1; }
+          "$check" "$old" HEAD || { echo "FAIL: a commit older than dco.yml was checked"; exit 1; }
+          GIT_AUTHOR_NAME=dependabot GIT_AUTHOR_EMAIL='49699333+dependabot[bot]@users.noreply.github.com' \
+            git commit -q --allow-empty -m "bump"
+          "$check" "$base" HEAD || { echo "FAIL: a dependabot[bot] commit was not exempt"; exit 1; }
+          good=$(git rev-parse HEAD)
+          commit "signed by someone else" --trailer "Signed-off-by: Eve <eve@example.com>"
+          if "$check" "$base" HEAD; then echo "FAIL: a sign-off by another person was accepted"; exit 1; fi
+          git switch -q -c unsigned "$good"
+          commit "unsigned"
+          if "$check" "$base" HEAD; then echo "FAIL: an unsigned commit was accepted"; exit 1; fi
+          unsigned=$(git rev-parse HEAD)
+          remediate() { # name email sha
+            GIT_AUTHOR_NAME=$1 GIT_AUTHOR_EMAIL=$2 GIT_COMMITTER_NAME=$1 GIT_COMMITTER_EMAIL=$2 \
+              git commit -q --allow-empty -s -m "DCO Remediation Commit for $1 <$2>" \
+              -m "I, $1 <$2>, hereby add my Signed-off-by to this commit: $3"
+          }
+          remediate Ada ada@example.com "$unsigned"
+          "$check" "$base" HEAD || { echo "FAIL: a remediation commit by the author was rejected"; exit 1; }
+          git switch -q -c foreign-remedy "$unsigned"
+          remediate Eve eve@example.com "$unsigned"
+          if "$check" "$base" HEAD; then echo "FAIL: a remediation commit by another email was accepted"; exit 1; fi
+          echo "fixture: signed, pre-DCO, dependabot and remediated commits pass; unsigned commits, foreign sign-offs and foreign remediations fail"
+      - name: Check sign-offs on the pull request's commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          "$RUNNER_TEMP/dco-check.sh" "$BASE_SHA" "$HEAD_SHA"

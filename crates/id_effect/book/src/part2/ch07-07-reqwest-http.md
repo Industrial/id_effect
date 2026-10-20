@@ -20,8 +20,11 @@ pipelines, need **pooled clients** (`provide_reqwest_pool`, `send_pooled`), or w
 
 - **`ReqwestClient(pub reqwest::Client)`** — the capability; `ReqwestClientEnv` is its
   one-element list.
-- **`ReqwestClientLive::layer()`** / **`provide_reqwest_client(client)`** — layers that build or
-  supply the client at the composition root.
+- **`ReqwestClientLive::layer()`** / **`layer_with(config)`** — layers that build the client at
+  the composition root from an `HttpClientConfig` (timeouts, no redirects, the SSRF resolver
+  check; see [client defaults](./ch07-06-platform-services.md#the-ssrf-guard)).
+  **`dangerous_provide_reqwest_client(client)`** supplies your own client unguarded, and records
+  the opt-out.
 - **`send`**, **`text`**, **`bytes`**, **`json`**, **`json_schema`** — effects over a
   `FnOnce(&Client) -> RequestBuilder`; `get` / `post` / `put` / `delete` / `head` / `patch` take a URL.
 - **Pools** — `provide_reqwest_pool(n, ttl)` provides a `ReqwestPool` (`id_effect::Pool` of

@@ -1,0 +1,3 @@
+{"alg": "HS256", "typ": "JWT", "kid": "k1"}
+---
+{"sub": "alice", "iss": "https://id.example.com", "aud": ["ledger"], "exp": 1900000000, "nbf": 1700000000, "roles": "admin user", "realm_access": {"roles": ["auditor"]}, "scope": "read write", "tenant": "acme"}

@@ -3,7 +3,7 @@
 `id_effect_jobs` runs the work a service puts off until later: a typed job is enqueued on a PostgreSQL table, a worker claims it with `FOR UPDATE SKIP LOCKED`, runs its handler, and retries a failure with backoff until it succeeds or is `dead`. Unique keys, priorities, a first `run_at`, per-queue concurrency and cron schedules come with it; `MemoryJobQueue` is the same queue in memory, for tests.
 
 ```toml
-id_effect_jobs = { version = "0.10", features = ["cron"] }  # `cron` only for cron schedules
+id_effect_jobs = { version = "0.11", features = ["cron"] }  # `cron` only for cron schedules
 ```
 
 ## Jobs

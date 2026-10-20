@@ -5,15 +5,16 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::Router;
 use axum::extract::State;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use axum::{Extension, Router};
 use http::header::{CACHE_CONTROL, COOKIE, LOCATION, SET_COOKIE};
 use http::{HeaderMap, HeaderValue, StatusCode, Uri};
 use id_effect::{Cause, Effect, Exit, HNil};
 use id_effect_authz::Principal as _;
 use id_effect_axum::route::Problem;
+use id_effect_axum::server::security::CsrfToken;
 
 use super::{OidcClient, OidcError, PendingLogin};
 use crate::principal::{
@@ -45,7 +46,7 @@ const FLOW_USER: &str = "oidc-login-in-progress";
 /// | Route | Does |
 /// |---|---|
 /// | `GET` login path (`?return_to=/local/path` optional) | starts a flow session holding `state`, `nonce` and the PKCE verifier; **303** to the provider |
-/// | `GET` callback path | consumes the flow session, checks `state` (and `iss` when sent), exchanges the code, verifies the ID token, logs in with [`Sessions::login`] (a fresh session id; the roles, permissions, tenant and ID token go into the session's attributes); **303** to `return_to` or [`after_login`](Self::after_login). Failures answer Problem Details (see [`OidcError::http_status`]). |
+/// | `GET` callback path | consumes the flow session, checks `state` (and `iss` when sent), exchanges the code, verifies the ID token, logs in with [`Sessions::login`] — `Sessions::login_with_csrf` behind `id_effect_axum`'s `SecurityLayer`, which rotates the CSRF token — (a fresh session id; the roles, permissions, tenant and ID token go into the session's attributes); **303** to `return_to` or [`after_login`](Self::after_login). Failures answer Problem Details (see [`OidcError::http_status`]). |
 /// | `POST` logout path | ends the session; **303** to the provider's end-session endpoint for an OIDC session (RP-initiated logout), else to [`after_logout`](Self::after_logout) |
 ///
 /// The flow session lives in its own store and cookie (default: in memory, cookie
@@ -201,10 +202,16 @@ async fn login(State(r): Routes, uri: Uri, headers: HeaderMap) -> Response {
   }
 }
 
-async fn callback(State(r): Routes, uri: Uri, headers: HeaderMap) -> Response {
+async fn callback(
+  State(r): Routes,
+  uri: Uri,
+  headers: HeaderMap,
+  csrf: Option<Extension<CsrfToken>>,
+) -> Response {
   let flow_id = cookie_id(&r.flow, &headers);
   let presented = cookie_id(&r.sessions, &headers);
-  let mut response = match complete(&r, flow_id, presented, &query(&uri)).await {
+  let csrf = csrf.map(|Extension(token)| token);
+  let mut response = match complete(&r, flow_id, presented, csrf, &query(&uri)).await {
     Ok((session, location)) => {
       let mut response = see_other(&location);
       append_cookie(&mut response, &r.sessions.set_cookie(&session));
@@ -216,11 +223,13 @@ async fn callback(State(r): Routes, uri: Uri, headers: HeaderMap) -> Response {
   response
 }
 
-/// The callback's checks and the login; the application session and where to go.
+/// The callback's checks and the login; the application session and where to go. Behind
+/// `SecurityLayer` (`csrf` present) the login rotates the CSRF token (L5).
 async fn complete(
   r: &OidcRoutes,
   flow_id: Option<SessionId>,
   presented: Option<SessionId>,
+  csrf: Option<CsrfToken>,
   params: &HashMap<String, String>,
 ) -> Result<(Session, String), OidcError> {
   let no_login = || OidcError::InvalidCallback("no login is in progress in this browser".into());
@@ -256,9 +265,15 @@ async fn complete(
   let done = exec(r.client.exchange(code, &pending)).await?;
   let sessions = r.sessions.clone();
   let user = done.principal.id().to_owned();
-  let session = r
-    .sessions
-    .login(user, presented.as_ref())
+  let login = match &csrf {
+    // The rotated token reaches the client through the layer's CSRF cookie.
+    Some(csrf) => r
+      .sessions
+      .login_with_csrf(user, presented.as_ref(), csrf)
+      .map(|(session, _rotated)| session),
+    None => r.sessions.login(user, presented.as_ref()),
+  };
+  let session = login
     .flat_map(move |mut session| {
       record(&mut session, &done.principal, &done.id_token);
       sessions.save(session.clone()).map(move |()| session)

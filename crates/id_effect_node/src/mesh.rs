@@ -1,8 +1,16 @@
 //! [`Mesh`] — process-layer distribution: remote spawn/send/call/link/monitor.
 //!
 //! Combines a local [`ProcessNode`], [`BehaviorRegistry`], and authenticated
-//! [`Session`]s. Remote delivery is **at-most-once** (ADR 0009). On peer loss,
+//! [`Session`]s. Remote delivery is **at-most-once** (ADR 0009) unless a send opts in to
+//! at-least-once ([`Mesh::send_reliable`], [`Mesh::cast_reliable`], or
+//! [`DeliveryMode::AtLeastOnce`] for the whole mesh; see [`crate::delivery`]). On peer loss,
 //! outstanding monitors fire [`ExitReason::NoConnection`].
+//!
+//! The effect sends ([`Mesh::cast`], [`Mesh::send`], the `*_reliable` sends and
+//! [`Mesh::remote_call`]) carry the sending fiber's current span as the message's
+//! [`TraceContext`] ([`Mesh::with_trace_propagator`]); the receiver opens the span that handles
+//! the message under it (dist.remote#8). The plain-function sends ([`Mesh::remote_cast`],
+//! [`Mesh::remote_info`]) run outside any fiber and carry none.
 //!
 //! Requests that wait for an answer ([`Mesh::remote_spawn`], [`Mesh::remote_call`]) are
 //! Effects: `Send`, bounded by a timeout on the calling fiber's executor clock, and
@@ -12,17 +20,19 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
-use id_effect::{Cause, Exit, Never};
-use id_effect::{Deferred, Effect, HNil, fail, succeed, suspend, sync};
+use id_effect::{Cause, Exit, Never, Span};
+use id_effect::{Deferred, Effect, HNil, fail, sleep, succeed, suspend, sync};
 use id_effect_process::{ExitReason, MonitorRef, MonitorSink, Pid, ProcessNode};
 
+use crate::delivery::{Delivery, DeliveryConfig, DeliveryMode, DeliveryMonitor, Received};
 use crate::envelope::{
-  ExitReasonWire, PidWire, ProcessEnvelope, RemoteFault, TraceContext, decode_envelope,
-  encode_envelope,
+  ExitReasonWire, PidWire, ProcessEnvelope, ReliableMessage, RemoteFault, TraceContext,
+  TracePropagator, W3cTraceContext, decode_envelope, encode_envelope, traceparent_in,
 };
+use crate::global_registry::{self, GlobalNames, GlobalRegistry};
 use crate::id::NodeId;
 use crate::placement::{ClusterResourcePolicy, LoadReport, place};
 use crate::registry::BehaviorRegistry;
@@ -125,6 +135,12 @@ struct MeshInner {
   /// Populated by a telemetry/gossip loop (or directly in tests); read by
   /// [`Mesh::load_reports`] to feed [`crate::placement::place`].
   loads: Mutex<HashMap<String, (f32, f32)>>,
+  /// This node's replica of the cluster-wide name table ([`Mesh::global`]).
+  global_names: Mutex<GlobalNames>,
+  /// At-least-once state: config, retransmit buffers, dedup windows ([`crate::delivery`]).
+  delivery: Delivery,
+  /// How spans cross the wire ([`Mesh::with_trace_propagator`]).
+  trace: Mutex<Arc<dyn TracePropagator>>,
 }
 
 /// Distribution façade for one node.
@@ -149,8 +165,39 @@ impl Mesh {
         remote_monitors: Mutex::new(HashMap::new()),
         inbound_monitors: Mutex::new(HashMap::new()),
         loads: Mutex::new(HashMap::new()),
+        global_names: Mutex::new(GlobalNames::default()),
+        delivery: Delivery::default(),
+        trace: Mutex::new(Arc::new(W3cTraceContext::new())),
       }),
     }
+  }
+
+  /// Use `config` for remote casts and sends (default: at-most-once, [`DeliveryConfig`]).
+  pub fn with_delivery(self, config: DeliveryConfig) -> Self {
+    self.inner.delivery.set_config(config);
+    self
+  }
+
+  /// The delivery settings in force.
+  pub fn delivery(&self) -> DeliveryConfig {
+    self.inner.delivery.config()
+  }
+
+  /// Report every at-least-once message this node gives up ([`crate::delivery::DeliveryFailed`])
+  /// to `monitor`.
+  pub fn monitor_delivery(&self, monitor: DeliveryMonitor) {
+    self.inner.delivery.add_monitor(monitor);
+  }
+
+  /// Carry spans across the wire with `propagator` (default [`W3cTraceContext`], which opens no
+  /// receiving spans).
+  pub fn with_trace_propagator(self, propagator: Arc<dyn TracePropagator>) -> Self {
+    *self.inner.trace.lock().expect("trace") = propagator;
+    self
+  }
+
+  fn propagator(&self) -> Arc<dyn TracePropagator> {
+    Arc::clone(&self.inner.trace.lock().expect("trace"))
   }
 
   /// Attach to an in-memory fabric (tests).
@@ -177,14 +224,50 @@ impl Mesh {
     &self.inner.registry
   }
 
-  /// Register a peer sender (production session path).
+  /// Cluster-wide name registry ([`GlobalRegistry`]) backed by this node's replica.
+  pub fn global(&self) -> GlobalRegistry {
+    GlobalRegistry::new(self.clone())
+  }
+
+  pub(crate) fn node_id(&self) -> &NodeId {
+    &self.inner.node_id
+  }
+
+  pub(crate) fn global_names(&self) -> &Mutex<GlobalNames> {
+    &self.inner.global_names
+  }
+
+  /// Register a peer sender (production session path). The peer is sent the global names
+  /// this node owns, if any ([`GlobalRegistry::sync_with`]), and every at-least-once message it
+  /// has not acknowledged yet.
   pub fn add_peer(&self, node_name: impl Into<String>, sender: PeerSender) {
+    self.connect_peer(node_name.into(), None, sender);
+  }
+
+  /// [`Mesh::add_peer`] for an authenticated peer identity ([`Session::peer`]): if `node` is a
+  /// new incarnation of the peer, the at-least-once messages its previous life did not
+  /// acknowledge fail with [`DeliveryFailure::PeerRestarted`](crate::DeliveryFailure) instead of
+  /// being sent again.
+  pub fn add_peer_node(&self, node: &NodeId, sender: PeerSender) {
+    self.connect_peer(node.name().to_string(), Some(node.incarnation()), sender);
+  }
+
+  fn connect_peer(&self, node_name: String, incarnation: Option<u128>, sender: PeerSender) {
     self
       .inner
       .peers
       .lock()
       .expect("peers")
-      .insert(node_name.into(), sender);
+      .insert(node_name.clone(), sender);
+    global_registry::peer_up(self, &node_name);
+    let reconnected = self.inner.delivery.on_connect(&node_name, incarnation);
+    self.inner.delivery.notify(reconnected.failed);
+    for frame in reconnected.frames {
+      let _ = self.send_to(&node_name, frame);
+    }
+    if reconnected.start_driver {
+      self.start_retransmit(&node_name);
+    }
   }
 
   /// Notify that a peer node is down: fire our monitors on its processes
@@ -227,6 +310,7 @@ impl Mesh {
     for (pid, local) in held {
       self.inner.process.demonitor(&pid, local);
     }
+    global_registry::node_down(self, peer_name);
     self.inner.peers.lock().expect("peers").remove(peer_name);
   }
 
@@ -242,6 +326,35 @@ impl Mesh {
       return fabric.deliver_from(&self.inner.node_id, node_name, envelope);
     }
     Err(RemoteFault::NoProc)
+  }
+
+  pub(crate) fn send_envelope(
+    &self,
+    node_name: &str,
+    envelope: ProcessEnvelope,
+  ) -> Result<(), RemoteFault> {
+    self.send_to(node_name, envelope)
+  }
+
+  /// Best-effort send to every known peer (session senders and fabric members), naming this
+  /// node as the sender.
+  pub(crate) fn broadcast_to_peers(&self, envelope: ProcessEnvelope) {
+    let mut names: Vec<String> = self
+      .inner
+      .peers
+      .lock()
+      .expect("peers")
+      .keys()
+      .cloned()
+      .collect();
+    if let Some(fabric) = &self.inner.fabric {
+      names.extend(fabric.peers.lock().expect("fabric").keys().cloned());
+    }
+    names.sort();
+    names.dedup();
+    for name in names.iter().filter(|n| n.as_str() != self.node_name()) {
+      let _ = self.send_to(name, envelope.clone());
+    }
   }
 
   /// Local spawn through the registry (installs wire route).
@@ -356,40 +469,162 @@ impl Mesh {
     }
   }
 
-  /// Remote cast (or local if same node).
+  /// Remote cast (or local if same node), with the mesh's [`DeliveryMode`]. A plain function:
+  /// it carries no trace context ([`Mesh::cast`] does).
   pub fn remote_cast(&self, to: &Pid, msg: Vec<u8>) -> Result<(), RemoteFault> {
-    if to.node().as_str() == self.node_name() {
-      return self.inner.registry.deliver_cast(to, &msg);
-    }
-    self.send_to(
-      to.node().as_str(),
-      ProcessEnvelope::Cast {
+    self.route(
+      ReliableMessage::Cast {
         to: PidWire::from(to),
         msg,
         trace: TraceContext::new(),
       },
+      self.at_least_once(),
     )
   }
 
-  /// Remote info send.
+  /// Remote info send, with the mesh's [`DeliveryMode`]. A plain function: it carries no trace
+  /// context ([`Mesh::send`] does).
   pub fn remote_info(&self, to: &Pid, msg: Vec<u8>) -> Result<(), RemoteFault> {
-    if to.node().as_str() == self.node_name() {
-      return self.inner.registry.deliver_info(to, &msg);
-    }
-    self.send_to(
-      to.node().as_str(),
-      ProcessEnvelope::Info {
+    self.route(
+      ReliableMessage::Info {
         to: PidWire::from(to),
         msg,
         trace: TraceContext::new(),
       },
+      self.at_least_once(),
     )
+  }
+
+  /// Cast `msg` to `to` (local or remote) with the mesh's [`DeliveryMode`], carrying the
+  /// running fiber's trace context.
+  pub fn cast<R: Send + Sync + 'static>(
+    &self,
+    to: &Pid,
+    msg: Vec<u8>,
+  ) -> Effect<(), RemoteFault, R> {
+    self.traced_send(to, msg, false, None)
+  }
+
+  /// Send `msg` to `to`'s `handle_info` (local or remote) with the mesh's [`DeliveryMode`],
+  /// carrying the running fiber's trace context.
+  pub fn send<R: Send + Sync + 'static>(
+    &self,
+    to: &Pid,
+    msg: Vec<u8>,
+  ) -> Effect<(), RemoteFault, R> {
+    self.traced_send(to, msg, true, None)
+  }
+
+  /// [`Mesh::cast`] at-least-once whatever the mesh's mode ([`crate::delivery`]). Succeeds once
+  /// the message is buffered for retransmission; a message given up later is reported to the
+  /// [`Mesh::monitor_delivery`] monitors.
+  pub fn cast_reliable<R: Send + Sync + 'static>(
+    &self,
+    to: &Pid,
+    msg: Vec<u8>,
+  ) -> Effect<(), RemoteFault, R> {
+    self.traced_send(to, msg, false, Some(true))
+  }
+
+  /// [`Mesh::send`] at-least-once whatever the mesh's mode ([`crate::delivery`]). Succeeds once
+  /// the message is buffered for retransmission; a message given up later is reported to the
+  /// [`Mesh::monitor_delivery`] monitors.
+  pub fn send_reliable<R: Send + Sync + 'static>(
+    &self,
+    to: &Pid,
+    msg: Vec<u8>,
+  ) -> Effect<(), RemoteFault, R> {
+    self.traced_send(to, msg, true, Some(true))
+  }
+
+  fn at_least_once(&self) -> bool {
+    self.inner.delivery.config().mode == DeliveryMode::AtLeastOnce
+  }
+
+  /// A cast (`info == false`) or info carrying the fiber's trace context; `reliable` overrides
+  /// the mesh's mode.
+  fn traced_send<R: Send + Sync + 'static>(
+    &self,
+    to: &Pid,
+    msg: Vec<u8>,
+    info: bool,
+    reliable: Option<bool>,
+  ) -> Effect<(), RemoteFault, R> {
+    let mesh = self.clone();
+    let to = PidWire::from(to);
+    self.outgoing_trace().flat_map(move |trace| {
+      let message = if info {
+        ReliableMessage::Info { to, msg, trace }
+      } else {
+        ReliableMessage::Cast { to, msg, trace }
+      };
+      let reliable = reliable.unwrap_or_else(|| mesh.at_least_once());
+      match mesh.route(message, reliable) {
+        Ok(()) => succeed(()),
+        Err(fault) => fail(fault),
+      }
+    })
+  }
+
+  /// The running fiber's current span as a [`TraceContext`] (empty outside any span).
+  fn outgoing_trace<E: Send + 'static, R: Send + Sync + 'static>(
+    &self,
+  ) -> Effect<TraceContext, E, R> {
+    let propagator = self.propagator();
+    Span::current().map(move |span| {
+      let mut carrier = TraceContext::new();
+      if let Some(span) = span {
+        propagator.inject(&span, &mut carrier);
+      }
+      carrier
+    })
+  }
+
+  /// Deliver locally, or send at-most-once, or buffer and send at-least-once.
+  fn route(&self, message: ReliableMessage, reliable: bool) -> Result<(), RemoteFault> {
+    let node = message.to().node.clone();
+    if node == self.node_name() {
+      return match message {
+        ReliableMessage::Cast { to, msg, .. } => {
+          self.inner.registry.deliver_cast(&to.to_pid(), &msg)
+        }
+        ReliableMessage::Info { to, msg, .. } => {
+          self.inner.registry.deliver_info(&to.to_pid(), &msg)
+        }
+      };
+    }
+    if !reliable {
+      return self.send_to(&node, message.into_envelope());
+    }
+    let enqueued = self.inner.delivery.enqueue(&node, message)?;
+    self.inner.delivery.notify(enqueued.evicted);
+    // A failed transmission stays buffered: the next reconnect or retransmission round sends it.
+    let _ = self.send_to(&node, enqueued.frame);
+    if enqueued.start_driver {
+      self.start_retransmit(&node);
+    }
+    Ok(())
+  }
+
+  /// Start `peer`'s retransmission driver: a daemon fiber on this node's runtime that sends the
+  /// unacknowledged messages again with backoff and stops when none are left (or the mesh is
+  /// dropped).
+  fn start_retransmit(&self, peer: &str) {
+    let delay = self.inner.delivery.config().backoff(0);
+    let driver = retransmit_loop(Arc::downgrade(&self.inner), peer.to_string(), delay);
+    drop(self.inner.process.runtime().fork(driver));
+  }
+
+  /// Unacknowledged at-least-once messages buffered for `peer`.
+  pub fn unacked(&self, peer: &str) -> usize {
+    self.inner.delivery.unacked(peer)
   }
 
   /// Remote call with timeout (a local call when `to` lives on this node).
   ///
   /// Like [`Mesh::remote_spawn`]: sent when the effect runs, bounded by `timeout` on the
-  /// calling fiber's executor clock, interruptible, and leaves no pending entry behind.
+  /// calling fiber's executor clock, interruptible, and leaves no pending entry behind. The
+  /// request carries the calling fiber's trace context.
   pub fn remote_call<R: Send + Sync + 'static>(
     &self,
     to: &Pid,
@@ -407,24 +642,27 @@ impl Mesh {
       }
       let call_id = mesh.alloc_id();
       let m = mesh.clone();
-      mesh.pending_request(PendingKind::Call, call_id, move || {
-        let reply: Deferred<Vec<u8>, RemoteFault> = Deferred::new();
-        m.inner.pending_calls.lock().expect("calls").insert(
-          call_id,
-          PendingCall {
-            reply: reply.clone(),
-          },
-        );
-        let sent = m.send_to(
-          to.node().as_str(),
-          ProcessEnvelope::Call {
-            to: PidWire::from(&to),
+      mesh.outgoing_trace().flat_map(move |trace| {
+        let p = m.clone();
+        m.pending_request(PendingKind::Call, call_id, move || {
+          let reply: Deferred<Vec<u8>, RemoteFault> = Deferred::new();
+          p.inner.pending_calls.lock().expect("calls").insert(
             call_id,
-            msg,
-            trace: TraceContext::new(),
-          },
-        );
-        await_reply(sent, reply, timeout)
+            PendingCall {
+              reply: reply.clone(),
+            },
+          );
+          let sent = p.send_to(
+            to.node().as_str(),
+            ProcessEnvelope::Call {
+              to: PidWire::from(&to),
+              call_id,
+              msg,
+              trace,
+            },
+          );
+          await_reply(sent, reply, timeout)
+        })
       })
     })
   }
@@ -525,16 +763,23 @@ impl Mesh {
   ) -> Result<(), RemoteFault> {
     let origin_name = origin.map(NodeId::name);
     match envelope {
-      ProcessEnvelope::Cast { to, msg, .. } => {
+      ProcessEnvelope::Cast { to, msg, trace } => {
         let pid = to.to_pid();
-        self.inner.registry.deliver_cast(&pid, &msg)
+        let delivered = self.inner.registry.deliver_cast(&pid, &msg);
+        self.record_receipt("mesh.cast", origin_name, &trace);
+        delivered
       }
-      ProcessEnvelope::Info { to, msg, .. } => {
+      ProcessEnvelope::Info { to, msg, trace } => {
         let pid = to.to_pid();
-        self.inner.registry.deliver_info(&pid, &msg)
+        let delivered = self.inner.registry.deliver_info(&pid, &msg);
+        self.record_receipt("mesh.info", origin_name, &trace);
+        delivered
       }
       ProcessEnvelope::Call {
-        to, call_id, msg, ..
+        to,
+        call_id,
+        msg,
+        trace,
       } => {
         let pid = to.to_pid();
         let wait = match self.inner.registry.deliver_call::<HNil>(&pid, &msg) {
@@ -567,6 +812,10 @@ impl Mesh {
             );
           })
         });
+        // The caller's span is the parent of the span that covers handling the call.
+        let relay = self
+          .receiving_span(relay, "mesh.call", "server", origin_name, &trace)
+          .unwrap_or_else(|untraced| untraced);
         drop(self.inner.process.runtime().fork(relay));
         Ok(())
       }
@@ -724,6 +973,83 @@ impl Mesh {
         }
         Ok(())
       }
+      ProcessEnvelope::GlobalRegister { claim } => {
+        global_registry::on_register(self, origin, claim);
+        Ok(())
+      }
+      ProcessEnvelope::GlobalUnregister { name, pid } => {
+        global_registry::on_unregister(self, origin, &name, &pid);
+        Ok(())
+      }
+      ProcessEnvelope::GlobalSync { claims } => {
+        global_registry::on_sync(self, origin, claims);
+        Ok(())
+      }
+      ProcessEnvelope::Reliable {
+        seq,
+        floor,
+        message,
+      } => {
+        // Without an authenticated sender there is no window to dedup in: at-most-once.
+        let Some(from) = origin else {
+          return self.dispatch(None, message.into_envelope());
+        };
+        let (received, upto) = self.inner.delivery.receive(from, seq, floor);
+        let delivered = match received {
+          Received::Fresh => self.dispatch(origin, message.into_envelope()),
+          Received::Duplicate => Ok(()),
+          Received::OutOfWindow => return Ok(()),
+        };
+        // Acknowledged after delivery, whatever its outcome: retransmitting cannot help.
+        self.reply(origin_name, ProcessEnvelope::Ack { upto, seq });
+        delivered
+      }
+      ProcessEnvelope::Ack { upto, seq } => {
+        if let Some(from) = origin {
+          let failed = self.inner.delivery.on_ack(from, upto, seq);
+          self.inner.delivery.notify(failed);
+        }
+        Ok(())
+      }
+    }
+  }
+
+  /// `Ok(eff)` in the receiving span `name` of a message that carried `trace`, under the
+  /// propagator's hook (so the sender's span is its parent); `Err(eff)`, untouched, when the
+  /// message carried no context or the propagator opens no span.
+  fn receiving_span(
+    &self,
+    eff: Effect<(), Never>,
+    name: &'static str,
+    kind: &'static str,
+    origin: Option<&str>,
+    trace: &TraceContext,
+  ) -> Result<Effect<(), Never>, Effect<(), Never>> {
+    if trace.is_empty() {
+      return Err(eff);
+    }
+    let Some(hook) = self.propagator().receiver_hook(trace) else {
+      return Err(eff);
+    };
+    let mut attributes = vec![
+      ("otel.kind".to_string(), kind.to_string()),
+      (
+        "mesh.from".to_string(),
+        origin.unwrap_or("unknown").to_string(),
+      ),
+    ];
+    if let Some(parent) = traceparent_in(trace) {
+      attributes.push(("mesh.parent".to_string(), parent.to_string()));
+    }
+    Ok(eff.with_span_attrs(name, attributes).with_span_hook(hook))
+  }
+
+  /// Record the receipt of a cast or info that carried `trace` as a span under the sender's.
+  /// The message is already in the mailbox (delivery stays synchronous and ordered); the span
+  /// runs on a daemon fiber.
+  fn record_receipt(&self, name: &'static str, origin: Option<&str>, trace: &TraceContext) {
+    if let Ok(span) = self.receiving_span(succeed(()), name, "consumer", origin, trace) {
+      drop(self.inner.process.runtime().fork(span));
     }
   }
 
@@ -827,6 +1153,25 @@ impl Mesh {
       .await
       .map_err(|e| RemoteFault::Decode(e.to_string()))
   }
+}
+
+/// `peer`'s retransmission driver: after `delay`, send every unacknowledged message again and
+/// go round with the backed-off delay, until nothing is unacknowledged or the mesh is gone.
+fn retransmit_loop(mesh: Weak<MeshInner>, peer: String, delay: Duration) -> Effect<(), Never> {
+  sleep(delay).flat_map(move |()| {
+    let Some(inner) = mesh.upgrade() else {
+      return succeed(());
+    };
+    let live = Mesh { inner };
+    let Some((frames, next)) = live.inner.delivery.tick(&peer) else {
+      return succeed(());
+    };
+    for frame in frames {
+      let _ = live.send_to(&peer, frame);
+    }
+    drop(live);
+    retransmit_loop(mesh, peer, next)
+  })
 }
 
 /// Wait for the reply to a request handed to the peer (`sent`), up to `timeout`.

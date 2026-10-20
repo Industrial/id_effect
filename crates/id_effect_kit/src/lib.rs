@@ -3,9 +3,9 @@
 //!
 //! ```toml
 //! [dependencies]
-//! id_effect_kit = { version = "0.10", features = ["web", "otel"] }
+//! id_effect_kit = { version = "0.11", features = ["web", "otel"] }
 //! # The derive and `effect!` macros expand to `::id_effect::` paths; keep the core crate too.
-//! id_effect = "0.10"
+//! id_effect = "0.11"
 //! ```
 //!
 //! ## Features
@@ -21,7 +21,10 @@
 //! | `repository` | `sql` + `#[derive(Entity)]` and `Repository<T>` | `sql::repository` |
 //! | `audit` | `sql` + the hash-chained audit log (PostgreSQL) | `sql::audit` |
 //! | `otel` | `id_effect_opentelemetry` (OTLP, config loading; with `sql`: `instrumented_sql_layer`, with `http-client`: `TracedHttpClient::layer`) | `otel` |
-//! | `cluster` | `id_effect_node` (with `web`: also `axum::cluster`) | `node` |
+//! | `cluster` | `id_effect_node` with the TLS TCP transport (mutual TLS from PEM files; with `web`: also `axum::cluster`) | `node` |
+//! | `mesh-mtls` | `cluster` + the QUIC transport (always mutual TLS) | `node::transport::quic` |
+//! | `kubernetes` | `cluster` + discovery from Kubernetes EndpointSlices | `node::KubernetesDiscovery` |
+//! | `workflow` | `sql` + `jobs` + `id_effect_workflow` (durable workflows: journaled steps, activities, timers, signals) | `workflow` |
 //! | `auth` | `web` + `id_effect_auth` with its Axum middleware and JWTs (with `sql-pg`: `PgSessionStore`; with `redis`: the Redis session store) | `auth` |
 //! | `auth-oidc`, `auth-totp` | `auth` + OpenID Connect (and JWKS) / TOTP | `auth::oidc`, `auth::totp` |
 //! | `authz` | `id_effect_authz` (with `web`: the route guards) | `authz` |
@@ -50,13 +53,19 @@
 //!
 //! ```toml
 //! [dependencies]
-//! id_effect_kit = { version = "0.10", features = ["web", "sql-pg", "migrate"] }
+//! id_effect_kit = { version = "0.11", features = ["web", "sql-pg", "migrate"] }
 //! [dev-dependencies]
-//! id_effect_kit = { version = "0.10", features = ["test"] }
+//! id_effect_kit = { version = "0.11", features = ["test"] }
 //! ```
 //!
 //! [`graph::LayerGraph`] registers an app's layers by name and renders their dependency edges
 //! as text or DOT, flagging capabilities nobody provides (`id-effect doctor --graph`).
+//!
+//! [`posture::Posture`] is the startup security check of ADR 0013 (R10): named probes (console
+//! guarded, docs closed, mesh encrypted, redaction, SSRF guard, CSRF, load shedding, no
+//! memory-only security state, no unaccepted opt-out) over what the app states and what the
+//! posture registry recorded. The `prod` profile refuses to start on a failed probe; `dev` and
+//! `test` report and start.
 //!
 //! ## Quick start
 //!
@@ -85,6 +94,7 @@
 #![deny(missing_docs)]
 
 pub mod graph;
+pub mod posture;
 pub mod prelude;
 
 pub use id_effect;
@@ -157,6 +167,11 @@ pub use id_effect_logger as logger;
 /// Event sourcing ([`id_effect_events`]); feature `events`.
 #[cfg(feature = "events")]
 pub use id_effect_events as events;
+
+/// Durable workflows ([`id_effect_workflow`]): journaled steps replayed on resume, activities
+/// as jobs, durable timers, signals; feature `workflow`.
+#[cfg(feature = "workflow")]
+pub use id_effect_workflow as workflow;
 
 /// Test support ([`id_effect_test`]): containers, isolated databases, fixtures, the in-process
 /// HTTP client; feature `test`, meant for `[dev-dependencies]`.

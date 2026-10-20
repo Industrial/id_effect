@@ -68,15 +68,87 @@ async fn health_and_ready_are_up() {
     assert!(body.contains("\"status\":\"up\""), "{body}");
 }
 
+/// `/metrics` answers only a scrape with the metrics token (`METRICS_TOKEN`), and counts
+/// requests by route.
 #[tokio::test]
-async fn metrics_count_requests_by_route() {
+async fn l2_template_metrics_not_public() {
+    use id_effect_kit::axum::metrics::guarded_metrics_router;
+    use {{crate_name}}::MetricsToken;
+
     let app = test_app();
     call(&app, Method::GET, "/").await;
     let (status, _, body) = call(&app, Method::GET, "/metrics").await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    assert!(!body.contains("greetings_total"), "{body}");
+
+    let metrics: Router = guarded_metrics_router(MetricsToken::new("scrape"));
+    let scrape = |token: &'static str| {
+        Request::get("/metrics")
+            .header("authorization", token)
+            .body(Body::empty())
+            .unwrap()
+    };
+    let wrong = metrics
+        .clone()
+        .oneshot(scrape("Bearer scrapf"))
+        .await
+        .unwrap();
+    assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+    let answer = metrics.oneshot(scrape("Bearer scrape")).await.unwrap();
+    assert_eq!(answer.status(), StatusCode::OK);
+    let bytes = answer.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8_lossy(&bytes);
     assert!(body.contains("greetings_total"), "{body}");
     let line = r#"http_server_requests_total{method="GET",route="/",status="200"}"#;
     assert!(body.contains(line), "{body}");
+}
+
+/// The app as generated passes the `prod` posture check (ADR 0013 R10): building it takes no
+/// opt-out, and what `posture()` states about it (CSRF on, no `/docs`, no mesh, the console
+/// guarded or absent) holds with the default in-flight cap.
+#[test]
+fn template_service_passes_prod_posture() {
+    use id_effect_kit::axum::HostConfig;
+    use id_effect_kit::posture::Posture;
+    use {{crate_name}}::posture;
+
+    let _app = test_app();
+    let stated = posture(Posture::new("prod").host(&HostConfig::default()));
+    let report = stated.check();
+    assert!(report.passed(), "{report}");
+    assert!(report.opt_outs().is_empty(), "{report}");
+    assert!(report.enforce().is_ok());
+}
+
+/// Every route the app serves declares its access (ADR 0013 R1): the typed routes and
+/// `plain_routes()` are the whole surface.
+#[tokio::test]
+async fn h8_every_template_route_declares_access() {
+    use {{crate_name}}::plain_routes;
+
+    let app = test_app();
+    for info in plain_routes() {
+        assert!(info.access.is_served(), "{} {}", info.method, info.path);
+        let (status, _, body) = call(&app, Method::GET, &info.path).await;
+        assert_ne!(status, StatusCode::NOT_FOUND, "{}: {body}", info.path);
+    }
+    let (status, _, _) = call(&app, Method::GET, "/nowhere").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// A form larger than `BODY_LIMIT` is answered by the limit layer (a Problem), not by the CSRF
+/// check reading it (plain text): the limit and timeout layers wrap the security layer.
+#[tokio::test]
+async fn m4_template_limit_layers_wrap_security_layer() {
+    let form = vec![b'a'; {{crate_name}}::BODY_LIMIT + 1];
+    let request = Request::post("/")
+        .header("content-type", "application/x-www-form-urlencoded")
+        .header("content-length", form.len())
+        .body(Body::from(form))
+        .unwrap();
+    let answer = test_app().oneshot(request).await.unwrap();
+    assert_eq!(answer.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(answer.headers()["content-type"], "application/problem+json");
 }
 
 /// `--describe-layers` prints the layer graph (`id-effect doctor --graph`) and exits.
@@ -95,18 +167,21 @@ fn describe_layers_prints_the_graph() {
 }
 {{#if console}}
 
-/// The console answers its API on the loopback listener, where every request is the operator.
+/// In the `dev` profile every console request is the local operator; in any other profile
+/// nobody is, so the console answers `401` until real authentication is added.
 #[tokio::test]
-async fn console_api_answers_the_local_operator() {
-    use {{crate_name}}::console::router;
+async fn m6_loopback_operator_only_in_dev() {
+    use {{crate_name}}::console::routes;
 
     let health = HealthRegistry::new();
 {{#if !jobs}}
-    let console = router(&health);
+    let console = routes(&health, true);
+    let prod = routes(&health, false);
 {{/if}}
 {{#if jobs}}
     let queue = id_effect_kit::jobs::MemoryJobQueue::new(id_effect::WallClock::system());
-    let console = router(&health, queue);
+    let console = routes(&health, queue.clone(), true);
+    let prod = routes(&health, queue, false);
     let (status, _, body) = call(&console, Method::GET, "/_console/api/jobs").await;
     assert_eq!(status, StatusCode::OK, "{body}");
 {{/if}}
@@ -114,6 +189,47 @@ async fn console_api_answers_the_local_operator() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let (status, _, _) = call(&console, Method::GET, "/_console").await;
     assert_eq!(status, StatusCode::OK);
+    for path in ["/_console/api/health", "/_console"] {
+        let (status, _, body) = call(&prod, Method::GET, path).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}: {body}");
+    }
+}
+
+/// On its listener the console answers only its own host and origin (DNS rebinding).
+#[tokio::test]
+async fn m6_console_rejects_foreign_host_and_origin() {
+    use id_effect_kit::console::ConsoleConfig;
+    use {{crate_name}}::console::routes;
+
+    let health = HealthRegistry::new();
+{{#if !jobs}}
+    let console = routes(&health, true);
+{{/if}}
+{{#if jobs}}
+    let queue = id_effect_kit::jobs::MemoryJobQueue::new(id_effect::WallClock::system());
+    let console = routes(&health, queue, true);
+{{/if}}
+    let console = ConsoleConfig::loopback(9090).check_host_and_origin(console);
+    let get = |host: &'static str, origin: Option<&'static str>| {
+        let request = Request::get("/_console/api/health").header("host", host);
+        let request = match origin {
+            Some(origin) => request.header("origin", origin),
+            None => request,
+        };
+        console
+            .clone()
+            .oneshot(request.body(Body::empty()).unwrap())
+    };
+    let local = get("127.0.0.1:9090", Some("http://127.0.0.1:9090"))
+        .await
+        .unwrap();
+    assert_eq!(local.status(), StatusCode::OK);
+    let rebound = get("attacker.example:9090", None).await.unwrap();
+    assert_eq!(rebound.status(), StatusCode::FORBIDDEN);
+    let cross_site = get("127.0.0.1:9090", Some("https://attacker.example"))
+        .await
+        .unwrap();
+    assert_eq!(cross_site.status(), StatusCode::FORBIDDEN);
 }
 {{/if}}
 {{#if jobs}}

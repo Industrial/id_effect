@@ -1,0 +1,19 @@
+warning: `Arc<Mutex<…>>` / `Arc<RwLock<…>>` used in Effect code
+  --> $DIR/no_mutex_for_fiber_coordination.rs:6:12
+   |
+LL |   counter: Arc<Mutex<u64>>,
+   |            ^^^^^^^^^^^^^^^
+   |
+   = help: use `SynchronizedRef` / `Ref`, or `TRef` / `Stm` transactions (`id_effect_fp`), for shared state across fibers
+   = note: `#[warn(no_mutex_for_fiber_coordination)]` on by default
+
+warning: `Arc<Mutex<…>>` / `Arc<RwLock<…>>` used in Effect code
+  --> $DIR/no_mutex_for_fiber_coordination.rs:7:11
+   |
+LL |   config: Arc<RwLock<String>>,
+   |           ^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `SynchronizedRef` / `Ref`, or `TRef` / `Stm` transactions (`id_effect_fp`), for shared state across fibers
+
+warning: 2 warnings emitted
+

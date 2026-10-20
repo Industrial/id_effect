@@ -66,3 +66,119 @@ scorer instead of naming a node directly.
 On `NodeDown`, remote monitors receive `ExitReason::NoConnection`.
 
 **Runnable example:** `cargo run -p id_effect_node --example 131_two_node_cluster`.
+
+## Trace context across nodes
+
+The effect sends (`Mesh::cast`, `Mesh::send`, `cast_reliable`, `send_reliable` and
+`Mesh::remote_call`) carry the sending fiber's current span in the message's `TraceContext`, a
+list of W3C-style header pairs. A `TracePropagator` writes it on the way out (`inject`) and, on
+the receiving node, chooses the span hook the handling span is opened under (`receiver_hook`).
+That span is `mesh.call` (`otel.kind = server`) around an inbound call, and `mesh.cast` or
+`mesh.info` (`otel.kind = consumer`) for a cast or an info, recorded once the message is in the
+mailbox. Each has the attributes `mesh.from` (the sending node) and `mesh.parent` (the carried
+`traceparent`).
+
+The default propagator, `W3cTraceContext`, writes a `traceparent` from id_effect's own span ids
+(`traceparent_of`) and opens no receiving spans until it is given a hook:
+
+```rust
+use std::sync::Arc;
+use id_effect::SpanHook;
+use id_effect_node::{Mesh, W3cTraceContext};
+# fn wire(mesh: Mesh, hook: Arc<dyn SpanHook>) -> Mesh {
+mesh.with_trace_propagator(Arc::new(W3cTraceContext::new().with_receiver_hook(hook)))
+# }
+```
+
+`remote_cast` and `remote_info` are the exception: plain functions that run outside any fiber,
+they send an empty trace context, and the receiver opens no span for the message. An effect send
+made outside any span carries none either. Use `Mesh::cast` / `Mesh::send` inside the traced
+effect to keep the trace.
+
+With OpenTelemetry, propagate the OpenTelemetry context instead, so the receiving span is a
+child of the sender's in the exported trace: inject `span_otel_context(span)` with
+`inject_trace_context_into_headers`, and open the receiving span under an `OtelSpanHook` whose
+parent is the extracted context. Both helpers use the global text-map propagator
+(`install_w3c_propagators`), and both nodes need the same `TracePropagator`.
+
+```rust
+use std::sync::Arc;
+use id_effect::{Span, SpanHook};
+use id_effect_node::{Mesh, TraceContext, TracePropagator};
+use id_effect_opentelemetry::{
+  OtelSpanHook, extract_trace_context_from_headers, inject_trace_context_into_headers,
+  span_otel_context,
+};
+use opentelemetry::Context;
+use opentelemetry_sdk::trace::SdkTracerProvider;
+
+struct OtelPropagator {
+  provider: SdkTracerProvider,
+}
+
+impl TracePropagator for OtelPropagator {
+  fn inject(&self, span: &Span, carrier: &mut TraceContext) {
+    if let Some(cx) = span_otel_context(span) {
+      inject_trace_context_into_headers(&cx, carrier);
+    }
+  }
+
+  fn receiver_hook(&self, carrier: &TraceContext) -> Option<Arc<dyn SpanHook>> {
+    let parent = extract_trace_context_from_headers(&Context::new(), carrier);
+    let hook = OtelSpanHook::for_provider(&self.provider, "mesh").with_parent(parent);
+    Some(hook.into_hook())
+  }
+}
+
+# fn wire(mesh: Mesh, provider: SdkTracerProvider) -> Mesh {
+id_effect_opentelemetry::install_w3c_propagators();
+mesh.with_trace_propagator(Arc::new(OtelPropagator { provider }))
+# }
+```
+
+## Finding peers
+
+A joining node asks a `Discovery` strategy where to announce itself; an empty
+answer means it is the first node and forms the cluster. `StaticDiscovery`
+holds a fixed list, `DnsDiscovery` resolves one `host:port` to many peers, and
+`ChainedDiscovery` tries strategies in order until one answers.
+
+In Kubernetes, feature `kubernetes` adds `KubernetesDiscovery`, which asks the
+API server for the ready endpoints of a headless service instead of trusting
+DNS. It reads the `discovery.k8s.io/v1` EndpointSlices of the service with its
+own small HTTP/1.1 client (no kube-rs) over rustls, and verifies the API server
+against the cluster CA; there is no option to skip that check. The
+service-account mount (`/var/run/secrets/kubernetes.io/serviceaccount`)
+supplies the CA, the namespace, and the bearer token, which is re-read on every
+listing because projected tokens rotate.
+
+```rust,ignore
+use id_effect_node::discovery::{ChainedDiscovery, Discovery, DnsDiscovery, KubernetesDiscovery};
+
+// API server from KUBERNETES_SERVICE_HOST/PORT; "mesh" is the headless
+// service, 4369 the mesh port announced to on every address.
+let k8s = KubernetesDiscovery::in_cluster("mesh", 4369)?;
+let discovery = ChainedDiscovery::new(vec![
+  Box::new(k8s),
+  Box::new(DnsDiscovery::new("mesh.team-a.svc.cluster.local:4369")),
+]);
+let peers = discovery.candidates().await;
+```
+
+Endpoints with `ready: false` or `terminating: true` are skipped (an unset
+`ready` counts as ready, as the API documents), and the addresses come back
+sorted so every node sees the same order. `candidates()` logs a failure and
+answers empty, which lets a chain fall through to DNS;
+`KubernetesDiscovery::endpoints()` returns the `KubernetesError` instead (`Tls`
+for an untrusted API certificate, `Status(401)` or `Status(403)` for a token
+or RBAC problem). The service account needs `list` on `endpointslices`:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: mesh-discovery }
+rules:
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["list"]
+```

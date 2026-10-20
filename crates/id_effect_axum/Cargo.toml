@@ -28,14 +28,14 @@ tower = ["dep:tower"]
 openapi = []
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.10.1", features = [
+id_effect = { path = "../id_effect", version = "0.11.0", features = [
   "schema-serde",
 ] }
-id_effect_config = { path = "../id_effect_config", version = "0.10.1" }
-id_effect_platform = { path = "../id_effect_platform", version = "0.10.1" }
-id_effect_node = { path = "../id_effect_node", version = "0.10.1", optional = true }
+id_effect_config = { path = "../id_effect_config", version = "0.11.0" }
+id_effect_platform = { path = "../id_effect_platform", version = "0.11.0" }
+id_effect_node = { path = "../id_effect_node", version = "0.11.0", optional = true }
 # `multipart`: typed routes and `ValidForm` read the text fields of `multipart/form-data` bodies.
-axum = { version = "0.8", features = ["multipart"] }
+axum = { version = "0.8.9", features = ["multipart"] }
 http-body = "1"
 http-body-util = "0.1"
 # `server::serve_listener`: the accept loop (header-read timeout, keep-alive limit, connection
@@ -65,6 +65,9 @@ tower-service = "0.3.3"
 # Web hardening (`server::security`): CORS, CSRF tokens, CSP nonces/hashes, signed cookies.
 base64 = "0.22.1"
 cookie = { version = "0.18.1", features = ["signed", "private"] }
+# The CSRF cookie's signature, keyed once per layer (`cookie`'s signed-jar MAC); already in
+# cookie's dependency tree.
+hmac = "0.12.1"
 rand = "0.9"
 sha2 = "0.10.9"
 subtle = "2.6.1"
@@ -80,7 +83,10 @@ tower-http = { version = "0.6.8", default-features = false, features = [
 # `HTTP-date` validators (`Last-Modified` / `If-Modified-Since`); already in tower-http's `fs` tree.
 httpdate = "1.0.3"
 # `middleware::RateLimitLayer`: token buckets on the effect runtime.
-id_effect_resilience = { path = "../id_effect_resilience", version = "0.10.1" }
+id_effect_resilience = { path = "../id_effect_resilience", version = "0.11.0" }
+# `route::Router::into_axum` logs the access report (public routes, opt-outs) at startup;
+# already in axum's dependency tree.
+tracing = "0.1"
 
 [[bench]]
 name = "gate_request"
@@ -92,10 +98,18 @@ criterion = "0.8.2"
 # Path-only: cargo publish resolves path+version dev-deps on crates.io.
 id_effect_platform = { path = "../id_effect_platform", features = ["auth"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util"] }
-tower = { version = "0.5.3", features = ["util"] }
+# `load-shed` + `limit`: load shedding in front of the secure-stack bench (benches/gate_request.rs).
+tower = { version = "0.5.3", features = ["util", "load-shed", "limit"] }
+# The secure-stack bench's authentication, route guard and default log redaction. Path-only, like
+# id_effect_platform above (id_effect_auth and id_effect_authz depend on this crate).
+id_effect_auth = { path = "../id_effect_auth", features = ["axum"] }
+id_effect_authz = { path = "../id_effect_authz", features = ["axum"] }
+id_effect_logger = { path = "../id_effect_logger" }
 # tests/openapi.rs validates generated documents against the OpenAPI 3.1 meta-schema (MIT;
 # no remote reference resolution needed, so no default features).
 jsonschema = { version = "0.59", default-features = false }
+# tests/ui.rs: compile-fail cases (H8: a route without an access decision does not compile).
+trybuild = "1"
 
 [[example]]
 name = "050_tower_effect_service"

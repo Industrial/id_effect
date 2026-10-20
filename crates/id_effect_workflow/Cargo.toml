@@ -1,0 +1,48 @@
+[package]
+name = "id_effect_workflow"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Durable workflows for id_effect services: journaled steps replayed on resume, on id_effect_sql and id_effect_jobs"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_workflow"
+
+[dependencies]
+# `schema-serde`: inputs, outputs and step results go `Schema` → `Unknown` →
+# `serde_json::Value` → `jsonb`.
+id_effect = { path = "../id_effect", version = "0.11.0", features = [
+  "schema-serde",
+] }
+# `PgWorkflowStore` runs on any `SqlClient`; `migrate` ships the schema as a `Migrator` with its
+# own tracking table (`migrator()`). No duroxide, no SQLite (0.11.0 D6).
+id_effect_sql = { path = "../id_effect_sql", version = "0.11.0", features = [
+  "migrate",
+] }
+# Activities and durable timers are jobs on its queue: `run_at`, unique keys, retries by a
+# `Schedule`, workers on any node (0.11.0 D6).
+id_effect_jobs = { path = "../id_effect_jobs", version = "0.11.0" }
+# Same floors as id_effect_sql (whose value types they are).
+jiff = "0.2.23"
+serde_json = "1"
+
+[dev-dependencies]
+# The live PostgreSQL tests (tests/{engine,activities,timers,signals}_pg.rs) connect with the pg
+# driver.
+id_effect_sql = { path = "../id_effect_sql", features = ["pg", "migrate"] }
+id_effect_tokio = { path = "../id_effect_tokio" }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh (ADR 0010 Amendment 7). Tier
+# `platform` (ADR 0012 rule 4): the Ledger reference app runs its account closures on it.
+tier = "platform"

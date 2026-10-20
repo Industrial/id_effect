@@ -83,8 +83,10 @@ five seconds stops the supervisor with `Shutdown`, escalating to its own parent.
 the environment, so they bind inside any program) — run them at the edge with `block_on` on a
 plain thread or `Runtime::run(..).await` inside an async runtime. The plain-code entry points
 (`ProcessNode::spawn`, `link`, `monitor_*`, `exit`, `Addr::send_now`) never run an effect or wait
-on another process: they only touch the node's own tables, enqueue into an unbounded `Mailbox`
-and fork fibers, so they are safe to call from anywhere, including a current-thread runtime.
+on another process: they only touch the node's own tables, enqueue into a bounded `Mailbox`
+(10,000 user messages by default, `SpawnOptions::mailbox_capacity`; a full mailbox refuses the
+message instead of waiting) and fork fibers, so they are safe to call from anywhere, including a
+current-thread runtime.
 
 For deterministic tests, build the node with `ProcessNode::on_executor(name, test_executor)` and
 drive it with `run_until_stalled` / `advance`: call timeouts, shutdown deadlines and restart

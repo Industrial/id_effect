@@ -1,0 +1,3 @@
+{"alg": "HS512"}
+---
+{"sub": 7, "exp": "soon", "nbf": 1e+300, "aud": [1, null]}

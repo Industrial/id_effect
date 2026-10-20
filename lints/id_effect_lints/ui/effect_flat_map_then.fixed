@@ -1,0 +1,35 @@
+// run-rustfix
+// L-03: `.flat_map(move |_| next)` on an `Effect` (MachineApplicable: `.then(next)`).
+#![allow(dead_code)]
+use std::marker::PhantomData;
+
+struct Effect<X, Y, Z>(PhantomData<(X, Y, Z)>);
+
+impl<X, Y, Z> Effect<X, Y, Z> {
+  fn flat_map<B>(self, _f: impl FnOnce(X) -> Effect<B, Y, Z>) -> Effect<B, Y, Z> {
+    Effect(PhantomData)
+  }
+  fn then<B>(self, _next: Effect<B, Y, Z>) -> Effect<B, Y, Z> {
+    Effect(PhantomData)
+  }
+}
+
+fn load() -> Effect<u8, (), ()> {
+  Effect(PhantomData)
+}
+
+fn save() -> Effect<(), (), ()> {
+  Effect(PhantomData)
+}
+
+fn sequenced() -> Effect<(), (), ()> {
+  let next = save();
+  load().then(next)
+}
+
+// Building the next effect inside the closure defers it: left alone.
+fn deferred() -> Effect<(), (), ()> {
+  load().flat_map(|_| save())
+}
+
+fn main() {}

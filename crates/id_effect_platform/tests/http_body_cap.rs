@@ -11,7 +11,7 @@ use std::net::{TcpListener, TcpStream};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use common::run;
+use common::{local_config, run};
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
   HttpClient, HttpRequest, HttpResponse, ReqwestHttpClient, StreamingHttpResponse,
@@ -86,11 +86,11 @@ fn capped(url: String) -> HttpRequest {
 }
 
 async fn execute(req: HttpRequest) -> Result<HttpResponse, HttpError> {
-  run(ReqwestHttpClient::default_client().execute(req)).await
+  run(ReqwestHttpClient::from_config(&local_config()).execute(req)).await
 }
 
 async fn execute_stream(req: HttpRequest) -> Result<StreamingHttpResponse, HttpError> {
-  run(ReqwestHttpClient::default_client().execute_stream(req)).await
+  run(ReqwestHttpClient::from_config(&local_config()).execute_stream(req)).await
 }
 
 /// Writes a few body bytes of a far larger declared body, then holds the connection open

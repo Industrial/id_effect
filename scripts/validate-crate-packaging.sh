@@ -58,6 +58,10 @@ declare -A LEVEL=(
     [id_effect_jobs]=5
     [id_effect_mail]=5
     [id_effect_console]=5
+    # 0.11 (ADR 0010 Amendment 7): the workflow engine journals on id_effect_sql and runs activities
+    # as id_effect_jobs jobs, so it follows jobs. tests/security_compile_fail is publish = false and
+    # outside crates/, so it is never listed.
+    [id_effect_workflow]=5
 )
 
 # Publish order (levels ascending; within a level, dependencies first).
@@ -69,7 +73,7 @@ declare -a ORDER=(
     id_effect_config id_effect_fsm id_effect_events id_effect_messaging id_effect_storage
     id_effect_node id_effect_axum id_effect_opentelemetry
     id_effect_authz id_effect_auth id_effect_redis id_effect_test
-    id_effect_jobs id_effect_mail id_effect_console
+    id_effect_jobs id_effect_mail id_effect_console id_effect_workflow
     id_effect_kit id_effect_tool
 )
 

@@ -5,6 +5,7 @@
 use std::convert::Infallible;
 
 use axum::body::Body;
+use axum::http::request::Parts;
 use axum::http::{Method, Request, StatusCode};
 use http_body_util::BodyExt;
 use id_effect::schema::{
@@ -16,7 +17,9 @@ use id_effect_axum::PROBLEM_JSON;
 use id_effect_axum::openapi::{
   ApiKeyLocation, Info, OpenApi, ParameterIn, SecurityScheme, Server, Tag,
 };
-use id_effect_axum::route::{Endpoint, Input, Route, RouteInfo, Router, SchemaRef};
+use id_effect_axum::route::{
+  Endpoint, GuardFuture, Guarded, Input, Route, RouteGuard, RouteInfo, Router, SchemaRef,
+};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -216,19 +219,36 @@ fn ok<P, Q, H, B>(_: &mut (), _: Input<P, Q, H, B>) -> Effect<&'static str, Infa
   succeed("ok")
 }
 
+/// A guard admitting everyone, named after its policy.
+struct Policy(&'static str);
+
+impl RouteGuard for Policy {
+  fn policy(&self) -> &str {
+    self.0
+  }
+
+  fn check<'a>(&'a self, _: &'a Parts) -> GuardFuture<'a> {
+    Box::pin(async { Ok(()) })
+  }
+}
+
 /// `endpoint` guarded by `policies` (what `id_effect_authz`'s `.authorize(..)` records).
-fn guarded(endpoint: Endpoint, policies: &[&str]) -> Endpoint {
-  let (mut info, method_router) = endpoint.into_parts();
-  info
-    .policies
-    .extend(policies.iter().map(|p| (*p).to_owned()));
-  Endpoint::from_parts(info, method_router)
+fn guarded(endpoint: Endpoint, policies: &[&'static str]) -> Endpoint<(), Guarded> {
+  let (first, rest) = policies
+    .split_first()
+    .expect("a guarded route has a policy");
+  rest
+    .iter()
+    .fold(endpoint.guard(Policy(first)), |endpoint, policy| {
+      endpoint.guard(Policy(policy))
+    })
 }
 
 fn router() -> Router {
   Router::new()
     .route(
       Route::get("/accounts")
+        .public()
         .query::<ListQuery>()
         .headers::<Tenancy>()
         .response::<Account>(StatusCode::OK)
@@ -243,6 +263,7 @@ fn router() -> Router {
     ))
     .route(
       Route::get("/accounts/{id}")
+        .public()
         .path::<AccountId>()
         .response::<Account>(StatusCode::OK)
         .response::<v2::Account>(StatusCode::OK)
@@ -251,19 +272,21 @@ fn router() -> Router {
     )
     .route(
       Route::get("/tenants/{tenant}/accounts/{id}")
+        .public()
         .path::<TenantAccount>()
         .handler(ok),
     )
-    .route(Route::post("/signup").form::<Signup>().handler(ok))
-    .route(Route::get("/search").query::<Search>().handler(ok))
+    .route(Route::post("/signup").public().form::<Signup>().handler(ok))
+    .route(Route::get("/search").public().query::<Search>().handler(ok))
     .route(
       Route::put("/forests/{id}")
+        .public()
         .body::<Forest>()
         .response::<TreeDoc>(StatusCode::OK)
         .handler(ok),
     )
-    .route(Route::get("/files/{*rest}").handler(ok))
-    .route(Route::get("/").handler(ok))
+    .route(Route::get("/files/{*rest}").public().handler(ok))
+    .route(Route::get("/").public().handler(ok))
 }
 
 fn document() -> OpenApi {
@@ -538,8 +561,8 @@ fn security_schemes_are_declared_and_required_by_guarded_operations() {
     ])
   );
   assert_eq!(post["x-policies"], json!(["accounts.write", "staff"]));
-  // Unguarded routes stay public.
-  assert!(json["paths"]["/accounts"]["get"].get("security").is_none());
+  // Public routes declare that they need no authentication, whatever schemes exist.
+  assert_eq!(json["paths"]["/accounts"]["get"]["security"], json!([]));
   assert!(
     json["paths"]["/accounts"]["get"]
       .get("x-policies")

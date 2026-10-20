@@ -154,23 +154,26 @@ fn create_account(
   succeed((StatusCode::CREATED, Json(account)))
 }
 
-/// The typed routes of the API.
+/// The typed routes of the API, all public (documented with an empty `security`).
 pub fn routes() -> Router<Store> {
   Router::new()
     .route(
       Route::get("/accounts")
+        .public()
         .query::<ListAccounts>()
         .response::<AccountList>(StatusCode::OK)
         .handler(list_accounts),
     )
     .route(
       Route::post("/accounts")
+        .public()
         .body::<NewAccount>()
         .response::<Account>(StatusCode::CREATED)
         .handler(create_account),
     )
     .route(
       Route::get("/accounts/{id}")
+        .public()
         .path::<AccountId>()
         .response::<Account>(StatusCode::OK)
         .handler(show_account),

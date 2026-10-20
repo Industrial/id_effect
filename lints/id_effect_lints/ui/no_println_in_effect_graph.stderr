@@ -1,0 +1,19 @@
+warning: `println!` / `eprintln!` inside an Effect-returning function
+  --> $DIR/no_println_in_effect_graph.rs:8:3
+   |
+LL |   println!("step 1");
+   |   ^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `effect.with_span("step")` or a span hook; remove debug prints before committing
+   = note: `#[warn(no_println_in_effect_graph)]` on by default
+
+warning: `println!` / `eprintln!` inside an Effect-returning function
+  --> $DIR/no_println_in_effect_graph.rs:9:3
+   |
+LL |   eprintln!("step 2");
+   |   ^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `effect.with_span("step")` or a span hook; remove debug prints before committing
+
+warning: 2 warnings emitted
+

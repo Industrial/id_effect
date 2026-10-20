@@ -89,6 +89,45 @@ impl BodyKind {
   }
 }
 
+/// Who may call a route: the access decision every typed route makes (ADR 0013 R1).
+///
+/// [`Router::route`](super::Router::route) only accepts [`Public`](RouteAccess::Public) and
+/// [`Guarded`](RouteAccess::Guarded) endpoints; the deny-by-default layer of
+/// [`Router::into_axum`](super::Router::into_axum) answers 404 for every other route.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum RouteAccess {
+  /// No decision yet ([`Route::public`](super::Route::public) or
+  /// [`Route::guard`](super::Route::guard) not called); such a route cannot be routed.
+  #[default]
+  Undecided,
+  /// Anyone may call the route, anonymous callers included.
+  Public,
+  /// Guards decide before the handler runs; their policy names are in
+  /// [`RouteInfo::policies`].
+  Guarded,
+  /// Routed without a decision through the deprecated
+  /// [`Router::route_unchecked`](super::Router::route_unchecked) (a recorded opt-out).
+  Unchecked,
+}
+
+impl RouteAccess {
+  /// Lower-case name (`"public"`, `"guarded"`, `"unchecked"`, `"undecided"`).
+  pub fn as_str(self) -> &'static str {
+    match self {
+      RouteAccess::Undecided => "undecided",
+      RouteAccess::Public => "public",
+      RouteAccess::Guarded => "guarded",
+      RouteAccess::Unchecked => "unchecked",
+    }
+  }
+
+  /// Whether the deny-by-default layer serves a route with this access.
+  pub fn is_served(self) -> bool {
+    !matches!(self, RouteAccess::Undecided)
+  }
+}
+
 /// Everything a typed route declares. Equality compares the declaration, not
 /// [`handler`](RouteInfo::handler).
 #[derive(Clone, Debug)]
@@ -118,12 +157,16 @@ pub struct RouteInfo {
   /// Documented responses, in declaration order ([`Route::response`](super::Route::response)).
   pub responses: Vec<ResponseInfo>,
   /// Names of the authorization policies guarding the route, outermost last (empty when the
-  /// route is unguarded); filled by guards such as `id_effect_authz`'s `.authorize(..)`.
+  /// route is unguarded); filled by [`Route::guard`](super::Route::guard) and guards such as
+  /// `id_effect_authz`'s `.authorize(..)`.
   pub policies: Vec<String>,
+  /// The route's access decision: [`RouteAccess::Public`], or [`RouteAccess::Guarded`] by
+  /// [`policies`](RouteInfo::policies).
+  pub access: RouteAccess,
 }
 
 impl RouteInfo {
-  /// A route with no declared parts.
+  /// A route with no declared parts and no access decision ([`RouteAccess::Undecided`]).
   pub fn new(method: Method, path: impl Into<String>) -> Self {
     Self {
       method,
@@ -136,6 +179,7 @@ impl RouteInfo {
       body_kind: BodyKind::Json,
       responses: Vec::new(),
       policies: Vec::new(),
+      access: RouteAccess::Undecided,
     }
   }
 }
@@ -153,6 +197,7 @@ impl PartialEq for RouteInfo {
       body_kind,
       responses,
       policies,
+      access,
     } = self;
     *method == other.method
       && *path == other.path
@@ -163,6 +208,7 @@ impl PartialEq for RouteInfo {
       && *body_kind == other.body_kind
       && *responses == other.responses
       && *policies == other.policies
+      && *access == other.access
   }
 }
 

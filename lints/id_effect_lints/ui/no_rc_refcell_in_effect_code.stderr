@@ -1,0 +1,11 @@
+warning: `Rc<RefCell<…>>` found in Effect code
+  --> $DIR/no_rc_refcell_in_effect_code.rs:7:12
+   |
+LL |   entries: Rc<RefCell<Vec<u8>>>,
+   |            ^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `Ref` / `SynchronizedRef` from the coordination module for shared cells
+   = note: `#[warn(no_rc_refcell_in_effect_code)]` on by default
+
+warning: 1 warning emitted
+

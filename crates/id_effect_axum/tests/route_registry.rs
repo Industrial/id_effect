@@ -6,7 +6,9 @@ use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use id_effect::schema::{self, HasSchema, Schema, SchemaKind};
 use id_effect::{Effect, succeed};
-use id_effect_axum::route::{Input, Route, RouteInfo, RouteRegistry, Router, SchemaRef};
+use id_effect_axum::route::{
+  Input, Route, RouteAccess, RouteInfo, RouteRegistry, Router, SchemaRef,
+};
 use id_effect_axum::routing;
 use tower::ServiceExt;
 
@@ -66,6 +68,7 @@ fn router() -> Router {
   Router::new()
     .route(
       Route::get("/accounts/{id}")
+        .public()
         .path::<AccountId>()
         .headers::<Account>()
         .response::<Account>(StatusCode::OK)
@@ -74,14 +77,16 @@ fn router() -> Router {
     )
     .route(
       Route::put("/accounts/{id}")
+        .public()
         .path::<AccountId>()
         .body::<Account>()
         .handler(ok),
     )
-    .route(Route::patch("/accounts/{id}").handler(ok))
-    .route(Route::delete("/accounts/{id}").handler(ok))
+    .route(Route::patch("/accounts/{id}").public().handler(ok))
+    .route(Route::delete("/accounts/{id}").public().handler(ok))
     .route(
       Route::post("/accounts")
+        .public()
         .query::<Filter>()
         .body::<Account>()
         .response::<Account>(StatusCode::CREATED)
@@ -142,7 +147,13 @@ fn registry_lists_every_route_with_method_path_and_schemas() {
   );
 
   let patch = registry.find(&Method::PATCH, "/accounts/{id}").unwrap();
-  assert_eq!(*patch, RouteInfo::new(Method::PATCH, "/accounts/{id}"));
+  let mut declared = RouteInfo::new(Method::PATCH, "/accounts/{id}");
+  assert_ne!(
+    *patch, declared,
+    "the access decision is part of the declaration"
+  );
+  declared.access = RouteAccess::Public;
+  assert_eq!(*patch, declared);
   assert!(registry.find(&Method::GET, "/nope").is_none());
   assert_eq!((&router.registry().clone()).into_iter().count(), 5);
 }
@@ -179,8 +190,8 @@ async fn merge_with_state_and_plain_routes_keep_the_registry() {
   fn typed(_: &mut St, _: Input) -> Effect<&'static str, Infallible, St> {
     succeed("typed")
   }
-  let a = Router::<St>::new().route(Route::get("/a").handler(typed));
-  let b = Router::default().route(Route::get("/b").handler(typed));
+  let a = Router::<St>::new().route(Route::get("/a").public().handler(typed));
+  let b = Router::default().route(Route::get("/b").public().handler(typed));
   let merged = a.merge(b);
   assert_eq!(merged.routes().count(), 2);
 
@@ -192,7 +203,8 @@ async fn merge_with_state_and_plain_routes_keep_the_registry() {
     ["/a", "/b"]
   );
 
-  // Plain `routing` helpers mount next to typed routes.
+  // Plain `routing` helpers mount next to typed routes (outside the deny-by-default layer,
+  // which covers the routes merged before `into_parts`).
   let app = axum_router.route(
     "/plain",
     routing::get(|_: &mut ()| succeed::<_, Infallible, ()>("plain")),
@@ -206,7 +218,9 @@ async fn merge_with_state_and_plain_routes_keep_the_registry() {
     assert_eq!(res.status(), StatusCode::OK, "{uri}");
   }
 
-  let from: axum::Router = Router::new().route(Route::get("/c").handler(ok)).into();
+  let from: axum::Router = Router::new()
+    .route(Route::get("/c").public().handler(ok))
+    .into();
   let res = from
     .oneshot(Request::builder().uri("/c").body(Body::empty()).unwrap())
     .await

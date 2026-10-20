@@ -1,4 +1,4 @@
-# Platform Scorecard — Method (v2.1)
+# Platform Scorecard — Method (v2.2)
 
 Since method 2.0 (2026-10-16) every score is a **checklist score** (§7): a row's score follows
 mechanically from the level of a framework and the table-stakes checks it meets. §2–§3 describe the
@@ -23,7 +23,7 @@ release proves its progress by re-running this method.
 | Term | Meaning |
 |---|---|
 | Framework | One of 11 columns. Scope per column is fixed in `scorecard.json → frameworks[].scope`. |
-| Row (capability) | One of 82 capabilities, each with a stable `id` (e.g. `sec.authn`) and a one-sentence `measures` definition. Row ids never change. Rows are only added, never removed, and an addition bumps the method version. |
+| Row (capability) | One of 82 capabilities, each with a stable `id` (e.g. `sec.authn`) and a one-sentence `measures` definition. Row ids never change. Rows are only added, never removed, and an addition bumps the method version. A non-goal row (§3.3) stays in the file but leaves the score, so 81 rows are scored since 2.2. |
 | Group | One of 13 groups. Every row belongs to exactly one. |
 | Score | An integer in 1–100: how well the framework covers the row **out of the box**, judged against the best enterprise practice of the day. |
 
@@ -64,9 +64,28 @@ same answer whoever runs it.
 
 If the caps and the judgment disagree, the lower number wins.
 
-### 3.3 Non-goals
-A row marked `stance: non-goal` or `partial-non-goal` is **still scored**. The scorecard never
-hides gaps. The stance only explains why a low score is accepted.
+### 3.3 Non-goals (method 2.2)
+A row's `stance` (`non-goal`, `partial-non-goal`, …) only explains a score; it never changes one.
+What leaves the score is the **non-goal status**, `non_goal: {"decision": "<id>"}` on a row or a
+check. It applies to every framework alike:
+
+- It is set **only by a locked decision** (PLAN-OF-PLANS §3.1), whose id the marker names (`L15`).
+  `--validate` rejects a non-goal without one.
+- **A check id_effect already meets is never a non-goal.** A non-goal is a check the platform has
+  decided it will not meet; a met check stays scored. `--validate` fails if id_effect meets a
+  non-goal check at any stored version.
+- A **non-goal row** gets weight 0: it leaves its group mean, U, E, RT and the row KPIs (§5) for
+  every framework, and it has no targets. It stays in `scorecard.json` (rows are never removed) and
+  on the page, with its scores and stance `non-goal`.
+- A **non-goal check** leaves its row's checklist: a framework meeting `m` of the row's other
+  `n − k` checks scores `clamp(1, cap(L), round(100 · m / (n − k)))` (§7.2). Met lists may still name
+  it for the record; it does not count.
+- A check nobody can meet for a technical reason (`conc.safety#8` per-task heaps and
+  `obs.tracing#8` zero-code agents in Rust) is not a decision, so it stays scored as a gap.
+
+Non-goals since 2.2: row `web.graphql` (L15); checks `fault.reload#2`, `#6`, `#7` and
+`dx.compile#3` (L8), `web.ui#3`, `#4` (L7), `data.backends#4`, `#5` (L6). `dx.repl#3` "live/hot
+reload in dev mode" is not one: id_effect meets it (`id-effect dev`, the L8 substitute).
 
 ## 4. Competitor columns
 - These are expert assessments, frozen as a **snapshot** with the date in
@@ -74,17 +93,19 @@ hides gaps. The stance only explains why a low score is accepted.
 - Snapshots are refreshed at most once a year, and always before 1.0. A refresh is stored as a new
   snapshot. Reports then show id_effect's index under **both** the old and the new snapshot, so that
   "we moved" and "they moved" can be told apart.
-- Competitor scores are never changed in between snapshots, except to fix a factual error. Such a
-  fix is logged in §8 with a reason.
+- Competitor scores are never changed in between snapshots, except to fix a factual error or to
+  apply a scope change set by a locked decision (the 2.2 .NET scope, L15). Either is logged in §8
+  with a reason, and the snapshot date stays.
 
 ## 5. Computation
 
 Let `s(r, f)` be the score of row `r` for framework `f`, and let `G` be the set of groups, each with
-a set of rows `R_g`.
+a set of rows `R_g`. Every row below means a scored row: non-goal rows (§3.3) are left out of each
+step, including the KPIs.
 
 1. **Group score** `GS(g, f) = mean over r in R_g of s(r, f)`.
-2. **Unweighted index** `U(f) = mean over all 82 rows of s(r, f)`. Rows count equally, so large
-   groups weigh more.
+2. **Unweighted index** `U(f) = mean over all scored rows (81 since 2.2) of s(r, f)`. Rows count
+   equally, so large groups weigh more.
 3. **Enterprise index** (headline) `E(f) = Σ_g w_ent(g)·GS(g,f) / Σ_g w_ent(g)`, using the
    `w_enterprise` weights in `scorecard.json → groups`. Groups count equally regardless of how many
    rows they have; the weight sets their importance to a corporate buyer.
@@ -113,7 +134,41 @@ planned(r, v) = max( latest measured score of r at or before v,
 Applying §5 to planned scores gives the **target indices** for a release. At release exit, the
 measured indices are compared with the target indices (see PLAN-OF-PLANS §6).
 
-### 5.2 Reference results (method 2.1, competitor snapshot 2026-10-14)
+### 5.2 Reference results (method 2.2, competitor snapshot 2026-10-14)
+
+| Version | U | E (rank) | RT (rank) | ≥80 | <40 | leader | median gap |
+|---|---|---|---|---|---|---|---|
+| 0.6.0 measured | 39.2 | 37.8 (#10) | 46.5 (#6) | 4 | 45 | 2 | 61 |
+| 0.7.0 measured | 46.1 | 43.7 (#9) | 56.5 (#6) | 13 | 37 | 4 | 38 |
+| 0.8.0 measured | 57.0 | 55.6 (#5) | 64.9 (#2) | 28 | 29 | 7 | 25 |
+| 0.9.0 measured | 68.5 | 68.1 (#3) | 71.4 (#2) | 39 | 19 | 20 | 12 |
+| 0.10.0 measured | 76.6 | 76.6 (#2) | 79.5 (#1) | 49 | 11 | 26 | 12 |
+| 0.11.0 measured | 79.4 | 79.2 (#1) | 83.9 (#1) | 56 | 9 | 31 | 12 |
+| 0.12.0 target | 84.2 | 84.2 (#1) | 86.5 (#1) | 59 | 3 | 33 | 12 |
+| 1.0.0 target | 86.5 | 86.5 (#1) | 88.4 (#1) | 63 | 1 | 37 | 11 |
+
+Competitor indices in the same snapshot (after the §7.4 alignment and the 2.2 .NET scope):
+
+| Framework | U | E | RT |
+|---|---|---|---|
+| .NET | 76.7 | 78.8 | 72.8 |
+| Spring | 70.6 | 73.6 | 64.5 |
+| Phoenix | 60.6 | 59.9 | 59.7 |
+| Effect-TS | 57.8 | 56.6 | 60.8 |
+| ZIO | 53.9 | 51.5 | 56.6 |
+| Laravel | 52.8 | 54.0 | 43.0 |
+| Rails | 52.0 | 52.2 | 41.3 |
+| Django | 46.4 | 46.4 | 37.4 |
+| Next.js | 39.5 | 41.5 | 33.9 |
+| OTP | 37.6 | 36.6 | 43.0 |
+
+Of the .NET move (E 77.3 → 78.8), step 1 of the 2.2 re-base (non-goals) gives 77.9 and step 2
+(Orleans and the Durable Task Framework first-party, §7.4) the other 0.9: `fault.reload` 80 → 100,
+`msg.jobs` 39 → 75, `msg.cron` 39 → 50 (`alignment-2.2.json`).
+
+History: the same tables by method 2.1, frozen at the 2.2 re-base (2026-10-18). They cannot be
+recomputed from `scorecard.json` any more, because 2.2 changed .NET cells and moved targets
+(web.rpc and web.realtime 0.11.0 → 0.12.0, the 0.11.0 bonus rows, web.graphql's targets removed).
 
 | Version | U | E (rank) | RT (rank) | ≥80 | <40 | leader | median gap |
 |---|---|---|---|---|---|---|---|
@@ -126,7 +181,7 @@ measured indices are compared with the target indices (see PLAN-OF-PLANS §6).
 | 0.12.0 target | 82.3 | 82.5 (#1) | 84.8 (#1) | 56 | 3 | 30 | 12 |
 | 1.0.0 target | 84.9 | 85.0 (#1) | 87.1 (#1) | 61 | 1 | 34 | 12 |
 
-Competitor indices in the same snapshot (after the §7.4 alignment):
+Competitor indices under method 2.1 (after the §7.4 alignment, .NET scope before Orleans):
 
 | Framework | U | E | RT |
 |---|---|---|---|
@@ -141,8 +196,9 @@ Competitor indices in the same snapshot (after the §7.4 alignment):
 | Next.js | 38.9 | 41.0 | 33.4 |
 | OTP | 37.3 | 36.6 | 43.2 |
 
-History: the same table by method 1.1 (`scripts/scorecard.sh --method 1`; the v1 judgment scores
-with the §3.2 caps applied strictly, and the v1 targets). The competitor indices under 1.1 are those
+Older history: the same table by method 1.1 (`scripts/scorecard.sh --method 1`; the v1 judgment
+scores with the §3.2 caps applied strictly, and the v1 targets; every row counts, including the
+non-goal row). The competitor indices under 1.1 are those
 of method 1.0 (.NET E 85.4, Spring 81.1, Phoenix 77.6, Laravel 71.3).
 
 | Version | U | E (rank) | RT (rank) | ≥80 | <40 | leader | median gap |
@@ -157,12 +213,12 @@ of method 1.0 (.NET E 85.4, Spring 81.1, Phoenix 77.6, Laravel 71.3).
 | 1.0.0 target | 80.3 | 80.3 (#3) | 83.3 (#1) | 59 | 1 | 10 | 11 |
 
 Under method 1.0 (before the caps) the 0.7.0 row read U 49.1, E 46.8 (#11), RT 59.1 (#7). The
-method 1.1 history stops at 0.7.0; 0.8.0 onward is scored by method 2.1 only. Measuring a version
+method 1.1 history stops at 0.7.0; 0.8.0 onward is scored by method 2.x only. Measuring a version
 raises the planned scores of later targets (§5.1 takes the higher of the measured base and the
 target), which is why the 0.9.0+ rows above moved when 0.8.0 was measured.
 
-Any implementation of §5 **must** reproduce these tables exactly from `scorecard.json`. They are the
-tool's self-test fixture.
+Any implementation of §5 **must** reproduce the method 2.2 tables and the method 1.1 history exactly
+from `scorecard.json`. They are the tool's self-test fixture; the frozen 2.1 tables are not.
 
 ## 6. Re-test protocol (each release)
 
@@ -208,6 +264,9 @@ For a row with `n` checks, a framework at level `L` that meets `m` of them score
 ```
 s = clamp(1, cap(L), round(100 × m / n))
 ```
+
+Since 2.2, `n` and `m` leave out the row's non-goal checks (§3.3): with `k` of them, the row scores
+over `n − k` checks.
 
 | Level | Meaning (at the scored tag) | cap(L) |
 |---|---|---|
@@ -259,6 +318,20 @@ v2 is **primary since method 2.0** (owner decision L13, PLAN-OF-PLANS §7.0, re-
   meets at least one check and `absent` when it meets none, so the score is the share of checks met;
   a check counts as met only when it is a committed artifact (a file, a CI job or a published
   policy). `--validate` enforces the levels.
+- **Method 2.2 (2026-10-18, PLAN-OF-PLANS §7.0b, L15).** Two changes, recorded cell by cell in
+  `alignment-2.2.json`. (1) Non-goal rows and checks leave the score for every framework (§3.3);
+  stored scores of the rows with non-goal checks are their checklist scores over the other checks,
+  and their targets are re-based the §7.4 way ("meet `k` of `n`" becomes "meet `k` of `n − k'`",
+  since id_effect meets none of the non-goal checks). (2) The .NET scope adds **Orleans** and the
+  **Durable Task Framework** as first-party Microsoft. The 33 Orleans/Durable Task cells that
+  `alignment-2.0.json` classified `recommended` become first-party (no score change, they already
+  counted), and every fault, dist, conc and msg row was re-checked for checks Orleans or the Durable
+  Task Framework meet that the snapshot did not credit, by the alignment rule above, against the
+  public Microsoft docs (URLs per cell). Ten checks become met first-party: `fault.reload#4`
+  (Orleans rolling upgrades) and `msg.jobs#3` were not credited before; `msg.jobs#1 #2 #5 #6 #7`
+  and `msg.cron#4 #6 #7` were met only by Hangfire or Quartz (`other`). Both rows now score at
+  `production` without those libraries, so their remaining `other` checks drop by the alignment
+  rule. A check met only by a preview package (Durable Task ScheduledTasks) is not credited.
 
 ## 8. Change log
 
@@ -275,3 +348,7 @@ v2 is **primary since method 2.0** (owner decision L13, PLAN-OF-PLANS §7.0, re-
 | 2026-10-17 | 2.1 | 0.10 decision D1 applied: E1.9 (the dylint port of the lint crate) did not start by the end of wave 2, so `dx.lint`'s 0.10.0 target (63) moves to 0.11.0. Planned 0.10.0 E 74.1 → 73.8 (#2), red 11 → 12. |
 | 2026-10-16 | 2.1 | 0.8.0 measured by blind re-score (§6; five assessors without targets): E 55.2 (#5), RT 64.4 (#2), red 31. One miss carried over (`data.jsonschema` 38 vs 50). The method 1.1 history may stop before the latest measured version (v1.id_effect is a subset). |
 | 2026-10-16 | 2.1 | Process-row level rule (§7.4; owner decision D2 at 0.8 kickoff): 7 rows marked `process`; id_effect `eco.stability` 49 → 50 at 0.6.0 and 0.7.0 (no longer capped at `published`). `data.jsonschema` 0.8.0 target 75 → 50 (owner decision D1: OpenAPI from routes stays in 0.9). |
+| 2026-10-18 | 2.2 | Non-goals leave the score (§3.3; L15, PLAN-OF-PLANS §7.0b step 1): row `web.graphql` (L15) and checks `fault.reload#2 #6 #7`, `dx.compile#3` (L8), `web.ui#3 #4` (L7), `data.backends#4 #5` (L6), for every framework. Rule recorded: a check id_effect already meets is never a non-goal, so `dx.repl#3` stays scored and `dx.repl` stays 75 (0.11.0.md D3). Targets of the four rows with non-goal checks re-based to the same number of checks (`alignment-2.2.json → targets_rebased`); `web.graphql` targets removed. Tooling: `non_goal {decision}` in scorecard.json and the schema, `--validate` rejects a non-goal without a locked-decision id or on a check id_effect meets, fixtures `non-goal-row.json`, `non-goal-check.json`. |
+| 2026-10-18 | 2.2 | Scope change, competitor snapshot date unchanged (2026-10-14): the .NET scope adds Orleans and the Durable Task Framework as first-party Microsoft (L15, §7.0b step 2; §7.4). .NET `fault.reload` 80 (after step 1) → 100, `msg.jobs` 39 → 75, `msg.cron` 39 → 50; .NET U/E/RT 75.1/77.3/71.1 (2.1) → 75.8/77.9/71.8 (step 1) → 76.7/78.8/72.8. Evidence per cell in `alignment-2.2.json`. |
+| 2026-10-18 | 2.2 | Every stored version re-scored (§5.2; 2.1 kept as frozen history): 0.10.0 measured E 75.5 → 76.6 (#2), RT 78.4 → 79.5 (#1), red 12 → 11. Targets: `web.rpc` and `web.realtime` 0.11.0 → 0.12.0 (L15, 0.11.0.md D4); 0.11.0 bonus targets `conc.stm` 89, `sec.supply` 100, `test.qa` 100 (0.11.0.md D1). Planned 0.11.0 E 79.2 (#1, .NET 78.8). Owner acceptance pending (PLAN-OF-PLANS §11, §7.0b step 4). |
+| 2026-10-19 | 2.2 | 0.11.0 measured by blind re-score (§6; scored from the checks and the tree at release/0.11.0 834d9359, not from the targets): U 79.4, E 79.2 (#1; accepted 2.2 plan 79.2, tool-planned 79.5), RT 83.9 (#1), ≥80 56, red 9, leader 31; 11 rows up, none down. Adjudicated (§6 step 4, more than 10 points from the plan): `dx.lint` 75 vs 63, because #5 (MachineApplicable auto-fixes, `cargo dylint --fix`) is met as well as the planned #3 #4; `core.ergonomics` 88 vs 75 (no 0.11 target), because the published Dylint lints run over the workspace in CI (#7); both kept. One miss: `sec.supply` 88 vs 100, because #7 needs a published advisory history and no GHSA is published yet (SECURITY.md "Security releases" lists 0.10.1 with every advisory "pending"); carried over to 0.12.0 (new target 100). Evidence line references refreshed across the file (89 moved symbols). Later planned indices re-based on the new measured scores (§5.1). |

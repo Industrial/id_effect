@@ -1,0 +1,712 @@
+{
+	"schema": "id_effect findings v1",
+	"review": "2026-10-18",
+	"source": "THREAT-MODEL.md (Findings register, boundary tables B1-B8, Accepted risks, Residual risks); .maestro/specs/releases/0.11.0.md (Findings -> leaves)",
+	"updated": "2026-10-19",
+	"revision": "834d9359",
+	"legend": {
+		"severity": "H = high, M = medium, L = low (the review's ranking); S = supply-chain and process findings, which the review did not rank",
+		"status": "closed (fixed, with a regression test or gate), accepted (recorded in THREAT-MODEL.md \"Accepted risks\" with a reason) or open",
+		"release": "the release line that closed it; 0.10.1 work landed on main as 05808e56 (tag v0.10.1)",
+		"tests": "regression tests (function names, or compile-fail case names under tests/security_compile_fail/ui) that scripts/security-kpis.sh finds in the code",
+		"gates": "files (scripts, workflows, configuration) the finding's gate runs; scripts/security-kpis.sh checks they exist",
+		"owner_steps_open": "repository or crates.io settings the owner does (0.11.0 D15); not code, not counted as open"
+	},
+	"findings": [
+		{
+			"id": "H1",
+			"severity": "high",
+			"boundary": "B1",
+			"rule": "R4",
+			"title": "Serve functions dropped the peer address, so per-IP rate limits shared one bucket.",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-http"],
+			"commits": ["05808e56"],
+			"tests": [
+				"h1_per_ip_limit_sees_the_peer",
+				"h1_forwarded_for_behind_a_trusted_proxy_keys_the_client"
+			],
+			"gates": []
+		},
+		{
+			"id": "H2",
+			"severity": "high",
+			"boundary": "B1",
+			"rule": "R4",
+			"title": "The Ledger login limiter trusted the first X-Forwarded-For entry.",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-http"],
+			"commits": ["05808e56"],
+			"tests": ["h2_ledger_ignores_spoofed_forwarded_for"],
+			"gates": []
+		},
+		{
+			"id": "H3",
+			"severity": "high",
+			"boundary": "B4",
+			"rule": "R8",
+			"title": "QUIC accepted any server certificate (a man in the middle poses as a QUIC server).",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-mesh", "r11-e8-3-quic-mtls"],
+			"commits": ["05808e56", "b92af181"],
+			"tests": [
+				"h3_quic_without_roots_is_a_config_error",
+				"h3_dangerous_accept_any_is_explicit",
+				"dangerous_accept_any_server_cert_is_recorded_in_posture"
+			],
+			"gates": [],
+			"note": "Opt-out recorded in the posture registry in 0.11 (b92af181)."
+		},
+		{
+			"id": "H4",
+			"severity": "high",
+			"boundary": "B4",
+			"rule": "R8",
+			"title": "A relayed, reflected or replayed mesh handshake proof.",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-mesh"],
+			"commits": ["05808e56"],
+			"tests": [
+				"h4_relayed_proof_fails",
+				"h4_relayed_proof_fails_without_a_channel",
+				"h4_v1_peers_are_refused_with_version_mismatch"
+			],
+			"gates": []
+		},
+		{
+			"id": "H5",
+			"severity": "high",
+			"boundary": "B2",
+			"rule": "R4",
+			"title": "Online password guessing (no login throttle).",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-auth", "r101-http", "r11-sec-auth-state"],
+			"commits": ["05808e56", "c2ff95fa", "7af82ba1", "ddecebf0"],
+			"tests": [
+				"h5_throttle_checked_before_hashing",
+				"h5_dangerous_without_throttle_is_recorded",
+				"h5_login_throttle_backs_off",
+				"h5_ledger_login_is_throttled",
+				"pg_login_throttle_shared_across_instances",
+				"h5_memory_throttle_store_is_recorded"
+			],
+			"gates": [],
+			"note": "Opt-out recorded c2ff95fa; shared PgThrottleStore 7af82ba1. Residual (per-process MemoryThrottleStore behind LoginThrottle::default(), BasicAuth::new and Totp::new) closed by ddecebf0: creating a MemoryThrottleStore records id_effect_auth::MemoryThrottleStore::memory_only, which the prod posture probe \"no memory-only security state\" fails; the Ledger counts in one PgThrottleStore."
+		},
+		{
+			"id": "H6",
+			"severity": "high",
+			"boundary": "B2",
+			"rule": "R10",
+			"title": "TOTP brute force (no lockout).",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-auth"],
+			"commits": ["05808e56", "c2ff95fa", "ddecebf0"],
+			"tests": [
+				"h6_totp_locks_after_five_failures",
+				"h6_dangerous_without_lockout_is_recorded"
+			],
+			"gates": [],
+			"note": "Opt-out recorded c2ff95fa; the lockout's default memory store records itself since ddecebf0 (Totp::with_stores takes a shared one)."
+		},
+		{
+			"id": "H7",
+			"severity": "high",
+			"boundary": "B2",
+			"rule": "R10",
+			"title": "A JWT minted for another issuer or audience is accepted.",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-auth"],
+			"commits": ["05808e56", "c2ff95fa"],
+			"tests": [
+				"h7_jwt_without_issuer_or_audience_is_rejected",
+				"h7_dangerous_opt_out_is_explicit",
+				"h7_dangerous_any_issuer_and_audience_are_recorded"
+			],
+			"gates": []
+		},
+		{
+			"id": "H8",
+			"severity": "high",
+			"boundary": "B3",
+			"rule": "R1",
+			"title": "Routes open unless guarded; an unauthenticated request continues as Anonymous.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-h8-routing", "r11-w3-kit-template", "r11-w3-ledger"],
+			"commits": ["cb54bdae", "888ac28f", "7e04023f"],
+			"tests": [
+				"h8_route_without_access_decision_does_not_compile",
+				"h8_route_without_access_decision",
+				"h8_unregistered_axum_route_is_denied",
+				"h8_route_unchecked_is_deprecated_and_recorded",
+				"h8_anonymous_reaches_only_public_routes",
+				"h8_access_report_lists_public_routes",
+				"h8_every_template_route_declares_access",
+				"h8_ledger_unregistered_route_denied"
+			],
+			"gates": [
+				"tests/security_compile_fail/ui/h8_route_without_access_decision.rs"
+			],
+			"note": "Residual: plain axum routes merged after Router::into_axum are outside AccessLayer unless the application applies Router::access_layer() (THREAT-MODEL.md, Residual risks)."
+		},
+		{
+			"id": "M1",
+			"severity": "medium",
+			"boundary": "B1",
+			"rule": "R4",
+			"title": "Slowloris, connection floods, unbounded keep-alive.",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-http"],
+			"commits": ["05808e56", "38042a63"],
+			"tests": [
+				"m1_slow_headers_are_cut_off",
+				"m1_connection_cap_holds",
+				"m1_keep_alive_limit_closes_the_connection"
+			],
+			"gates": [],
+			"note": "Opt-outs recorded 38042a63."
+		},
+		{
+			"id": "M2",
+			"severity": "medium",
+			"boundary": "B7",
+			"rule": "R6",
+			"title": "A hostile server streams an unbounded body to the HTTP client.",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-client"],
+			"commits": ["05808e56"],
+			"tests": [
+				"m2_content_length_over_cap_rejected_before_reading",
+				"m2_streaming_body_over_cap_stops_early",
+				"m2_body_exactly_at_cap_is_accepted"
+			],
+			"gates": []
+		},
+		{
+			"id": "M3",
+			"severity": "medium",
+			"boundary": "B7",
+			"rule": "R6",
+			"title": "No SSRF guard; redirects followed.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-client-ssrf"],
+			"commits": ["080a9acc", "9ca8ce57", "7d217442"],
+			"tests": [
+				"m3_ssrf_blocks_loopback_private_and_metadata",
+				"m3_ssrf_checks_every_resolved_address",
+				"m3_ipv4_mapped_ipv6_is_blocked",
+				"m3_redirects_not_followed_by_default",
+				"m3_followed_redirect_to_private_ip_is_blocked",
+				"m3_allowlist_permits_named_host",
+				"m3_reqwest_helpers_refuse_literal_metadata_ip",
+				"m3_oidc_discovery_redirect_is_refused"
+			],
+			"gates": [],
+			"note": "Residual: SSRF behind an HTTP proxy and caller-built reqwest clients (THREAT-MODEL.md, Residual risks)."
+		},
+		{
+			"id": "M4",
+			"severity": "medium",
+			"boundary": "B1",
+			"rule": "R4",
+			"title": "The template CSRF layer buffers a 2 MiB form outside the limit and timeout layers.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-csrf-headers", "r11-sec-ops-surfaces"],
+			"commits": ["5d804c5d", "d13d4d94"],
+			"tests": [
+				"m4_csrf_form_read_respects_limit",
+				"m4_csrf_form_read_times_out",
+				"m4_template_limit_layers_wrap_security_layer"
+			],
+			"gates": []
+		},
+		{
+			"id": "M5",
+			"severity": "medium",
+			"boundary": "B1",
+			"rule": "R4",
+			"title": "No default concurrency cap or load shedding.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-limits"],
+			"commits": ["8141e0f9"],
+			"tests": [
+				"m5_load_shed_rejects_over_capacity_with_503",
+				"m5_default_server_stack_has_concurrency_cap"
+			],
+			"gates": []
+		},
+		{
+			"id": "M6",
+			"severity": "medium",
+			"boundary": "B5",
+			"rule": "R7",
+			"title": "Template console treats loopback as operator without a Host/Origin check; the Ledger runs the console in prod.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-ops-surfaces", "r11-w3-ledger"],
+			"commits": ["d13d4d94", "7e04023f"],
+			"tests": [
+				"m6_console_rejects_foreign_host_and_origin",
+				"m6_loopback_operator_only_in_dev",
+				"m6_ledger_console_disabled_in_prod_profile"
+			],
+			"gates": []
+		},
+		{
+			"id": "M7",
+			"severity": "medium",
+			"boundary": "B5",
+			"rule": "R7",
+			"title": "/docs loads Scalar from jsDelivr at @1 without Subresource Integrity.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-ops-surfaces"],
+			"commits": ["d13d4d94"],
+			"tests": [
+				"m7_scalar_bundle_pinned_with_integrity",
+				"m7_docs_disabled_in_prod_unless_guarded"
+			],
+			"gates": []
+		},
+		{
+			"id": "M8",
+			"severity": "medium",
+			"boundary": "B1",
+			"rule": "R4",
+			"title": "Rate-limit eviction scans every bucket under one mutex.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-limits"],
+			"commits": ["8141e0f9"],
+			"tests": [
+				"m8_eviction_does_not_scan_all_keys",
+				"m8_eviction_evicts_least_recently_used",
+				"m8_sharded_store_under_contention"
+			],
+			"gates": []
+		},
+		{
+			"id": "M9",
+			"severity": "medium",
+			"boundary": "B4",
+			"rule": "R4",
+			"title": "Pre-authentication resource use on the mesh: slow handshakes, large frames, short cookies, small nonces.",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-mesh"],
+			"commits": ["05808e56", "ae51878e"],
+			"tests": [
+				"m9_handshake_times_out",
+				"m9_oversized_pre_auth_frame_rejected",
+				"m9_frame_cap_lifts_after_authentication",
+				"m9_short_cookie_rejected",
+				"m9_nonces_are_128_bit"
+			],
+			"gates": [],
+			"note": "Cookie::dangerous_allow_short recorded since ae51878e."
+		},
+		{
+			"id": "M10",
+			"severity": "medium",
+			"boundary": "B4",
+			"rule": "R4",
+			"title": "Process mailboxes unbounded and reachable from remote sends.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-e8-1-mailbox"],
+			"commits": ["052d969e"],
+			"tests": [
+				"m10_bounded_mailbox_rejects_when_full",
+				"m10_system_messages_bypass_bound",
+				"m10_remote_send_to_full_mailbox_faults"
+			],
+			"gates": []
+		},
+		{
+			"id": "M11",
+			"severity": "medium",
+			"boundary": "B6",
+			"rule": "R3",
+			"title": "RedactionPolicy::new() redacts nothing.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-logging"],
+			"commits": ["72257fb6", "ec818604", "6c0053aa"],
+			"tests": [
+				"m11_default_pipeline_redacts_common_secret_fields",
+				"m11_empty_policy_is_explicit",
+				"deny_deprecated_redaction_policy_new"
+			],
+			"gates": []
+		},
+		{
+			"id": "M12",
+			"severity": "medium",
+			"boundary": "B6",
+			"rule": "R3",
+			"title": "Log forging through newlines, control and ANSI sequences or crafted keys.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-logging"],
+			"commits": ["72257fb6"],
+			"tests": [
+				"m12_newline_in_message_cannot_forge_a_line",
+				"m12_annotation_key_cannot_inject_fields",
+				"m12_control_and_ansi_sequences_are_escaped"
+			],
+			"gates": []
+		},
+		{
+			"id": "M13",
+			"severity": "medium",
+			"boundary": "B2, B6",
+			"rule": "R2",
+			"title": "Secrets and passwords never zeroized.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-secrets"],
+			"commits": ["745c80dd"],
+			"tests": [
+				"m13_secret_is_zeroized_on_drop",
+				"m13_password_is_zeroized_on_drop",
+				"m13_secret_of_non_zeroize_type"
+			],
+			"gates": []
+		},
+		{
+			"id": "M14",
+			"severity": "medium",
+			"boundary": "B2",
+			"rule": "R2",
+			"title": "Session's derived Debug prints its attributes, including OIDC tokens.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-secrets"],
+			"commits": ["745c80dd"],
+			"tests": ["m14_session_debug_hides_attr_values_and_tokens"],
+			"gates": []
+		},
+		{
+			"id": "M15",
+			"severity": "medium",
+			"boundary": "B2, B7",
+			"rule": "R6",
+			"title": "Forged tokens through a weak HMAC key or a JWKS served over plain http or a redirect.",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-auth"],
+			"commits": ["05808e56", "7d217442"],
+			"tests": [
+				"m15_short_hmac_key_rejected",
+				"m15_jwks_requires_https",
+				"m15_jwks_insecure_allow_http_is_recorded",
+				"m15_jwks_body_capped",
+				"m15_jwks_redirects_and_plain_http_are_refused"
+			],
+			"gates": [],
+			"note": "Opt-out renamed to JwksClient::insecure_allow_http and recorded 7d217442."
+		},
+		{
+			"id": "M16",
+			"severity": "medium",
+			"boundary": "B6",
+			"rule": "R5",
+			"title": "SqlClient query/execute take any String (SQL injection through a formatted query).",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-sql-redis", "r11-e1-9-dylint"],
+			"commits": ["055e68f0", "1f909018"],
+			"tests": [
+				"m16_query_with_string_does_not_compile",
+				"m16_query_raw_requires_capability",
+				"m16_literal_query_still_compiles",
+				"m16_query_with_string",
+				"raw_sql_non_literal"
+			],
+			"gates": [".github/workflows/lint.yml"]
+		},
+		{
+			"id": "M17",
+			"severity": "medium",
+			"boundary": "B6",
+			"rule": "R5",
+			"title": "Redis clear() with an empty namespace deletes every key.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-sql-redis"],
+			"commits": ["055e68f0"],
+			"tests": [
+				"m17_clear_with_empty_namespace_is_an_error",
+				"m17_clear_only_deletes_namespace_keys"
+			],
+			"gates": []
+		},
+		{
+			"id": "M18",
+			"severity": "medium",
+			"boundary": "B2",
+			"rule": "R10",
+			"title": "TOTP replay store memory-only (a code replayed on a second instance).",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-auth-state"],
+			"commits": ["7af82ba1", "ddecebf0"],
+			"tests": [
+				"m18_pg_totp_replay_rejected_across_instances",
+				"m18_pg_totp_concurrent_consume_one_wins",
+				"m18_memory_step_store_is_reported_as_memory_only",
+				"h5_memory_throttle_store_is_recorded"
+			],
+			"gates": [],
+			"note": "The shared-state half of R10: PgTotpStepStore and PgThrottleStore (7af82ba1). ddecebf0 records MemoryThrottleStore like MemoryTotpStepStore, so neither in-memory store passes the prod posture check unnoticed (the Residual risks entry \"Default login throttle store\" predates it)."
+		},
+		{
+			"id": "M19",
+			"severity": "medium",
+			"boundary": "B3",
+			"rule": "R1",
+			"title": "Tenant isolation is opt-in.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-tenancy"],
+			"commits": ["0aa4186b"],
+			"tests": [
+				"m19_tenanted_resource_requires_tenant_match_by_default",
+				"m19_cross_tenant_requires_named_opt_out",
+				"m19_untenanted_resource_unaffected",
+				"m19_cross_tenant_without_opt_out"
+			],
+			"gates": []
+		},
+		{
+			"id": "M20",
+			"severity": "medium",
+			"boundary": "B2",
+			"rule": "R4",
+			"title": "Password hashing as a CPU-exhaustion vector.",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-auth"],
+			"commits": ["05808e56"],
+			"tests": ["m20_hashing_is_bounded"],
+			"gates": []
+		},
+		{
+			"id": "L1",
+			"severity": "low",
+			"boundary": "B1",
+			"rule": "R9",
+			"title": "BREACH recovers the static CSRF token from compressed responses.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-csrf-headers"],
+			"commits": ["5d804c5d"],
+			"tests": [
+				"l1_csrf_token_masked_differently_per_response",
+				"l1_masked_token_validates"
+			],
+			"gates": []
+		},
+		{
+			"id": "L2",
+			"severity": "low",
+			"boundary": "B1, B5",
+			"rule": "R9, R7",
+			"title": "No COOP/CORP/Permissions-Policy headers; /metrics public in the template.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-csrf-headers", "r11-sec-ops-surfaces"],
+			"commits": ["5d804c5d", "d13d4d94"],
+			"tests": [
+				"l2_recommended_headers_include_coop_corp_permissions_policy",
+				"l2_template_metrics_not_public"
+			],
+			"gates": []
+		},
+		{
+			"id": "L3",
+			"severity": "low",
+			"boundary": "B6",
+			"rule": "R2",
+			"title": "Secret equality not constant time.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-secrets"],
+			"commits": ["745c80dd"],
+			"tests": [
+				"l3_secret_eq_uses_constant_time_compare",
+				"l3_generic_secret_equality_removed"
+			],
+			"gates": []
+		},
+		{
+			"id": "L4",
+			"severity": "low",
+			"boundary": "B2",
+			"rule": "R4",
+			"title": "BasicAuth hashes passwords of any length.",
+			"status": "closed",
+			"release": "0.10.1",
+			"leaves": ["r101-auth"],
+			"commits": ["05808e56"],
+			"tests": ["l4_long_basic_password_rejected"],
+			"gates": []
+		},
+		{
+			"id": "L5",
+			"severity": "low",
+			"boundary": "B1",
+			"rule": "R9",
+			"title": "CSRF token not rotated at login.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sec-csrf-headers", "r11-sec-auth-state"],
+			"commits": ["5d804c5d", "7af82ba1"],
+			"tests": [
+				"l5_rotate_issues_new_token_and_invalidates_old",
+				"l5_csrf_token_rotates_at_login",
+				"l5_session_id_rotates_at_login"
+			],
+			"gates": []
+		},
+		{
+			"id": "L6",
+			"severity": "low",
+			"boundary": "B8",
+			"rule": "-",
+			"title": "rsa 0.9 (RUSTSEC-2023-0071, Marvin attack) in the dependency tree.",
+			"status": "accepted",
+			"release": "0.11.0",
+			"leaves": ["r11-sc-dco-docs"],
+			"commits": [],
+			"tests": [],
+			"gates": ["deny.toml", ".cargo/audit.toml"],
+			"note": "No fixed rsa release upstream; no RSA private-key operation in the workspace (THREAT-MODEL.md, Accepted risks; re-checked 2026-10-19). cargo deny check stays the gate."
+		},
+		{
+			"id": "S1",
+			"severity": "supply-chain",
+			"boundary": "B8",
+			"rule": "R10",
+			"title": "Actions pinned by tag; toolchains floating; curl | bash installers.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sc-pin-permissions", "r11-sc-publish"],
+			"commits": ["a6a97637", "edd5e5b8"],
+			"tests": ["s1_every_action_pinned_by_sha"],
+			"gates": ["scripts/check-workflows.sh"]
+		},
+		{
+			"id": "S2",
+			"severity": "supply-chain",
+			"boundary": "B8",
+			"rule": "R10",
+			"title": "No top-level least-privilege permissions; Dependabot auto-merge approved its own PRs.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sc-pin-permissions"],
+			"commits": ["a6a97637"],
+			"tests": [
+				"s2_every_workflow_least_privilege",
+				"s2_dependabot_does_not_self_approve"
+			],
+			"gates": ["scripts/check-workflows.sh"]
+		},
+		{
+			"id": "S3",
+			"severity": "supply-chain",
+			"boundary": "B8",
+			"rule": "-",
+			"title": "Long-lived CARGO_REGISTRY_TOKEN.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sc-publish"],
+			"commits": ["edd5e5b8"],
+			"tests": ["s3_no_registry_token_in_workflows"],
+			"gates": [".github/workflows/publish.yml", "scripts/security-kpis.sh"],
+			"owner_steps_open": "D15: trusted publisher on every crate, then delete the CARGO_REGISTRY_TOKEN secret (docs/RELEASING.md \"Owner steps\" 3 and 7)",
+			"note": "Closed in the workflow (crates.io trusted publishing). s3_no_registry_token_in_workflows is the check in scripts/security-kpis.sh."
+		},
+		{
+			"id": "S4",
+			"severity": "supply-chain",
+			"boundary": "B8",
+			"rule": "R4",
+			"title": "No fuzzing, SAST, Miri or loom.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": [
+				"r11-fuzz-ci",
+				"r11-sc-sast-scorecard",
+				"r11-e11-4-compile-fail"
+			],
+			"commits": ["572ec2bd", "b7809387", "be6af99d", "8c317aa8"],
+			"tests": [],
+			"gates": [
+				".github/workflows/codeql.yml",
+				".github/workflows/cflite_pr.yml",
+				".github/workflows/cflite_batch.yml",
+				".clusterfuzzlite/build.sh",
+				"tests/security_compile_fail"
+			],
+			"note": "Closed for SAST and fuzzing; Miri and loom are later E11.4 parts (0.12 to 0.18)."
+		},
+		{
+			"id": "S5",
+			"severity": "supply-chain",
+			"boundary": "B8",
+			"rule": "-",
+			"title": "Provenance attested re-downloaded crates, not the files CI built; Cargo.lock not committed.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sc-publish", "r11-sc-pin-permissions"],
+			"commits": ["a6a97637", "edd5e5b8"],
+			"tests": ["s5_attested_digest_matches_published_crate"],
+			"gates": [".github/workflows/publish.yml", "Cargo.lock"],
+			"note": "First exercised by the 0.11.0 publish (verify job)."
+		},
+		{
+			"id": "S6",
+			"severity": "supply-chain",
+			"boundary": "B8",
+			"rule": "-",
+			"title": "DCO unenforced; unsigned commits and tags.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sc-dco-docs", "r11-sc-publish"],
+			"commits": ["d6c22982", "edd5e5b8"],
+			"tests": [
+				"s6_dco_check_rejects_unsigned_off_commit",
+				"s6_release_requires_signed_tag"
+			],
+			"gates": [".github/workflows/dco.yml", ".github/workflows/publish.yml"],
+			"owner_steps_open": "D15: \"require signed commits\" on protected branches (2026-10-19: no signature rule on main, no ruleset on release/*)"
+		},
+		{
+			"id": "S7",
+			"severity": "supply-chain",
+			"boundary": "B8",
+			"rule": "-",
+			"title": "SECURITY.md listed 0.9.x; no threat model.",
+			"status": "closed",
+			"release": "0.11.0",
+			"leaves": ["r11-sc-dco-docs"],
+			"commits": ["d6c22982", "262259a9"],
+			"tests": [],
+			"gates": ["SECURITY.md", "THREAT-MODEL.md"]
+		}
+	]
+}

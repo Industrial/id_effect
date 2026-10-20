@@ -171,8 +171,8 @@ impl SqlValue {
     }
   }
 
-  /// The 0.8 textual rendering (`SqlRow::text_cells`): NULL is empty, bytes are `{:?}`, JSON is
-  /// compact, everything else is its `Display`.
+  /// The textual rendering behind [`to_unknown`](Self::to_unknown): NULL is empty, bytes are
+  /// `{:?}`, JSON is compact, everything else is its `Display`.
   pub(crate) fn render(&self) -> String {
     match self {
       SqlValue::Null => String::new(),
@@ -312,36 +312,6 @@ macro_rules! params {
   };
 }
 
-#[allow(deprecated)]
-impl From<crate::client::SqlParam> for SqlValue {
-  fn from(p: crate::client::SqlParam) -> Self {
-    use crate::client::SqlParam;
-    match p {
-      SqlParam::Null => SqlValue::Null,
-      SqlParam::Bool(b) => SqlValue::Bool(b),
-      SqlParam::Int(n) => SqlValue::I64(n),
-      SqlParam::Text(s) => SqlValue::Text(s),
-      SqlParam::Bytes(b) => SqlValue::Bytes(b),
-    }
-  }
-}
-
-/// Equal when `SqlValue::from(param)` is, so 0.8 assertions on recorded parameters still compile.
-#[allow(deprecated)]
-impl PartialEq<crate::client::SqlParam> for SqlValue {
-  fn eq(&self, other: &crate::client::SqlParam) -> bool {
-    use crate::client::SqlParam;
-    match (self, other) {
-      (SqlValue::Null, SqlParam::Null) => true,
-      (SqlValue::Bool(a), SqlParam::Bool(b)) => a == b,
-      (SqlValue::I64(a), SqlParam::Int(b)) => a == b,
-      (SqlValue::Text(a), SqlParam::Text(b)) => a == b,
-      (SqlValue::Bytes(a), SqlParam::Bytes(b)) => a == b,
-      _ => false,
-    }
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use std::collections::BTreeMap;
@@ -473,25 +443,5 @@ mod tests {
       "out of range: x"
     );
     assert_eq!(ValueError::Invalid("y".into()).to_string(), "invalid: y");
-  }
-
-  #[test]
-  #[allow(deprecated)]
-  fn sql_param_converts_and_compares() {
-    use crate::client::SqlParam;
-    let pairs = [
-      (SqlParam::Null, SqlValue::Null),
-      (SqlParam::Bool(true), SqlValue::Bool(true)),
-      (SqlParam::Int(1), SqlValue::I64(1)),
-      (SqlParam::Text("t".into()), SqlValue::Text("t".into())),
-      (SqlParam::Bytes(vec![1]), SqlValue::Bytes(vec![1])),
-    ];
-    for (param, value) in pairs {
-      assert_eq!(value, param);
-      assert_eq!(SqlValue::from(param), value);
-    }
-    assert_ne!(SqlValue::I32(1), SqlParam::Int(1));
-    let recorded = vec![SqlValue::I64(1), SqlValue::Text("a".into())];
-    assert_eq!(recorded, [SqlParam::Int(1), SqlParam::Text("a".into())]);
   }
 }

@@ -1,14 +1,26 @@
 //! {{name}}: a cluster node on id_effect_node, a mesh hosting the `counter` process behavior.
 //!
 //! [`node`] builds a mesh node; [`round_trip`] spawns a counter on another node, casts to it
-//! and calls it, all as one effect.
+//! and calls it, all as one effect. Between hosts the nodes talk over [`mesh_transport`]: TLS
+//! 1.3 over TCP with mutual authentication, from the PEM files in [`MeshCerts`] (dev
+//! certificates from [`dev_certificates`] for local runs).
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use id_effect::{Effect, Never, fail, succeed, sync};
-use id_effect_kit::node::{BehaviorRegistry, Mesh, MeshFabric, NodeId, RemoteFault};
+use id_effect_kit::node::transport::certs::{NodeCertificate, load_ca_bundle};
+use id_effect_kit::node::transport::tls_tcp::DEFAULT_SERVER_NAME;
+use id_effect_kit::node::{
+    BehaviorRegistry, Mesh, MeshFabric, NodeId, RemoteFault, TcpTransport, TlsTcpConfig,
+};
+use id_effect_kit::posture::{Enforcement, Posture, Surface};
 use id_effect_process::{Next, NodeName, Process, ProcessCtx, ProcessNode};
+use rcgen::{
+    BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair,
+    KeyUsagePurpose,
+};
 use serde::{Deserialize, Serialize};
 
 /// The name [`Counter`] is registered under on every node.
@@ -68,13 +80,142 @@ impl Process for Counter {
 /// A mesh node named `name` (`node@host`) that hosts [`Counter`]s, attached to `fabric`.
 ///
 /// `MeshFabric` connects the nodes of one process (tests, local runs); between hosts the
-/// mesh talks over `id_effect_kit::node::TcpTransport` sessions instead.
+/// nodes run cookie-authenticated sessions over [`mesh_transport`] (TLS with mutual
+/// authentication) instead.
 pub fn node(name: &str, fabric: &MeshFabric) -> Arc<Mesh> {
     let mut registry = BehaviorRegistry::new();
     registry.register::<Counter>(COUNTER);
     let node_name = NodeName::new(name);
     let process = ProcessNode::new(node_name.clone());
     Mesh::new(NodeId::fresh(&node_name), process, registry).with_fabric(fabric.clone())
+}
+
+/// The variable naming the cluster CA bundle (PEM) that peers are verified against.
+pub const CA_ENV: &str = "MESH_CA_PEM";
+
+/// The variable naming this node's certificate chain (PEM, leaf first).
+pub const CERT_ENV: &str = "MESH_CERT_PEM";
+
+/// The variable naming this node's private key (PEM).
+pub const KEY_ENV: &str = "MESH_KEY_PEM";
+
+/// The PEM files of a node's mesh identity: the cluster CA, the node's chain and its key.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MeshCerts {
+    /// The CA bundle peers are verified against.
+    pub ca: PathBuf,
+    /// This node's certificate chain, leaf first.
+    pub cert: PathBuf,
+    /// This node's private key.
+    pub key: PathBuf,
+}
+
+impl MeshCerts {
+    /// The paths in [`CA_ENV`], [`CERT_ENV`] and [`KEY_ENV`]; `None` when none is set, an
+    /// error when only some are.
+    pub fn from_env() -> Result<Option<Self>, String> {
+        let var = |name: &str| {
+            std::env::var_os(name)
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from)
+        };
+        match (var(CA_ENV), var(CERT_ENV), var(KEY_ENV)) {
+            (None, None, None) => Ok(None),
+            (Some(ca), Some(cert), Some(key)) => Ok(Some(Self { ca, cert, key })),
+            _ => Err(format!(
+                "set all of {CA_ENV}, {CERT_ENV} and {KEY_ENV}, or none"
+            )),
+        }
+    }
+}
+
+/// Where [`mesh_certs`] keeps the dev certificates: one directory under the system temp dir,
+/// shared by the nodes of this machine.
+pub fn dev_cert_dir() -> PathBuf {
+    std::env::temp_dir().join(concat!(env!("CARGO_PKG_NAME"), "-dev-certs"))
+}
+
+/// A throwaway cluster CA and one node certificate it signs, for local runs: `ca.pem`,
+/// `node.pem` (the chain) and `node.key` in `dir`, written once and then reused by every node.
+/// The certificate is valid for [`DEFAULT_SERVER_NAME`] (the TLS name every node dials) and
+/// for client authentication. Never deploy these: outside `dev` and `test`, set [`CA_ENV`],
+/// [`CERT_ENV`] and [`KEY_ENV`] to operator-issued files.
+pub fn dev_certificates(dir: &Path) -> Result<MeshCerts, String> {
+    let certs = MeshCerts {
+        ca: dir.join("ca.pem"),
+        cert: dir.join("node.pem"),
+        key: dir.join("node.key"),
+    };
+    if certs.ca.exists() && certs.cert.exists() && certs.key.exists() {
+        return Ok(certs);
+    }
+    let failed = |e: rcgen::Error| format!("dev certificates: {e}");
+    let mut ca = CertificateParams::new(Vec::<String>::new()).map_err(failed)?;
+    ca.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    ca.distinguished_name
+        .push(DnType::CommonName, "{{name}} dev CA");
+    ca.key_usages = vec![
+        KeyUsagePurpose::KeyCertSign,
+        KeyUsagePurpose::CrlSign,
+        KeyUsagePurpose::DigitalSignature,
+    ];
+    let ca_key = KeyPair::generate().map_err(failed)?;
+    let ca = ca.self_signed(&ca_key).map_err(failed)?;
+    let mut node = CertificateParams::new(vec![DEFAULT_SERVER_NAME.to_owned()]).map_err(failed)?;
+    node.distinguished_name
+        .push(DnType::CommonName, "{{name}} dev node");
+    node.extended_key_usages = vec![
+        ExtendedKeyUsagePurpose::ServerAuth,
+        ExtendedKeyUsagePurpose::ClientAuth,
+    ];
+    let node_key = KeyPair::generate().map_err(failed)?;
+    let node = node.signed_by(&node_key, &ca, &ca_key).map_err(failed)?;
+    let write = |path: &Path, pem: String| {
+        std::fs::write(path, pem).map_err(|e| format!("{}: {e}", path.display()))
+    };
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    write(&certs.ca, ca.pem())?;
+    write(&certs.cert, format!("{}{}", node.pem(), ca.pem()))?;
+    write(&certs.key, node_key.serialize_pem())?;
+    Ok(certs)
+}
+
+/// The mesh certificates for `profile`: the files named by [`CA_ENV`], [`CERT_ENV`] and
+/// [`KEY_ENV`]; when none is set, [`dev_certificates`] in [`dev_cert_dir`] for the `dev` and
+/// `test` profiles, and an error for any other.
+pub fn mesh_certs(profile: &str) -> Result<MeshCerts, String> {
+    match MeshCerts::from_env()? {
+        Some(certs) => Ok(certs),
+        None if Enforcement::for_profile(profile) == Enforcement::Report => {
+            dev_certificates(&dev_cert_dir())
+        }
+        None => Err(format!(
+            "the {profile} profile needs {CA_ENV}, {CERT_ENV} and {KEY_ENV} (PEM files)"
+        )),
+    }
+}
+
+/// The mesh transport: TLS 1.3 over TCP, presenting `certs`' chain and key and verifying
+/// every peer, dialed or accepted, against its CA (mutual TLS). There is no plaintext
+/// fallback.
+pub fn mesh_transport(certs: &MeshCerts) -> Result<TcpTransport, String> {
+    let cert =
+        NodeCertificate::from_pem_files(&certs.cert, &certs.key).map_err(|e| e.to_string())?;
+    let roots = load_ca_bundle(&certs.ca).map_err(|e| e.to_string())?;
+    let config = TlsTcpConfig::from_certificate(&cert)
+        .map_err(|e| e.to_string())?
+        .with_client_verification(roots);
+    TcpTransport::try_tls(config).map_err(|e| e.to_string())
+}
+
+/// What the node states for the startup posture check (ADR 0013 R10): its mesh transport
+/// (encrypted when it is [`mesh_transport`]'s), and no console, `/docs` or browser.
+pub fn posture(posture: Posture, transport: &TcpTransport) -> Posture {
+    posture
+        .tcp_transport(transport)
+        .console(Surface::Absent)
+        .docs(Surface::Absent)
+        .no_browser()
 }
 
 fn encode<T: Serialize>(message: &T) -> Result<Vec<u8>, RemoteFault> {

@@ -10,14 +10,16 @@ a cluster and lets processes spawn, message, call, link and monitor each other a
 |------|------|
 | `NodeId` | Wire identity: logical `name@host` plus a 128-bit boot incarnation |
 | `Cookie`, `handshake` | Mutual HMAC-SHA256 challenge/response; the cookie never crosses the wire |
-| `Transport` / `Connection` / `Listener` | Byte-frame pipes. `InMemoryTransport` (deterministic, scripted partitions), `TcpTransport` (length-delimited), `QuicTransport` (feature `quic`) |
-| `Session` | An authenticated, framed connection to one peer (`wire::Frame`, postcard, protocol v2) |
+| `Transport` / `Connection` / `Listener` | Byte-frame pipes. `InMemoryTransport` (deterministic, scripted partitions), `TcpTransport` (length-delimited; TLS 1.3 with feature `tls-tcp`), `QuicTransport` (feature `quic`) |
+| `transport::certs` | Node certificates from PEM files, CA bundles, `CertReloader` for rotation (features `quic`, `tls-tcp`) |
+| `Session` | An authenticated, framed connection to one peer (`wire::Frame`, postcard, `PROTOCOL_VERSION` 3) |
 | `Membership` | SWIM membership via [`foca`], sans-io: the caller owns time and the network. `TimerWheel` drives it in tests; `NodeMonitors` fans out `NodeUp` / `NodeDown` / `Rejoined` |
 | `Mesh`, `BehaviorRegistry` | Remote spawn / cast / call / monitor / link over sessions or the in-process `MeshFabric` |
+| `GlobalRegistry` | Cluster-wide process names (BEAM's `global`): a replica on every node, claims broadcast by the owner, released when the process exits or its node goes down |
 | `ProcessGroups` / `OrSwot` | AP process groups as an ORSWOT CRDT; `fanout_cast` sends to every member |
 | `DistributedSupervisor` | Places children by load telemetry and re-places them when their host goes down |
 | `ClusterSingleton` | At most one holder cluster-wide. `MemoryLease` for single-process tests; `PgAdvisoryLease` (feature `pg`) for production |
-| `Discovery` | Join candidates: `StaticDiscovery`, `DnsDiscovery`, `ChainedDiscovery` |
+| `Discovery` | Join candidates: `StaticDiscovery`, `DnsDiscovery`, `ChainedDiscovery`; `KubernetesDiscovery` (feature `kubernetes`) reads a headless service's EndpointSlices from the API server |
 | `control` | Serializable cluster status / admin DTOs (mounted by `id_effect_axum`) |
 
 Everything that waits for an answer — `Mesh::remote_spawn` / `remote_call`,
@@ -25,17 +27,44 @@ Everything that waits for an answer — `Mesh::remote_spawn` / `remote_call`,
 `id_effect::Effect`: `Send`, interruptible, with timeouts on the executor clock. Compose
 them into a program, or run them at the edge with `block_on`.
 
-Delivery between nodes is **at-most-once**, ordered per connection, and dropped on disconnect.
-The handshake authenticates but does not encrypt: use the QUIC transport or a trusted network
-for confidentiality. `TcpTransport` is plaintext and logs a warning saying so. A QUIC dialer needs
-roots or pinned certificate fingerprints (`QuicConfig::with_pinned_server_cert_sha256`);
-`dangerous_accept_any_server_cert()` is the explicit opt-out.
+Delivery between nodes is **at-most-once** by default, ordered per connection, and dropped on disconnect.
+Opt into **at-least-once** delivery with `Mesh::with_delivery(DeliveryConfig::at_least_once())` (or
+`Mesh::cast_reliable` / `send_reliable` per message): unacknowledged messages are buffered, resent
+on reconnect, and de-duplicated by the receiver, so handlers must be idempotent. A retransmitted
+message can arrive after later ones, and a message to a full mailbox is dropped (counted in
+`BehaviorRegistry::dropped_full`) and still acknowledged (ADR 0009, Amendment 1; `delivery` module
+docs). Casts, sends and calls carry the sender's trace context (`TracePropagator`, W3C by default).
+
+## Trust model
+
+The network transports are encrypted and mutually authenticated by default (ADR 0013 R8). QUIC
+(`QuicConfig`) and TCP (`TcpTransport::tls` with a `TlsTcpConfig`) both run TLS 1.3 with mutual
+TLS: every node presents a certificate in both directions and verifies its peer's, against the
+cluster CA (`with_client_verification(load_ca_bundle(..)?)`) or pinned SHA-256 fingerprints
+(`with_pinned_peer_cert_sha256`). There is no default trust: without roots or pins a dialer
+refuses to dial and a listener refuses to bind. Certificates load from operator-issued PEM files
+(`NodeCertificate::from_pem_files`), and a `CertReloader` rotates them for new connections
+without a restart.
+
+On top of TLS, the cookie handshake proves cluster membership; its proof is bound to the TLS
+channel (exporter secret), so a man-in-the-middle cannot relay it. The handshake itself
+authenticates but does not encrypt.
+
+Every weakening is a named opt-out recorded in the posture registry
+(`id_effect::observability::posture`): `dangerous_accept_any_server_cert()` and
+`dangerous_no_client_auth()` on either TLS config, and `TcpTransport::dangerous_plaintext()`,
+which exists only with the feature `insecure-plaintext-tcp`: frames then cross the network
+unencrypted, and an on-path host can read, relay or inject them. `Cookie::dangerous_allow_short()`
+likewise records itself.
 
 ## Feature flags
 
 | Feature | Enables |
 |---------|---------|
-| `quic` | `transport::quic::QuicTransport` (quinn + rustls; self-signed certs via rcgen) |
+| `quic` | `transport::quic::QuicTransport` (quinn + rustls, mutual TLS) |
+| `tls-tcp` | `TcpTransport::tls` and `transport::tls_tcp::TlsTcpConfig` (tokio-rustls, mutual TLS) |
+| `insecure-plaintext-tcp` | `TcpTransport::dangerous_plaintext()` (unencrypted, recorded opt-out) |
+| `kubernetes` | Kubernetes discovery from the in-cluster API |
 | `pg` | `PgAdvisoryLease`: Postgres session advisory locks for `ClusterSingleton` |
 
 ## Quick start: two nodes over the in-memory transport
@@ -78,7 +107,8 @@ async fn main() {
 ```
 
 For process-level distribution (remote spawn, cast, call, monitors, takeover) see the examples:
-`131_two_node_cluster`, `132_distributed_supervisor_failover` and `133_cluster_stream_fanout`.
+`131_two_node_cluster`, `132_distributed_supervisor_failover`, `133_cluster_stream_fanout`,
+`134_mtls_cluster` (feature `quic`) and `135_global_names`.
 
 ## Stability
 

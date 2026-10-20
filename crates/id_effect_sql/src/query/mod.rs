@@ -60,6 +60,7 @@ use sea_query::{
 use crate::client::{SqlClientService, execute};
 use crate::error::SqlError;
 use crate::from_row::{FromRow, query_as, query_one_as, query_opt_as};
+use crate::raw::Sql;
 use crate::value::SqlValue;
 
 mod value;
@@ -101,18 +102,19 @@ impl<S: QueryStatementWriter> BuildSql for S {
   }
 }
 
-/// Render `stmt` now and run `run` on it, or fail with the rendering error.
+/// Render `stmt` now and run `run` on it, or fail with the rendering error. The rendered SQL is
+/// trusted: sea-query quotes identifiers and binds every value.
 fn with_built<A, R>(
   dialect: Dialect,
   stmt: &(impl BuildSql + ?Sized),
-  run: impl FnOnce(String, Vec<SqlValue>) -> Effect<A, SqlError, R>,
+  run: impl FnOnce(Sql, Vec<SqlValue>) -> Effect<A, SqlError, R>,
 ) -> Effect<A, SqlError, R>
 where
   A: Send + 'static,
   R: 'static,
 {
   match stmt.build_sql(dialect) {
-    Ok((sql, params)) => run(sql, params),
+    Ok((sql, params)) => run(Sql::trusted(sql), params),
     Err(e) => fail(e),
   }
 }

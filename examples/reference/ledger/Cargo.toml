@@ -23,7 +23,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Every id_effect battery comes through the kit, one feature each.
-id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.10.1", features = [
+id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.11.0", features = [
   "web",
   "openapi",
   "sql-pg",
@@ -38,6 +38,8 @@ id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.10.1", fe
   "config-vault",
   "jobs",
   "jobs-cron",
+  # Account closure as a durable workflow (`src/closure.rs`).
+  "workflow",
   "messaging",
   "redis-streams",
   "mail",
@@ -51,8 +53,8 @@ id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.10.1", fe
 ] }
 # The `Schema` derive expands to `::id_effect::` paths, so the core crate is named too (the kit
 # README's advice).
-id_effect = { path = "../../../crates/id_effect", version = "0.10.1" }
-axum = "0.8"
+id_effect = { path = "../../../crates/id_effect", version = "0.11.0" }
+axum = "0.8.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = [
@@ -66,7 +68,7 @@ tower = { version = "0.5", default-features = false, features = ["util"] }
 
 [dev-dependencies]
 # Containers, isolated databases, fixtures and the in-process HTTP client.
-id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.10.1", features = [
+id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.11.0", features = [
   "test",
 ] }
 # tests/oidc.rs plays the browser against Keycloak; tests/config.rs writes Vault secrets;
@@ -88,5 +90,6 @@ tokio = { version = "1", features = [
 
 [package.metadata.id_effect]
 # ADR 0010 crate tier — checked by scripts/tier-conformance.sh. The reference app is the
-# CI-tested consumer that puts the 0.9 and 0.10 battery crates in tier `platform` (check P).
+# CI-tested consumer that puts the 0.9 and 0.10 battery crates, and id_effect_workflow (0.11),
+# in tier `platform` (check P).
 tier = "example"

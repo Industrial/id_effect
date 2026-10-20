@@ -68,10 +68,11 @@ curl http://127.0.0.1:8080/hello/ada   # hello, ada
 curl -i http://127.0.0.1:8080/hello/$(printf 'a%.0s' {1..33})   # 33 characters: 422
 ```
 
-`/hello/{name}` is a *typed route*: `Route::get("/hello/{name}").path::<Name>()` decodes the path
-through `Name`'s schema (1 to 32 characters) before the handler runs, so `hello` only ever sees a
-valid name. A value the schema rejects never reaches it and is answered `422` with an RFC 9457
-Problem+JSON body:
+`/hello/{name}` is a *typed route*: `Route::get("/hello/{name}").public().path::<Name>()` decodes
+the path through `Name`'s schema (1 to 32 characters) before the handler runs, so `hello` only ever
+sees a valid name. `.public()` is the route's access decision: every typed route says who may call
+it (`.public()` or `.guard(..)`), or it does not compile. A value the schema rejects never reaches
+the handler and is answered `422` with an RFC 9457 Problem+JSON body:
 
 ```text
 HTTP/1.1 422 Unprocessable Entity
@@ -203,9 +204,14 @@ the layers so the middleware covers them:
 # pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 # pub const BODY_LIMIT: usize = 2 * 1024 * 1024;
 pub fn app(health: &HealthRegistry, cookie_key: CookieKey) -> Router {
-    // Typed routes are registered (method, path, schemas) for OpenAPI and route listings.
-    let typed =
-        route::Router::new().route(Route::get("/hello/{name}").path::<Name>().handler(hello));
+    // Typed routes are registered (method, path, access, schemas) for OpenAPI and route
+    // listings. Each declares who may call it: `.public()` here, `.guard(..)` for the rest.
+    let typed = route::Router::new().route(
+        Route::get("/hello/{name}")
+            .public()
+            .path::<Name>()
+            .handler(hello),
+    );
     Router::new()
         .route("/", routing::get(index))
         .merge(typed.into_axum())
@@ -487,7 +493,7 @@ id-effect doctor
 id-effect doctor: /home/me/orders-api
   pass  project   package `orders-api`
   pass  rustc     rustc 1.95.0 >= id_effect MSRV 1.94; the project sets no rust-version
-  pass  versions  id_effect 0.10.1: id_effect, id_effect_axum, id_effect_cli, id_effect_config, id_effect_kit, …
+  pass  versions  id_effect 0.11.0: id_effect, id_effect_axum, id_effect_cli, id_effect_config, id_effect_kit, …
   pass  env       all 6 .env.example keys set (6 from .env)
   pass  database  localhost:5432 accepts TCP connections
   pass  docker    Docker version 29.8.1; Docker Compose version 5.6.0 (daemon not checked)

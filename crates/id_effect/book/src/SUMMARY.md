@@ -52,7 +52,7 @@
   - [Logging (`id_effect_logger`)](./part2/ch07-11-logger.md)
   - [OpenTelemetry (`id_effect_opentelemetry`)](./part2/ch07-12-opentelemetry.md)
   - [RPC boundaries (`id_effect_rpc`, labs)](./part2/ch07-12-rpc-boundaries.md)
-  - [Durable workflow (`id_effect_workflow`, labs)](./part2/ch07-12-durable-workflow.md)
+  - [Durable workflow (`id_effect_workflow`)](./part2/ch07-12-durable-workflow.md)
 
 # Part III: Real Programs
 
@@ -132,7 +132,8 @@
   - [Transition tables](./part5/ch19-01-transition-tables.md)
   - [Effect interpreter and FsmProcess](./part5/ch19-02-effect-interpreter.md)
   - [Sagas](./part5/ch19-03-saga-session.md)
-  - [Workflow bridge (labs)](./part5/ch19-04-workflow-bridge.md)
+  - [Workflow bridge](./part5/ch19-04-workflow-bridge.md)
+  - [`Statem`: gen_statem parity](./part5/ch19-05-statem.md)
 
 - [Parser Combinators](./part5/ch20-00-parser-combinators.md)
 
@@ -189,8 +190,11 @@
 
 - [Process Mesh overview](./part7/ch36-00-process-mesh.md)
 - [Processes and supervision](./part7/ch37-00-processes-supervision.md)
+  - [Timers, selective receive and hibernate](./part7/ch37-01-timers-selective-receive.md)
 - [Distribution and membership](./part7/ch38-00-distribution.md)
+  - [Transport security: mutual TLS](./part7/ch38-01-transport-security.md)
 - [Cluster groups and takeover](./part7/ch39-00-cluster-supervision.md)
+  - [Cluster-wide names](./part7/ch39-01-global-registry.md)
 
 # Cookbook
 

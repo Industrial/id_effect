@@ -16,8 +16,10 @@
 //! without a new one.
 //!
 //! The counts live in a [`ThrottleStore`]. [`MemoryThrottleStore`] (the default) counts per
-//! process; several instances behind a load balancer each count on their own until a shared
-//! store is plugged in. [`BasicAuth`](crate::BasicAuth) throttles with a default
+//! process and records [`MEMORY_THROTTLE_STORE_POSTURE`] in the posture registry; several
+//! instances behind a load balancer each count on their own until a shared store is plugged in:
+//! `PgThrottleStore` (feature `pg`) keeps them in PostgreSQL, so every instance sees every
+//! failure. [`BasicAuth`](crate::BasicAuth) throttles with a default
 //! `LoginThrottle`; an application's own login calls [`check`](LoginThrottle::check) before
 //! hashing and [`record_failure`](LoginThrottle::record_failure) /
 //! [`record_success`](LoginThrottle::record_success) after.
@@ -96,12 +98,35 @@ pub trait ThrottleStore: Send + Sync + 'static {
 /// Above this many keys, [`MemoryThrottleStore`] drops forgotten ones on the next failure.
 const MEMORY_PRUNE_AT: usize = 10_000;
 
+/// The posture registry id [`MemoryThrottleStore`] records when one is created (0.11 H5, H6):
+/// its failure counts are memory-only.
+pub const MEMORY_THROTTLE_STORE_POSTURE: &str = "id_effect_auth::MemoryThrottleStore::memory_only";
+
 /// In-memory [`ThrottleStore`] (per process). Clones share the counts. Keys whose failures are
 /// forgotten are pruned as the store grows, so a spray of made-up names cannot grow it without
 /// bound.
-#[derive(Clone, Default)]
+///
+/// Each instance of a service counts only the failures it saw itself, so behind a load balancer
+/// N instances allow N budgets of guesses (H5, H6). Creating one (as [`LoginThrottle::default`],
+/// [`BasicAuth::new`](crate::BasicAuth::new) and `Totp::new` do) records
+/// [`MEMORY_THROTTLE_STORE_POSTURE`] in the posture registry, which the prod posture check
+/// reports as memory-only security state; use `PgThrottleStore` there.
+#[derive(Clone)]
 pub struct MemoryThrottleStore {
   inner: Arc<Mutex<HashMap<String, Failures>>>,
+}
+
+impl Default for MemoryThrottleStore {
+  fn default() -> Self {
+    id_effect::observability::posture::record_dangerous(
+      MEMORY_THROTTLE_STORE_POSTURE,
+      "H5, H6: login and TOTP failure counts are memory-only; each instance allows its own \
+       budget of guesses",
+    );
+    Self {
+      inner: Arc::default(),
+    }
+  }
 }
 
 impl fmt::Debug for MemoryThrottleStore {
@@ -160,6 +185,161 @@ impl ThrottleStore for MemoryThrottleStore {
     })
   }
 }
+
+#[cfg(feature = "pg")]
+mod pg {
+  use std::fmt;
+  use std::time::Duration;
+
+  use id_effect::{Effect, UtcDateTime, fail, succeed};
+  use id_effect_sql::{SqlClient, SqlClientService, SqlError, SqlRow, params};
+
+  use super::{Failures, ThrottleStore};
+  use crate::error::AuthError;
+  use crate::session::statements;
+
+  /// The crate's migration `migrations/0003_id_effect_auth_state.up.sql`: what
+  /// [`PgThrottleStore::ensure_schema`] runs.
+  const SCHEMA: &str = include_str!("../migrations/0003_id_effect_auth_state.up.sql");
+
+  pub(super) const GET: &str = "SELECT count, last_at FROM id_effect_auth_failures WHERE key = $1";
+
+  /// One statement: a key whose last failure is before `$3` (`at - forget_after`) starts over.
+  pub(super) const RECORD: &str = "INSERT INTO id_effect_auth_failures AS f (key, count, last_at) \
+    VALUES ($1, 1, $2) \
+    ON CONFLICT (key) DO UPDATE SET \
+    count = CASE WHEN f.last_at >= $3 THEN f.count + 1 ELSE 1 END, last_at = EXCLUDED.last_at \
+    RETURNING count, last_at";
+
+  pub(super) const CLEAR: &str = "DELETE FROM id_effect_auth_failures WHERE key = $1";
+
+  pub(super) const PURGE: &str = "DELETE FROM id_effect_auth_failures WHERE last_at < $1";
+
+  /// [`ThrottleStore`] in the PostgreSQL table `id_effect_auth_failures`, over any
+  /// [`SqlClient`] (`id_effect_sql::pg::PgSqlClient` in production): the failure counts every
+  /// instance shares, so N instances allow one budget, not N. Clones share the client.
+  ///
+  /// - [`record_failure`](ThrottleStore::record_failure) is one upsert (`INSERT … ON CONFLICT
+  ///   (key) DO UPDATE … RETURNING`): concurrent failures on several instances each count.
+  /// - [`purge_forgotten`](Self::purge_forgotten) deletes the keys whose last failure is older
+  ///   than a cutoff (schedule it, so a spray of made-up names does not accumulate).
+  ///
+  /// Create the table with the crate's `migrations/0003_id_effect_auth_state.up.sql` or with
+  /// [`ensure_schema`](Self::ensure_schema). Driver and decode failures surface as
+  /// [`AuthError::Unavailable`].
+  #[derive(Clone)]
+  pub struct PgThrottleStore {
+    client: SqlClientService,
+  }
+
+  impl fmt::Debug for PgThrottleStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+      f.debug_struct("PgThrottleStore")
+        .field("table", &"id_effect_auth_failures")
+        .finish_non_exhaustive()
+    }
+  }
+
+  impl PgThrottleStore {
+    /// A store over `client`.
+    #[inline]
+    pub fn new(client: impl SqlClient) -> Self {
+      Self::from_service(SqlClientService::new(client))
+    }
+
+    /// A store over the client capability `client` (shares the client and its pool).
+    #[inline]
+    pub fn from_service(client: SqlClientService) -> Self {
+      Self { client }
+    }
+
+    /// Create the tables of `migrations/0003_id_effect_auth_state.up.sql` (this store's and
+    /// `PgTotpStepStore`'s) unless they exist, one statement at a time.
+    pub fn ensure_schema(&self) -> Effect<(), AuthError> {
+      let client = self.client.clone();
+      statements(SCHEMA)
+        .into_iter()
+        .fold(succeed(()), move |done, sql| {
+          let client = client.clone();
+          done.flat_map(move |()| client.execute(&sql, &[]).map(|_| ()).map_err(storage))
+        })
+    }
+
+    /// Delete the keys whose last failure is before `cutoff` (`now - forget_after` forgets
+    /// what the throttle has forgotten anyway); how many.
+    pub fn purge_forgotten(&self, cutoff: UtcDateTime) -> Effect<u64, AuthError> {
+      self
+        .client
+        .execute(PURGE, &params![cutoff.0])
+        .map_err(storage)
+    }
+  }
+
+  fn storage(e: SqlError) -> AuthError {
+    AuthError::Unavailable(format!("login throttle store: {e}"))
+  }
+
+  fn decode(row: &SqlRow) -> Result<Failures, SqlError> {
+    let count = row.get::<i64>("count")?;
+    Ok(Failures {
+      count: u32::try_from(count).unwrap_or(u32::MAX),
+      last: UtcDateTime(row.get::<jiff::Timestamp>("last_at")?),
+    })
+  }
+
+  fn first(rows: &[SqlRow]) -> Effect<Option<Failures>, AuthError> {
+    match rows.first().map(decode) {
+      None => succeed(None),
+      Some(Ok(f)) => succeed(Some(f)),
+      Some(Err(e)) => fail(storage(e)),
+    }
+  }
+
+  impl ThrottleStore for PgThrottleStore {
+    fn get(&self, key: &str) -> Effect<Option<Failures>, AuthError> {
+      self
+        .client
+        .query(GET, &params![key])
+        .map_err(storage)
+        .flat_map(|rows| first(&rows))
+    }
+
+    fn record_failure(
+      &self,
+      key: &str,
+      at: UtcDateTime,
+      forget_after: Duration,
+    ) -> Effect<Failures, AuthError> {
+      let cutoff = at
+        .0
+        .checked_sub(forget_after)
+        .unwrap_or(jiff::Timestamp::MIN);
+      self
+        .client
+        .query(RECORD, &params![key, at.0, cutoff])
+        .map_err(storage)
+        .flat_map(|rows| {
+          first(&rows).flat_map(|found| match found {
+            Some(f) => succeed(f),
+            None => fail(AuthError::Unavailable(
+              "login throttle store: the upsert returned no row".into(),
+            )),
+          })
+        })
+    }
+
+    fn clear(&self, key: &str) -> Effect<(), AuthError> {
+      self
+        .client
+        .execute(CLEAR, &params![key])
+        .map(|_| ())
+        .map_err(storage)
+    }
+  }
+}
+
+#[cfg(feature = "pg")]
+pub use pg::PgThrottleStore;
 
 /// Failed-login backoff per account and per client address. Cheap to clone; clones share the
 /// store. See the [module documentation](self).
@@ -393,6 +573,18 @@ mod tests {
   }
 
   #[test]
+  fn h5_memory_throttle_store_is_recorded() {
+    let _ = LoginThrottle::default();
+    let found = id_effect::observability::posture::dangerous_opt_outs();
+    let (_, reopens) = found
+      .iter()
+      .find(|(id, _)| *id == MEMORY_THROTTLE_STORE_POSTURE)
+      .expect("recorded");
+    assert!(reopens.starts_with("H5, H6: login and TOTP failure counts are memory-only"));
+    assert!(MEMORY_THROTTLE_STORE_POSTURE.ends_with("::memory_only"));
+  }
+
+  #[test]
   fn a_lock_runs_from_the_last_failure_and_success_clears_the_account() {
     let clock = WallClock::anchored(Instant::now(), at(1_000));
     let t = LoginThrottle::default()
@@ -430,5 +622,75 @@ mod tests {
     );
     clock.jump(Duration::from_secs(601));
     assert!(run(t.check("bob", ip)).is_ok(), "the address was forgotten");
+  }
+
+  #[cfg(feature = "pg")]
+  #[test]
+  fn the_pg_store_counts_in_one_upsert() {
+    use id_effect_sql::{SqlClient, SqlRow, SqlValue, TestSqlClient};
+
+    fn unavailable<A>(r: Result<A, AuthError>) -> bool {
+      matches!(r, Err(AuthError::Unavailable(_)))
+    }
+    let client = TestSqlClient::new();
+    let store = PgThrottleStore::new(client.clone());
+    let hour = Duration::from_secs(3600);
+    assert!(unavailable(run(store.get("k"))));
+    assert!(unavailable(run(store.ensure_schema())));
+    assert!(matches!(client.connect().block_on(), Exit::Success(())));
+
+    let row = SqlRow::from_pairs([
+      ("count", SqlValue::I64(3)),
+      ("last_at", SqlValue::Timestamp(at(7200).0)),
+    ]);
+    client.script_query(pg::RECORD, vec![row.clone()]);
+    let counted = run(store.record_failure("k", at(7200), hour)).unwrap();
+    assert_eq!(
+      counted,
+      Failures {
+        count: 3,
+        last: at(7200)
+      }
+    );
+    let (sql, params) = &client.recorded_queries()[0];
+    assert_eq!(sql, pg::RECORD);
+    assert_eq!(
+      params,
+      &[
+        SqlValue::Text("k".into()),
+        SqlValue::Timestamp(at(7200).0),
+        SqlValue::Timestamp(at(3600).0),
+      ],
+      "the cutoff is `at - forget_after`"
+    );
+
+    assert_eq!(run(store.get("k")), Ok(None));
+    client.script_query(pg::GET, vec![row]);
+    assert_eq!(run(store.get("k")), Ok(Some(counted)));
+    run(store.clear("k")).unwrap();
+    client.script_execute(pg::PURGE, 2);
+    assert_eq!(run(store.purge_forgotten(at(0))), Ok(2));
+    let executes = client.recorded_executes();
+    assert_eq!(
+      executes[0],
+      (pg::CLEAR.to_owned(), vec![SqlValue::Text("k".into())])
+    );
+    assert_eq!(executes[1].1, [SqlValue::Timestamp(at(0).0)]);
+
+    client.script_query(pg::RECORD, vec![]);
+    assert!(unavailable(run(store.record_failure("k", at(1), hour))));
+    let bad = SqlRow::from_pairs([("count", SqlValue::Text("x".into()))]);
+    client.script_query(pg::GET, vec![bad]);
+    assert!(unavailable(run(store.get("k"))));
+
+    run(store.ensure_schema()).unwrap();
+    let ddl = client.recorded_executes();
+    assert_eq!(ddl.len(), 5, "{ddl:?}");
+    assert!(
+      ddl[3]
+        .0
+        .starts_with("CREATE TABLE IF NOT EXISTS id_effect_auth_failures")
+    );
+    assert!(format!("{store:?}").contains("id_effect_auth_failures"));
   }
 }

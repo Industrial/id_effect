@@ -2,7 +2,8 @@
 
 Typed **finite-state machines** for [`id_effect`](https://github.com/Industrial/id_effect)
 programs: pure transition tables, `#[derive(Fsm)]`, Effect-valued transition actions, sagas with
-compensation, and a `gen_statem`-style process behaviour (`FsmProcess`) for supervised machines.
+compensation, a process behaviour (`FsmProcess`) for supervised table-driven machines, and
+`Statem`, a callback behaviour with `gen_statem` parity.
 
 ## Modules
 
@@ -12,11 +13,13 @@ compensation, and a `gen_statem`-style process behaviour (`FsmProcess`) for supe
 | `Fsm` / `#[derive(Fsm)]` | Declare initial state and edges on a fieldless enum |
 | `Interpreter` | Effect-valued transition actions; `step` / `run` return an `Effect` |
 | `FsmProcess` / `FsmSpec` / `FsmHandle` | Host a machine in an `id_effect_process` process: events are mailbox messages, state is queryable, crashes are supervised |
+| `Statem` / `StatemProcess` / `StatemHandle` | `gen_statem` parity as a supervised process: states that carry data, a separate machine `Data`, state, event and generic timeouts, postpone, inserted events, replies and state-enter callbacks; `handle_event` returns a `Transition` with `Action`s |
 | `Saga` / `SagaStep` | Forward steps with LIFO compensation, run as one `Effect` |
 | `to_mermaid` / `table_to_mermaid` | Mermaid `stateDiagram-v2` export |
 | `TaggedEvent` / `event_matcher` | Bridge events/states to `HasTag` / `Matcher` |
 
-Durable FSM snapshots live in the unpublished labs crate `id_effect_workflow::fsm`.
+For a machine that survives restarts, drive it from a durable workflow of the `id_effect_workflow`
+crate (events as signals, each transition a journaled step).
 
 ## Quick example
 
@@ -92,6 +95,7 @@ assert_eq!(state, Door::Opened);
 ```bash
 cargo run -p id_effect_fsm --example door_fsm
 cargo run -p id_effect_fsm --example supervised_traffic_light
+cargo run -p id_effect_fsm --example statem_door_lock
 ```
 
 mdBook **Part V — ch19 State Machines** (`crates/id_effect/book/src/part5/`).

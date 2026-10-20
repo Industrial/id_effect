@@ -23,6 +23,7 @@ async fn start(app: Router, limits: ConnectionLimits) -> ServerHandle {
     bind_host: "127.0.0.1".into(),
     bind_port: 0,
     shutdown_timeout: Duration::from_secs(5),
+    ..HostConfig::default()
   };
   ServerHandle::start_with_limits(&config, app, ReadinessState::new(true), limits)
     .await

@@ -28,11 +28,15 @@ registry:
 
 env:
   clear:
+    # Not `dev`: no local-operator shortcut on the console, no dev-only surfaces.
+    ID_EFFECT_PROFILE: "prod"
     HOST: "0.0.0.0"
     PORT: "8080"
     SHUTDOWN_TIMEOUT_SECS: "30"
   secret:
     - COOKIE_KEY
+    # Bearer token Prometheus sends to /metrics (unset: every scrape is answered 401):
+    # - METRICS_TOKEN
 {{#if pg}}
     - DATABASE_URL
 {{/if}}

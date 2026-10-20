@@ -1,5 +1,13 @@
 # ADR — Workflow charter for `id_effect_workflow`
 
+> **Superseded in part (0.11).** The storage decision below (duroxide + duroxide-pg in
+> production, bundled SQLite behind `memory`, the `fsm` bridge) went with
+> `labs/id_effect_workflow`, which 0.11 removed (release 0.11.0 decision D6). The published
+> `crates/id_effect_workflow` (tier `integration`, ADR 0010 Amendment 7) is its own engine on
+> `id_effect_sql`: a history journal replayed on resume (`PgWorkflowStore`, `MemoryWorkflowStore`
+> for tests), leases with fencing tokens, activities and durable timers as `id_effect_jobs` jobs,
+> signals and sagas. Kept as a record of the original charter.
+
 **Status:** Accepted (revised 2026-06-17)  
 **Date:** 2026-06-19 (original); 2026-06-17 (duroxide production path)  
 **Context:** Phase G (`@effect/cluster`, `@effect/workflow` parity) needs explicit success criteria before investing in distributed execution. See `docs/effect-ts-parity/phases/phase-g-cluster-workflow.md`. The fp-events initiative locks **duroxide-pg** as the production durable workflow store on the shared PostgreSQL pool.

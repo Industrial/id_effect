@@ -75,4 +75,6 @@ max_deliveries = 5
 consumer = "ledger-1"
 
 [console]
-enabled = true
+# `/_console` (behind `console.admin`) is mounted in `dev` (`dev.toml`) and the tests' `test`
+# profile only: an operator surface stays closed in prod (ADR 0013 R7).
+enabled = false

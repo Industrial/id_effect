@@ -6,10 +6,20 @@
 //!   revalidate on each use and a matching `If-None-Match` answers `304 Not Modified`.
 //! - **`/docs`** is a [Scalar](https://github.com/scalar/scalar) API reference page. The page is
 //!   a few lines of HTML that load Scalar's standalone bundle from a CDN
-//!   ([`DEFAULT_SCALAR_URL`]); no JavaScript is vendored in this crate. For an air-gapped
+//!   ([`DEFAULT_SCALAR_URL`], an exact version, checked by Subresource Integrity against
+//!   [`DEFAULT_SCALAR_INTEGRITY`]); no JavaScript is vendored in this crate. For an air-gapped
 //!   deployment, mirror the bundle and point [`OpenApiUi::cdn_url`] at the mirror (an absolute URL,
 //!   or a same-origin path such as `/assets/scalar.js` served by [`serve_dir`](crate::serve_dir));
-//!   pin an exact version and add [`OpenApiUi::integrity`] for Subresource Integrity.
+//!   another URL drops the default hash, so give the mirrored file's with [`OpenApiUi::integrity`].
+//!
+//! # Access (ADR 0013 R7)
+//!
+//! The document lists every route and the page lets a browser call them: outside the `dev` and
+//! `test` profiles ([`OpenApiUi::profile`], default the `ID_EFFECT_PROFILE` variable, else
+//! `dev`) [`OpenApiUi::router`] mounts **neither route** unless the UI is guarded
+//! ([`OpenApiUi::guard`], any [`RouteGuard`] such as an `id_effect_authz` `Guard`) or explicitly
+//! public ([`OpenApiUi::public_dangerous`], recorded in the
+//! [posture registry](id_effect::observability::posture)). A guard applies in every profile.
 //!
 //! # Content-Security-Policy
 //!
@@ -55,6 +65,9 @@
 //! # });
 //! ```
 
+use std::fmt;
+use std::sync::Arc;
+
 use axum::body::Bytes;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -63,10 +76,25 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use sha2::{Digest, Sha256};
 
 use super::OpenApi;
+use crate::route::RouteGuard;
 use crate::server::security::ContentSecurityPolicy;
 
-/// Default Scalar bundle: the latest 1.x of `@scalar/api-reference` on jsDelivr.
-pub const DEFAULT_SCALAR_URL: &str = "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1";
+/// Default Scalar bundle: the standalone build of `@scalar/api-reference` 1.75.0 on jsDelivr,
+/// an exact version so that [`DEFAULT_SCALAR_INTEGRITY`] stays its hash.
+pub const DEFAULT_SCALAR_URL: &str =
+  "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.75.0/dist/browser/standalone.js";
+
+/// Subresource Integrity hash of [`DEFAULT_SCALAR_URL`]: the browser refuses a bundle the CDN
+/// serves with any other content.
+pub const DEFAULT_SCALAR_INTEGRITY: &str =
+  "sha384-xgelKlDcc+BYp0O+ZYzFesLnWCgGpEbXVVZWNQT6WyZYygN01tbEMygnjPXb5OPI";
+
+/// The variable naming the profile the process runs under (as in `id_effect_config`), read by
+/// [`OpenApiUi::router`] when no [`OpenApiUi::profile`] is set.
+pub const PROFILE_ENV: &str = "ID_EFFECT_PROFILE";
+
+/// The profiles in which an unguarded UI is mounted.
+const OPEN_PROFILES: [&str; 2] = ["dev", "test"];
 
 /// Where [`openapi_router`] serves the document by default.
 pub const OPENAPI_JSON_PATH: &str = "/openapi.json";
@@ -76,7 +104,9 @@ pub const DOCS_PATH: &str = "/docs";
 
 /// How [`openapi_router`] serves the document and its docs page; start with
 /// [`OpenApiUi::scalar`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Two values are equal when every setting is and they hold the same guards (by identity).
+#[derive(Clone)]
 #[must_use]
 pub struct OpenApiUi {
   bundle_url: String,
@@ -86,6 +116,9 @@ pub struct OpenApiUi {
   docs_path: String,
   spec_url: Option<String>,
   connect_src: Vec<String>,
+  profile: Option<String>,
+  guards: Vec<Arc<dyn RouteGuard>>,
+  public: bool,
 }
 
 impl Default for OpenApiUi {
@@ -94,26 +127,76 @@ impl Default for OpenApiUi {
   }
 }
 
+impl fmt::Debug for OpenApiUi {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    let policies: Vec<&str> = self.guards.iter().map(|guard| guard.policy()).collect();
+    f.debug_struct("OpenApiUi")
+      .field("bundle_url", &self.bundle_url)
+      .field("integrity", &self.integrity)
+      .field("title", &self.title)
+      .field("json_path", &self.json_path)
+      .field("docs_path", &self.docs_path)
+      .field("spec_url", &self.spec_url)
+      .field("connect_src", &self.connect_src)
+      .field("profile", &self.profile)
+      .field("guards", &policies)
+      .field("public", &self.public)
+      .finish()
+  }
+}
+
+impl PartialEq for OpenApiUi {
+  fn eq(&self, other: &Self) -> bool {
+    self.bundle_url == other.bundle_url
+      && self.integrity == other.integrity
+      && self.title == other.title
+      && self.json_path == other.json_path
+      && self.docs_path == other.docs_path
+      && self.spec_url == other.spec_url
+      && self.connect_src == other.connect_src
+      && self.profile == other.profile
+      && self.public == other.public
+      && self.guards.len() == other.guards.len()
+      && self
+        .guards
+        .iter()
+        .zip(&other.guards)
+        .all(|(a, b)| Arc::ptr_eq(a, b))
+  }
+}
+
+impl Eq for OpenApiUi {}
+
 impl OpenApiUi {
   /// A Scalar API reference at [`DOCS_PATH`] reading the document at [`OPENAPI_JSON_PATH`], its
-  /// bundle loaded from [`DEFAULT_SCALAR_URL`].
+  /// bundle loaded from [`DEFAULT_SCALAR_URL`] and checked against [`DEFAULT_SCALAR_INTEGRITY`];
+  /// unguarded, so mounted in the `dev` and `test` profiles only (see the [module docs](self)).
   pub fn scalar() -> Self {
     Self {
       bundle_url: DEFAULT_SCALAR_URL.to_owned(),
-      integrity: None,
+      integrity: Some(DEFAULT_SCALAR_INTEGRITY.to_owned()),
       title: None,
       json_path: OPENAPI_JSON_PATH.to_owned(),
       docs_path: DOCS_PATH.to_owned(),
       spec_url: None,
       connect_src: Vec::new(),
+      profile: None,
+      guards: Vec::new(),
+      public: false,
     }
   }
 
-  /// Load the Scalar bundle from `url` instead (a mirror for air-gapped deployments, or a pinned
-  /// version). An absolute `http(s)` URL allows its origin in the page's CSP; a path allows
-  /// `'self'`.
+  /// Load the Scalar bundle from `url` instead (a mirror for air-gapped deployments, or another
+  /// pinned version). An absolute `http(s)` URL allows its origin in the page's CSP; a path allows
+  /// `'self'`. Another URL than [`DEFAULT_SCALAR_URL`] drops [`DEFAULT_SCALAR_INTEGRITY`] (a hash
+  /// set with [`integrity`](Self::integrity) is kept): give the file's own hash.
   pub fn cdn_url(mut self, url: impl Into<String>) -> Self {
     self.bundle_url = url.into();
+    if self.bundle_url != DEFAULT_SCALAR_URL
+      && self.integrity.as_deref() == Some(DEFAULT_SCALAR_INTEGRITY)
+    {
+      self.integrity = None;
+    }
     self
   }
 
@@ -122,6 +205,47 @@ impl OpenApiUi {
   pub fn integrity(mut self, hash: impl Into<String>) -> Self {
     self.integrity = Some(hash.into());
     self
+  }
+
+  /// The profile the app runs under (`dev`, `test`, `prod`, …), deciding whether an unguarded UI
+  /// is mounted (default: the [`PROFILE_ENV`] variable when [`router`](Self::router) runs, else
+  /// `dev`).
+  pub fn profile(mut self, profile: impl Into<String>) -> Self {
+    self.profile = Some(profile.into());
+    self
+  }
+
+  /// Put both routes behind `guard` (repeatable, outermost last), in every profile; a guarded UI
+  /// is mounted in `prod` too.
+  pub fn guard(mut self, guard: impl RouteGuard) -> Self {
+    self.guards.push(Arc::new(guard));
+    self
+  }
+
+  /// Serve the document and the page to anyone in every profile, `prod` included. Recorded in
+  /// the [posture registry](id_effect::observability::posture) as
+  /// `id_effect_axum::openapi::OpenApiUi::public_dangerous`.
+  pub fn public_dangerous(mut self) -> Self {
+    id_effect::observability::posture::record_dangerous(
+      "id_effect_axum::openapi::OpenApiUi::public_dangerous",
+      "M7: the API document and its reference page are served to anonymous callers in prod",
+    );
+    self.public = true;
+    self
+  }
+
+  /// Whether [`router`](Self::router) mounts the routes: guarded, explicitly public, or in the
+  /// `dev` or `test` profile.
+  pub fn is_mounted(&self) -> bool {
+    if self.public || !self.guards.is_empty() {
+      return true;
+    }
+    let profile = self
+      .profile
+      .clone()
+      .or_else(|| std::env::var(PROFILE_ENV).ok())
+      .filter(|p| !p.trim().is_empty());
+    profile.is_none_or(|p| OPEN_PROFILES.contains(&p.trim()))
   }
 
   /// Page title (default: the document's `info.title`).
@@ -208,7 +332,9 @@ impl OpenApiUi {
   }
 
   /// An Axum router serving `doc` at the JSON path and the docs page at the docs path (see the
-  /// [module docs](self)). The document is serialized now: later changes to `doc` are not served.
+  /// [module docs](self)), behind the [guards](Self::guard). The document is serialized now:
+  /// later changes to `doc` are not served. An empty router when the UI is not
+  /// [mounted](Self::is_mounted) (unguarded outside `dev` and `test`).
   ///
   /// # Panics
   ///
@@ -218,6 +344,15 @@ impl OpenApiUi {
   where
     S: Clone + Send + Sync + 'static,
   {
+    if !self.is_mounted() {
+      tracing::info!(
+        target: "id_effect_axum::openapi",
+        json = %self.json_path,
+        docs = %self.docs_path,
+        "OpenAPI document and docs page not mounted: unguarded outside the dev and test profiles",
+      );
+      return axum::Router::new();
+    }
     let policy = self.content_security_policy();
     let csp = match policy.validate() {
       Ok(()) => policy
@@ -232,7 +367,7 @@ impl OpenApiUi {
     ))
     .expect("base64 is a valid header value");
     let html = Bytes::from(self.html(doc));
-    axum::Router::new()
+    let routes = axum::Router::new()
       .route(
         &self.json_path,
         axum::routing::get(move |headers: HeaderMap| {
@@ -242,7 +377,10 @@ impl OpenApiUi {
       .route(
         &self.docs_path,
         axum::routing::get(move || std::future::ready(page(html.clone(), csp.clone()))),
-      )
+      );
+    self.guards.iter().fold(routes, |routes, guard| {
+      crate::metrics::guard_routes(routes, Arc::clone(guard))
+    })
   }
 }
 

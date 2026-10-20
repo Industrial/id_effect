@@ -12,4 +12,10 @@ id_effect = "{{id_effect_version}}"
 # `Process`, `ProcessNode`, `NodeName`: the local process layer the mesh distributes.
 id_effect_process = "{{id_effect_version}}"
 postcard = { version = "1", features = ["alloc"] }
+# The dev certificates of local runs (`dev_certificates`), on aws-lc-rs like the mesh's TLS.
+rcgen = { version = "0.13", default-features = false, features = ["aws_lc_rs", "pem"] }
 serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+# tests/mesh.rs runs a TLS session between two transports.
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

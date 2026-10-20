@@ -34,7 +34,9 @@
 //! [`Layer`](id_effect::Layer)s ([`provide_minimum_log_level`], [`LogMetadataLive::layer`]) on the
 //! thread that runs the program; the installed refs are [`FiberRef`]s. The composite backend
 //! ([`provide_composite_logger`]) and the [`RedactionPolicy`] ([`provide_redaction_policy`]) are
-//! process-wide: built once at startup, they apply on every thread (since 0.10).
+//! process-wide: built once at startup, they apply on every thread (since 0.10). With no policy
+//! installed, [`RedactionPolicy::recommended`] applies (since 0.11), and the line formats escape
+//! control characters and `key=value` separators so a logged value cannot forge a line or a field.
 //!
 //! ```
 //! use std::sync::Arc;
@@ -65,8 +67,8 @@ use core::convert::Infallible;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, LazyLock};
 #[cfg(not(test))]
 use std::sync::{PoisonError, RwLock};
 use std::thread::LocalKey;
@@ -88,7 +90,7 @@ pub use providers::{
   provide_composite_logger, provide_minimum_log_level, provide_redaction_policy,
 };
 
-pub use redact::{DEFAULT_REDACTION_MASK, RedactionPolicy};
+pub use redact::{DANGEROUS_EMPTY, DEFAULT_REDACTION_MASK, RedactionPolicy};
 pub use sample::{SamplingBackend, SamplingStats};
 
 use pipeline::TracingLogBackend as TracingSink;
@@ -171,6 +173,19 @@ static REDACTION_POLICY: Slot<RedactionPolicy> = Slot {
   value: &TEST_REDACTION_POLICY,
 };
 
+/// [`RedactionPolicy::recommended`], applied while no policy is installed (ADR 0013 R3).
+static RECOMMENDED_REDACTION_POLICY: LazyLock<Arc<RedactionPolicy>> =
+  LazyLock::new(|| Arc::new(RedactionPolicy::recommended()));
+
+/// The [`RedactionPolicy`] the logger applies to its next line: the one installed by
+/// [`provide_redaction_policy`], or [`RedactionPolicy::recommended`] when none is. A posture
+/// check reads it (for example [`RedactionPolicy::is_empty`]) to tell whether redaction is on.
+pub fn active_redaction_policy() -> Arc<RedactionPolicy> {
+  REDACTION_POLICY
+    .get()
+    .unwrap_or_else(|| Arc::clone(&RECOMMENDED_REDACTION_POLICY))
+}
+
 /// No process-wide minimum is set (not a [`LogLevel`] discriminant).
 const GLOBAL_MIN_UNSET: u8 = 254;
 
@@ -237,26 +252,31 @@ fn installed<T: Clone + Send + Sync + 'static>(
   slot.with(|c| c.borrow().clone())
 }
 
-/// The current fiber's value of the ref installed in `slot`, or `None` when nothing is installed
-/// on the running thread.
-fn current<T: Clone + Send + Sync + 'static>(
+/// `then` applied to the current fiber's value of the ref installed in `slot`, or to `None` when
+/// nothing is installed on the running thread (then without reading a fiber ref at all).
+fn with_current<T, B, F>(
   slot: &'static LocalKey<RefCell<Option<FiberRef<T>>>>,
-) -> Effect<Option<T>, EffectLoggerError> {
+  then: F,
+) -> Effect<B, EffectLoggerError>
+where
+  T: Clone + Send + Sync + 'static,
+  B: Send + 'static,
+  F: FnOnce(Option<T>) -> Effect<B, EffectLoggerError> + Send + 'static,
+{
   match installed(slot) {
-    None => succeed(None),
-    Some(fr) => fr.get().map(Some),
+    None => then(None),
+    Some(fr) => fr.get().flat_map(move |value| then(Some(value))),
   }
 }
 
-/// Applies the installed [`RedactionPolicy`] once, then hands the record to the installed
-/// composite backend (or to `tracing` when none is installed): every backend sees the same
-/// redacted record. Both are process-wide; the locks are released before any backend runs.
+/// Applies the installed [`RedactionPolicy`] (or [`RedactionPolicy::recommended`] when none is
+/// installed) once, then hands the record to the installed composite backend (or to `tracing`
+/// when none is installed): every backend sees the same redacted record. Both are process-wide;
+/// the locks are released before any backend runs.
 fn emit_record(rec: &LogRecord<'_>) -> Result<(), EffectLoggerError> {
   let policy = REDACTION_POLICY.get();
-  let rec = match policy.as_deref() {
-    Some(p) => p.apply(rec),
-    None => Cow::Borrowed(rec),
-  };
+  let policy = policy.as_deref().unwrap_or(&RECOMMENDED_REDACTION_POLICY);
+  let rec = policy.apply(rec);
   match COMPOSITE_LOG_BACKEND.get() {
     Some(comp) => comp.emit_all(&rec),
     None => LogBackend::emit(&TracingSink, &rec),
@@ -417,7 +437,7 @@ impl EffectLogger {
     // The thread-locals are read when the effect runs (on the thread driving the fiber), and the
     // installed refs are read from the running fiber.
     suspend(move || {
-      current(&MIN_LOG_LEVEL_FIBER_REF).flat_map(move |min| {
+      with_current(&MIN_LOG_LEVEL_FIBER_REF, move |min| {
         let emit = match global_minimum_log_level().or(min) {
           None => true,
           Some(min) => min.allows(level),
@@ -425,9 +445,8 @@ impl EffectLogger {
         if !emit {
           return succeed(());
         }
-        current(&LOG_ANNOTATIONS_FIBER_REF)
-          .zip(current(&LOG_SPAN_STACK_FIBER_REF))
-          .flat_map(move |(annotations, spans)| {
+        with_current(&LOG_ANNOTATIONS_FIBER_REF, move |annotations| {
+          with_current(&LOG_SPAN_STACK_FIBER_REF, move |spans| {
             let mut rec = LogRecord::new(level, msg)
               .with_annotations(annotations.unwrap_or_default())
               .with_spans(spans.unwrap_or_default());
@@ -437,6 +456,7 @@ impl EffectLogger {
               Err(e) => fail(e),
             }
           })
+        })
       })
     })
   }

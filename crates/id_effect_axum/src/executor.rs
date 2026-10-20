@@ -3,22 +3,25 @@
 //!
 //! ## How
 //!
-//! Effects are [`Send`], so they run where Axum already runs: every request's effect is
-//! forked as a root fiber on the ambient tokio runtime (a [`TokioExecutor`] over
-//! [`tokio::runtime::Handle::current`]), and the handler future awaits the fiber's [`Exit`]. There
-//! is no thread pool and no blocking bridge: a suspended effect costs a parked tokio task, and the
-//! handler future is [`Send`] on any runtime flavour (including `#[tokio::test]`'s default
-//! `current_thread`).
+//! Effects are [`Send`], so they run where Axum already runs: every request's effect is a root
+//! fiber on the ambient tokio runtime (a [`TokioExecutor`] over
+//! [`tokio::runtime::Handle::current`]), driven by the handler future itself until its [`Exit`]
+//! (since 0.11; before, each fiber was spawned as its own task). An effect that completes without
+//! suspending (a middleware check, most handlers) therefore costs no task spawn and no
+//! cross-thread wake-up, and one that suspends wakes the request's own task. There is no thread
+//! pool and no blocking bridge, and the handler future is [`Send`] on any runtime flavour
+//! (including `#[tokio::test]`'s default `current_thread`). Children the fiber forks are spawned
+//! on the runtime as usual.
 //!
 //! 0.6 ran each `!Send` v1 effect on a dedicated OS thread with its own `current_thread` runtime
 //! (an elastic pool of up to 512 threads); that pool and its `max_threads`, `queue_capacity` and
 //! `idle_timeout` knobs are gone.
 //!
 //! - **Interruption.** When the caller's future is dropped before the fiber is done (the client
-//!   disconnected, a timeout layer gave up, the server shut down), the fiber is **interrupted**
-//!   ([`DropPolicy::Interrupt`], default): its finalizers (`ensuring`, `acquire_release`, scoped
-//!   layers) run on the executor. [`DropPolicy::Detach`] lets it run to completion instead (the
-//!   result is discarded), the 0.6 default.
+//!   disconnected, a timeout layer gave up, the server shut down), the fiber is handed to the
+//!   executor and **interrupted** ([`DropPolicy::Interrupt`], default): its finalizers
+//!   (`ensuring`, `acquire_release`, scoped layers) run there. [`DropPolicy::Detach`] lets it
+//!   run to completion instead (the result is discarded), the 0.6 default.
 //! - **Panics** inside the build closure or the effect become a defect
 //!   ([`Cause::Die`](id_effect::Cause::Die)), never an unwinding handler: the routing helpers
 //!   answer `500` (see [`crate::exit_response`]).
@@ -29,7 +32,8 @@
 //!   when it was detached.
 //! - **Runtime.** By default each request runs on the tokio runtime that polls the handler (the
 //!   one `axum::serve` or the test uses); [`EffectExecutorBuilder::runtime`] pins a [`Runtime`]
-//!   instead. Outside any tokio runtime the process-wide [`Runtime::global`] is used.
+//!   instead, and each fiber is then spawned onto it. Outside any tokio runtime the process-wide
+//!   [`Runtime::global`] is used the same way.
 //!
 //! Configure the process-wide executor with [`EffectExecutor::install_global`] before serving.
 
@@ -309,8 +313,15 @@ impl EffectExecutor {
     }
   }
 
-  /// Forks `eff` (plus the bookkeeping finalizer) as a root fiber; the returned future awaits it
+  /// Starts `eff` (plus the bookkeeping finalizer) as a root fiber; the returned future awaits it
   /// and interrupts it when dropped early (under [`DropPolicy::Interrupt`]).
+  ///
+  /// On the ambient tokio runtime (no [`EffectExecutorBuilder::runtime`] pinned) the fiber is
+  /// driven inline by the returned future, on the caller's task, so an effect that completes
+  /// without suspending costs no task spawn and no cross-thread wake-up. It is handed to the
+  /// executor only when the caller drops the future before it is done: interrupted first under
+  /// [`DropPolicy::Interrupt`] (its finalizers run there), left to finish under
+  /// [`DropPolicy::Detach`]. A pinned runtime, or none at all, forks the fiber onto it instead.
   fn start<A, E>(
     &self,
     eff: Effect<A, E, HNil>,
@@ -326,14 +337,29 @@ impl EffectExecutor {
       drop(permit);
       in_flight.fetch_sub(1, Ordering::SeqCst);
     });
-    let handle = self.runtime().fork(eff.ensuring(done));
-    let fiber = match self.drop_policy() {
-      DropPolicy::Interrupt => Some(Arc::clone(handle.fiber())),
-      DropPolicy::Detach => None,
+    let eff = eff.ensuring(done);
+    let ambient = match self.inner.config.runtime {
+      Some(_) => None,
+      None => TokioExecutor::current(),
+    };
+    let (fiber, drive) = match ambient {
+      Some(exec) => {
+        let fiber = FiberContext::new_root(Arc::new(exec));
+        let run: InlineRun<A, E> = Box::pin(eff.run_fiber(Arc::clone(&fiber)));
+        (fiber, Drive::Inline(run))
+      }
+      None => {
+        let handle = self.runtime().fork(eff);
+        (
+          Arc::clone(handle.fiber()),
+          Drive::Forked(handle.join_future()),
+        )
+      }
     };
     RequestFiber {
       fiber,
-      join: handle.join_future(),
+      policy: self.drop_policy(),
+      drive: Some(drive),
     }
   }
 }
@@ -361,29 +387,60 @@ where
   })
 }
 
+/// A root fiber driven by the request future itself (see [`EffectExecutor::start`]).
+type InlineRun<A, E> = Pin<Box<dyn Future<Output = Exit<A, E>> + Send>>;
+
+/// How a request fiber makes progress.
+enum Drive<A, E> {
+  /// Polled by the caller; spawned onto the fiber's executor if the caller gives up early.
+  Inline(InlineRun<A, E>),
+  /// Running as its own task; the caller awaits its exit.
+  Forked(JoinFuture<A, E>),
+}
+
 /// The exit of one request fiber; interrupts the fiber when dropped before it is done (unless
 /// detached).
-struct RequestFiber<A, E> {
-  fiber: Option<Arc<FiberContext>>,
-  join: JoinFuture<A, E>,
+struct RequestFiber<A: Send + 'static, E: Send + 'static> {
+  fiber: Arc<FiberContext>,
+  policy: DropPolicy,
+  /// `None` once the exit was returned.
+  drive: Option<Drive<A, E>>,
 }
 
 impl<A: Send + 'static, E: Send + 'static> Future for RequestFiber<A, E> {
   type Output = Exit<A, E>;
 
   fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Exit<A, E>> {
-    let exit = std::task::ready!(Pin::new(&mut self.join).poll(cx));
-    self.fiber = None;
+    let exit = match self.drive.as_mut() {
+      Some(Drive::Inline(run)) => std::task::ready!(run.as_mut().poll(cx)),
+      Some(Drive::Forked(join)) => std::task::ready!(Pin::new(join).poll(cx)),
+      None => unreachable!("request fiber polled after completion"),
+    };
+    self.drive = None;
     Poll::Ready(exit)
   }
 }
 
-impl<A, E> Drop for RequestFiber<A, E> {
+impl<A: Send + 'static, E: Send + 'static> Drop for RequestFiber<A, E> {
   fn drop(&mut self) {
-    if let Some(fiber) = self.fiber.take()
-      && !fiber.is_done()
-    {
-      fiber.request_interrupt();
+    let interrupt = self.policy == DropPolicy::Interrupt;
+    match self.drive.take() {
+      None => {}
+      Some(Drive::Forked(_)) => {
+        if interrupt && !self.fiber.is_done() {
+          self.fiber.request_interrupt();
+        }
+      }
+      // Not done yet (it would have returned its exit): the executor finishes it, finalizers
+      // included, the way a forked fiber would.
+      Some(Drive::Inline(run)) => {
+        if interrupt {
+          self.fiber.request_interrupt();
+        }
+        self.fiber.executor().spawn(Box::pin(async move {
+          let _ = run.await;
+        }));
+      }
     }
   }
 }
@@ -516,6 +573,54 @@ mod tests {
       .await
       .expect("a detached effect finishes although its caller is gone")
       .unwrap();
+    wait_idle(&exec).await;
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn an_inline_fiber_dropped_after_starting_finishes_on_the_executor() {
+    // Polled once by hand (the fiber starts inline and suspends), then dropped: the executor
+    // takes it over, interrupts it and runs its finalizer.
+    let exec = EffectExecutor::new();
+    let (fin_tx, fin_rx) = oneshot::channel::<()>();
+    let ran = Arc::new(AtomicBool::new(false));
+    let r2 = ran.clone();
+    let mut run = Box::pin(exec.run((), move |_: &mut ()| {
+      let signal = DropSignal(Some(fin_tx));
+      sync::<_, (), ()>(move || r2.store(true, Ordering::SeqCst))
+        .then(sleep(Duration::from_secs(3600)))
+        .ensuring(sync(move || drop(signal)))
+    }));
+    assert!(futures_poll_once(run.as_mut()).await.is_pending());
+    assert!(
+      ran.load(Ordering::SeqCst),
+      "the effect ran inline on the first poll"
+    );
+    assert_eq!(exec.in_flight(), 1);
+    drop(run);
+    tokio::time::timeout(PATIENCE, fin_rx)
+      .await
+      .expect("the finalizer runs on the executor")
+      .unwrap();
+    wait_idle(&exec).await;
+  }
+
+  /// Polls `fut` once with the current task's context.
+  async fn futures_poll_once<F: Future + ?Sized>(fut: Pin<&mut F>) -> Poll<F::Output> {
+    let mut fut = Some(fut);
+    std::future::poll_fn(move |cx| Poll::Ready(fut.take().expect("polled once").poll(cx))).await
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn a_pinned_runtime_runs_the_fiber_as_its_own_task() {
+    let exec = EffectExecutor::builder()
+      .runtime(Runtime::global().clone())
+      .build();
+    let out = exec
+      .run((), |_: &mut ()| {
+        sleep::<(), ()>(Duration::from_millis(1)).map(|()| 6_u8)
+      })
+      .await;
+    assert_eq!(out, Exit::Success(6));
     wait_idle(&exec).await;
   }
 

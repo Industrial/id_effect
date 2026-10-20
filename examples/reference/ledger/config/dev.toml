@@ -28,6 +28,10 @@ access_key_id = "ledger"
 secret_access_key = "ledger-dev-secret"
 allow_http = true
 
+[console]
+# The operator console at http://localhost:8080/_console (dev only; `base.toml` turns it off).
+enabled = true
+
 [oidc]
 issuer = "http://localhost:8180/realms/ledger"
 client_id = "ledger-web"

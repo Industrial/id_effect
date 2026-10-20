@@ -6,6 +6,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
 
+use id_effect::observability::posture::record_dangerous;
 use id_effect::{Effect, succeed};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -87,7 +88,21 @@ impl<V> Space<V> {
       })
   }
 
+  /// [`RedisError::EmptyNamespace`] when the namespace is empty: its glob is every key (M17).
   fn clear(&self) -> Effect<u64, RedisError> {
+    if self.namespace.is_empty() {
+      return id_effect::fail(RedisError::EmptyNamespace);
+    }
+    self.client.delete_matching(namespace_glob(&self.namespace))
+  }
+
+  /// [`clear`](Self::clear), the empty namespace included (every key), recorded as the posture
+  /// opt-out `id`.
+  fn clear_all_dangerous(&self, id: &'static str) -> Effect<u64, RedisError> {
+    record_dangerous(
+      id,
+      "M17: clearing a store with an empty namespace deletes every key of the database",
+    );
     self.client.delete_matching(namespace_glob(&self.namespace))
   }
 
@@ -283,9 +298,19 @@ impl<V: Serialize + DeserializeOwned + Send + 'static> RedisKv<V> {
     self.space.keys()
   }
 
-  /// Remove every key of the namespace; how many were removed.
+  /// Remove every key of the namespace; how many were removed. [`RedisError::EmptyNamespace`]
+  /// when the namespace is empty ([`clear_all_dangerous`](Self::clear_all_dangerous) flushes).
   pub fn clear(&self) -> Effect<u64, RedisError> {
     self.space.clear()
+  }
+
+  /// Remove every key of the namespace, or of the whole database when the namespace is empty;
+  /// how many were removed. Records the posture opt-out
+  /// `id_effect_redis::RedisKv::clear_all_dangerous`.
+  pub fn clear_all_dangerous(&self) -> Effect<u64, RedisError> {
+    self
+      .space
+      .clear_all_dangerous("id_effect_redis::RedisKv::clear_all_dangerous")
   }
 }
 
@@ -419,9 +444,19 @@ impl<V: Serialize + DeserializeOwned + Send + 'static> RedisHash<V> {
     self.space.keys()
   }
 
-  /// Remove every hash of the namespace; how many were removed.
+  /// Remove every hash of the namespace; how many were removed. [`RedisError::EmptyNamespace`]
+  /// when the namespace is empty ([`clear_all_dangerous`](Self::clear_all_dangerous) flushes).
   pub fn clear(&self) -> Effect<u64, RedisError> {
     self.space.clear()
+  }
+
+  /// Remove every hash of the namespace, or every key of the database when the namespace is
+  /// empty; how many were removed. Records the posture opt-out
+  /// `id_effect_redis::RedisHash::clear_all_dangerous`.
+  pub fn clear_all_dangerous(&self) -> Effect<u64, RedisError> {
+    self
+      .space
+      .clear_all_dangerous("id_effect_redis::RedisHash::clear_all_dangerous")
   }
 }
 
@@ -566,8 +601,19 @@ impl<D: Serialize + DeserializeOwned + Send + 'static> RedisJson<D> {
   }
 
   /// Remove every document of the namespace; how many were removed.
+  /// [`RedisError::EmptyNamespace`] when the namespace is empty
+  /// ([`clear_all_dangerous`](Self::clear_all_dangerous) flushes).
   pub fn clear(&self) -> Effect<u64, RedisError> {
     self.space.clear()
+  }
+
+  /// Remove every document of the namespace, or every key of the database when the namespace is
+  /// empty; how many were removed. Records the posture opt-out
+  /// `id_effect_redis::RedisJson::clear_all_dangerous`.
+  pub fn clear_all_dangerous(&self) -> Effect<u64, RedisError> {
+    self
+      .space
+      .clear_all_dangerous("id_effect_redis::RedisJson::clear_all_dangerous")
   }
 }
 

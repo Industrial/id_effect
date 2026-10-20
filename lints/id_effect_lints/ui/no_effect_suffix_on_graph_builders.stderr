@@ -1,0 +1,11 @@
+warning: Effect-returning function name ends with `_effect`
+  --> $DIR/no_effect_suffix_on_graph_builders.rs:7:4
+   |
+LL | fn load_user_effect() -> Effect<u8, (), ()> {
+   |    ^^^^^^^^^^^^^^^^
+   |
+   = help: remove the `_effect` suffix; the return type already communicates effectfulness
+   = note: `#[warn(no_effect_suffix_on_graph_builders)]` on by default
+
+warning: 1 warning emitted
+

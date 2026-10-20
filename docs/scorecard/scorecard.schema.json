@@ -2,7 +2,7 @@
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"$id": "scorecard.schema.json",
 	"title": "id_effect platform scorecard",
-	"description": "Structure of docs/scorecard/scorecard.json (METHOD.md). scripts/scorecard.sh --validate enforces this schema with jq, plus the cross references a schema cannot express: row ids are unique, every row's group is a groups[].id, every row's track is a tracks key, every group has at least one row, frameworks[0] is id_effect and competitor_order lists the other frameworks in order; on a row with checks (method v2, METHOD.md §7), check ids are unique and start with \"<row id>#\", v2.level and v2.met cover exactly the frameworks (id_effect: exactly its score versions), and v2.met, v2.evidence and v2.notes name only known check ids and frameworks.",
+	"description": "Structure of docs/scorecard/scorecard.json (METHOD.md). scripts/scorecard.sh --validate enforces this schema with jq, plus the cross references a schema cannot express: row ids are unique, every row's group is a groups[].id, every row's track is a tracks key, every group has at least one row, frameworks[0] is id_effect and competitor_order lists the other frameworks in order; on a row with checks (method v2, METHOD.md §7), check ids are unique and start with \"<row id>#\", v2.level and v2.met cover exactly the frameworks (id_effect: exactly its score versions), and v2.met, v2.evidence and v2.notes name only known check ids and frameworks; a non_goal row has no targets, a group keeps at least one row that is not a non-goal, a row keeps at least one check that is not a non-goal, and id_effect meets no non-goal check (method 2.2, METHOD.md §3.3).",
 	"type": "object",
 	"required": [
 		"schema_version",
@@ -19,7 +19,7 @@
 		"schema_version": { "const": 1 },
 		"method_version": {
 			"type": "string",
-			"description": "METHOD.md version the scores follow (e.g. \"2.0\"). From 2.0 the stored scores are checklist scores and each row keeps method 1.1 in v1 (METHOD.md §7.4)."
+			"description": "METHOD.md version the scores follow (e.g. \"2.0\"). From 2.0 the stored scores are checklist scores and each row keeps method 1.1 in v1 (METHOD.md §7.4); from 2.2 they leave out non-goal checks (METHOD.md §3.3)."
 		},
 		"method_doc": { "type": "string" },
 		"competitor_snapshot": {
@@ -143,6 +143,10 @@
 					"propertyNames": { "$ref": "#/$defs/semver" },
 					"additionalProperties": { "type": "string", "minLength": 1 }
 				},
+				"non_goal": {
+					"$ref": "#/$defs/nonGoal",
+					"description": "Optional (method 2.2). The row is a non-goal: weight 0, it leaves its group mean, U, E, RT and the row KPIs for every framework, and has no targets (METHOD.md §3.3)."
+				},
 				"process": {
 					"type": "boolean",
 					"description": "Optional. A process row (project policy, not a library capability): each framework's level is production when it meets a check, absent otherwise (METHOD.md §7.4, method 2.1)."
@@ -175,7 +179,11 @@
 								"type": "string",
 								"pattern": "^[a-z]+\\.[a-z0-9-]+#[0-9]+$"
 							},
-							"text": { "type": "string", "minLength": 1 }
+							"text": { "type": "string", "minLength": 1 },
+							"non_goal": {
+								"$ref": "#/$defs/nonGoal",
+								"description": "Optional (method 2.2). The check is a non-goal: it leaves the row's checklist for every framework, so the row scores over its other checks (METHOD.md §3.3). Never set on a check id_effect meets."
+							}
 						}
 					}
 				},
@@ -230,6 +238,14 @@
 				"documented",
 				"production"
 			]
+		},
+		"nonGoal": {
+			"description": "A non-goal marker (METHOD.md §3.3): set only by a locked decision of PLAN-OF-PLANS §3.1, named by its id.",
+			"type": "object",
+			"required": ["decision"],
+			"properties": {
+				"decision": { "type": "string", "pattern": "^L[0-9]+$" }
+			}
 		},
 		"checkIds": {
 			"type": "array",

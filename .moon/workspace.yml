@@ -32,6 +32,7 @@ projects:
   id_effect_events: crates/id_effect_events
   id_effect_process: crates/id_effect_process
   id_effect_node: crates/id_effect_node
+  id_effect_workflow: crates/id_effect_workflow
   ledger: examples/reference/ledger
 vcs:
   defaultBranch: main

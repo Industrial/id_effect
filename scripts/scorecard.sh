@@ -16,6 +16,9 @@
 # Scores are read by the file's own method (METHOD §7.4: the major of method_version, 2 since the
 # 2.0 re-base). --method 1 on a method 2 file reads the method 1.1 history (rows[].v1); --method 2
 # on a method 1 file replaces every measured score by its checklist score and needs a measured V.
+# Method 2.2 (METHOD §3.3): a row or check with non_goal {decision} leaves the score for every
+# framework; a non-goal row leaves its group mean, U, E, RT and the row KPIs, and a non-goal check
+# leaves its row's checklist. --method 1 counts every row (the 1.1 history predates non-goals).
 # --method-compare writes docs/scorecard/REPORT-method-v2.md: v1 beside v2 at each measured version.
 # --json V prints the --version result as JSON; --write stores it in docs/scorecard/results/vV.json.
 # --diff A B lists the rows whose measured id_effect score changed from A to B; it FAILs on a drop
@@ -60,12 +63,24 @@ def met_list($at; $where; $ids):
     (.[] | select(known($ids) | not) | "\($at): \($where) has unknown check id \(tojson)"),
     (group_by(.)[] | select(length > 1) | "\($at): \($where) lists \(.[0] | tojson) twice")
   end;
+# METHOD §3.3 (2.2): a non-goal is set only by a locked decision, so its marker names one ("L15").
+def non_goal_rule($at; $what):
+  select(has("non_goal"))
+  | .non_goal
+  | select(type != "object" or (.decision | type) != "string" or (.decision | test("^L[0-9]+$") | not))
+  | "\($at): \($what)non_goal needs a decision id (a locked decision, e.g. {\"decision\": \"L15\"})";
 def v2rules($at; $fids):
   . as $r
   | ([.checks | arrays | .[] | objects | .id]) as $ids
   | (($r.id_effect | objects | keys) // []) as $vs
   | (select((.checks | type) != "array" or (.checks | length) < 4 or (.checks | length) > 8)
       | "\($at): checks must be an array of 4 to 8 entries"),
+    (.checks | arrays | .[] | objects | non_goal_rule($at; "check \(.id | tojson): ")),
+    (select((.checks | type) == "array" and ([.checks[] | objects | select(has("non_goal") | not)] | length) == 0)
+      | "\($at): every check is a non-goal; mark the row non_goal instead"),
+    (ng_checks as $ng | .v2 | objects | .met.id_effect | objects | to_entries[] | .key as $v
+      | .value | arrays | .[] | select(. as $c | any($ng[]; . == $c))
+      | "\($at): id_effect meets non-goal check \(tojson) at \($v); a met check is never a non-goal"),
     (.checks | arrays | .[] | select((.id | type) != "string" or (.text | type) != "string" or .text == "")
       | "\($at): every check needs a string id and a non-empty text"),
     ($ids | group_by(.)[] | select(length > 1) | "\($at): duplicate check id \(.[0] | tojson)"),
@@ -106,13 +121,13 @@ def v2rules($at; $fids):
 # METHOD §7.4, method 2.x: every stored score is its checklist score, and rows[].v1 keeps the
 # method 1.1 scores and targets (--method 1).
 def stored2($at; $order):
-  . as $r | (.checks | length) as $n | .v2 as $w
+  . as $r | .v2 as $w
   | (try (
-      ([$order[] as $f | v2score($w.level[$f]; $w.met[$f]; $n)] as $want
+      ([$order[] as $f | rowscore($w.level[$f]; $w.met[$f])] as $want
         | range(0; 10) | select($r.competitors[.] != $want[.])
         | "\($at): competitors[\(.)] = \($r.competitors[.]) is not its checklist score \($want[.])"),
       ($r.id_effect | to_entries[]
-        | v2score($w.level.id_effect[.key]; $w.met.id_effect[.key]; $n) as $want
+        | .key as $k | ($r | rowscore($w.level.id_effect[$k]; $w.met.id_effect[$k])) as $want
         | select(.value != $want)
         | "\($at): id_effect[\(.key)] = \(.value) is not its checklist score \($want)"))
     catch "\($at): cannot compute its checklist scores"),
@@ -128,12 +143,12 @@ def stored2($at; $order):
           | "\($at): v1.targets must map versions to integers in 1..100"));
 # METHOD §7.4 (2.1): on a process row, a framework is production when it meets a check, else absent.
 def process_levels($at):
-  .v2 as $w
+  .v2 as $w | ng_checks as $ng
   | (($w.level.id_effect | objects | to_entries[]
         | {f: "id_effect[\(.key)]", l: .value, m: ($w.met.id_effect[.key] // [])}),
       ($w.level | objects | to_entries[] | select(.key != "id_effect")
         | {f: .key, l: .value, m: ($w.met[.key] // [])}))
-  | ["absent", "production"][[.m | length, 1] | min] as $want
+  | ["absent", "production"][[.m - $ng | length, 1] | min] as $want
   | select(.l != $want)
   | "\($at): process row: v2.level.\(.f) = \(.l | tojson), want \($want | tojson)";
 def shape:
@@ -156,6 +171,8 @@ def rules:
     (("w_enterprise", "w_runtime") as $w
       | select(([$d.groups[][$w] | numbers] | add // 0) <= 0) | "groups: \($w) must sum to > 0"),
     ($gids[] as $g | select(any($d.rows[]; .group == $g) | not) | "group \($g | tojson): no rows"),
+    ($gids[] as $g | select(any($d.rows[]; .group == $g) and (any($d.rows[]; .group == $g and (has("non_goal") | not)) | not))
+      | "group \($g | tojson): every row is a non-goal"),
     ($d.rows | map(.id) | group_by(.)[] | select(length > 1) | "rows: duplicate id \(.[0] | tojson)"),
     ($d.rows[] | "row \(.id | tojson)" as $at
       | (select((.id | type) != "string") | "\($at): id must be a string"),
@@ -174,6 +191,9 @@ def rules:
         (.track as $t | select(any($tids[]; . == $t) | not) | "\($at): unknown track \($t | tojson)"),
         (.stance as $s | select(any(stances; . == $s) | not)
           | "\($at): unknown stance \($s | tojson)"),
+        non_goal_rule($at; ""),
+        (select(has("non_goal") and (.targets | type) == "object" and (.targets | length) > 0)
+          | "\($at): a non_goal row has no targets"),
         (select(has("adr") and (.adr | type) != "object") | "\($at): adr must be an object"),
         (.adr | objects | to_entries[]
           | (select(.key | semver | not) | "\($at): adr key \(.key | tojson) is not x.y.z"),
@@ -211,20 +231,27 @@ def target_versions: ([.rows[].targets | keys[]] | unique) - measured | sort_by(
 def cap: {absent: 9, labs: 39, published: 49, tested: 69, documented: 89, production: 100}[.];
 def v2score($level; $met; $n):
   [1, ([($level | cap), ((200 * ($met | length) + $n) / (2 * $n) | floor)] | min)] | max;
+# METHOD §3.3 (2.2): the non-goal check ids of a row, and its checklist score over the other checks
+# (n − k checks; a met non-goal check does not count). On a row, scored keeps it unless non_goal.
+def ng_checks: [.checks | arrays | .[] | objects | select(has("non_goal")) | .id];
+def rowscore($level; $met):
+  ng_checks as $ng | v2score($level; $met - $ng; (.checks | length) - ($ng | length));
+def scored: select(has("non_goal") | not);
 # The method (1 or 2) a scorecard stores its scores in: the major of method_version.
 def primary: .method_version | tostring | split(".")[0] | tonumber? // 1;
 # A method 2.x scorecard read by method 1.1: the scores and targets of each row from rows[].v1.
+# Every row counts (the history predates non-goal rows); non-goal checks only change v2 scores.
 def v1doc:
 .method_version = "1.1"
-| .rows |= map(.competitors = .v1.competitors | .id_effect = .v1.id_effect | .targets = .v1.targets | del(.v1));
+| .rows |= map(.competitors = .v1.competitors | .id_effect = .v1.id_effect | .targets = .v1.targets | del(.v1, .non_goal));
 # A method 1.x scorecard with every measured id_effect score and every competitor score replaced by
 # its v2 score. targets stay v1, so only measured versions are meaningful.
 def v2doc:
 .competitor_order as $order
 | .method_version = "v2 checklists"
-| .rows |= map((.checks | length) as $n | .v2 as $w
-    | .id_effect |= with_entries(.value = v2score($w.level.id_effect[.key]; $w.met.id_effect[.key]; $n))
-| .competitors = [$order[] as $f | v2score($w.level[$f]; $w.met[$f]; $n)]);
+| .rows |= map(. as $r | .v2 as $w
+    | .id_effect |= with_entries(.key as $k | .value = ($r | rowscore($w.level.id_effect[$k]; $w.met.id_effect[$k])))
+| .competitors = [$order[] as $f | $r | rowscore($w.level[$f]; $w.met[$f])]);
 # Markdown table cell text.
 def md: gsub("\\\\"; "\\\\") | gsub("\\|"; "\\|") | gsub("<"; "\\<") | gsub("\\*"; "\\*");
     '
@@ -240,7 +267,7 @@ COMPUTE_JQ="$SCORE_JQ"'
     . as $d
     | (("measured" | select($mode == "version" and all($d.rows[]; .id_effect[$v] != null)))
     // "target") as $basis
-    | [$d.rows[] | {group, s: ([score($v; $mode)] + .competitors)}] as $m
+    | [$d.rows[] | scored | {group, s: ([score($v; $mode)] + .competitors)}] as $m
     | [$d.groups[].id] as $gids
     | ([$d.groups[].w_enterprise] | add) as $we
     | ([$d.groups[].w_runtime] | add) as $wr
@@ -395,8 +422,8 @@ require_measured() {
 CHANGES_JQ="$SCORE_JQ"'
 def signed: if . > 0 then "+\(.)" else tostring end;
 def adr_note: if .adr then " (ADR: \(.adr | md))" else "" end;
-(.rows | length) as $n
-| [.rows[] | select(.id_effect[$a] != .id_effect[$b])
+([.rows[] | scored] | length) as $n
+| [.rows[] | scored | select(.id_effect[$a] != .id_effect[$b])
     | {id, name, evidence, old: .id_effect[$a], new: .id_effect[$b],
        delta: (.id_effect[$b] - .id_effect[$a]), adr: (.adr[$b] // null)}]
 | map(select(.delta <= -5)) as $drops
@@ -455,7 +482,7 @@ compare() {
 # The rows measured below their planned score (§5.1) at $v, with the next target they carry over to.
 # shellcheck disable=SC2016 # jq program, not shell expansions
 MISSES_JQ="$SCORE_JQ"'
-[.rows[] | planned($v) as $p | select(.id_effect[$v] < $p)
+[.rows[] | scored | planned($v) as $p | select(.id_effect[$v] < $p)
   | {id, name, m: .id_effect[$v], p: $p,
      next: ([.targets | to_entries[] | select((.key | vkey) > ($v | vkey))] | sort_by(.key | vkey) | first)}]
 | if length == 0 then "No row is below its planned score at \($v)." else
@@ -667,14 +694,14 @@ def signed: if . > 0 then "+\(.)" else tostring end;
 def v2cell: "\(.v2) (\(.level), \(.met)/\(.n))";
 . as $d
 | ([$d.frameworks[] | {key: .id, value: .name}] | from_entries) as $names
-| [$d.rows[] | . as $r | (.checks | length) as $n | .v2 as $w
+| [$d.rows[] | . as $r | ng_checks as $ng | ((.checks | length) - ($ng | length)) as $n | .v2 as $w
     | {id, name, n: $n, notes: ($w.notes // {}),
-       ver: [$vs[] as $v | {at: $v, v1: $r.id_effect[$v], v2: v2score($w.level.id_effect[$v]; $w.met.id_effect[$v]; $n),
-               level: $w.level.id_effect[$v], met: ($w.met.id_effect[$v] | length), n: $n}],
+       ver: [$vs[] as $v | {at: $v, v1: $r.id_effect[$v], v2: rowscore($w.level.id_effect[$v]; $w.met.id_effect[$v]),
+               level: $w.level.id_effect[$v], met: ($w.met.id_effect[$v] - $ng | length), n: $n}],
        leader: (($r.competitors | max) as $top
          | $d.competitor_order[[range(0; 10) | select($r.competitors[.] == $top)] | first] as $f
          | {f: $f, at: "snapshot \($d.competitor_snapshot.date)", v1: $top,
-            v2: v2score($w.level[$f]; $w.met[$f]; $n), level: $w.level[$f], met: ($w.met[$f] | length), n: $n})}]
+            v2: rowscore($w.level[$f]; $w.met[$f]), level: $w.level[$f], met: ($w.met[$f] - $ng | length), n: $n})}]
 | if $part == "rows" then
     "| Row | Checks | \([$vs[] | "\(.) v1 | \(.) v2 (level, met) | Δ"] | join(" | ")) |",
     "|---|---|\([$vs[] | "---|---|---|"] | join(""))",
@@ -804,33 +831,34 @@ self_test() {
         failed=1
     fi
 
-    # METHOD.md §5.2, copied verbatim: method 2.0, then the method 1.1 history (rows[].v1).
+    # METHOD.md §5.2, copied verbatim: method 2.2, then the method 1.1 history (rows[].v1). The
+    # method 2.1 table in §5.2 is frozen history: step 2 of the 2.2 re-base changed .NET cells.
     read -r -d '' want <<'EOF' || true
-| 0.6.0 measured | 38.5 | 37.3 (#10) | 46.0 (#6) | 4 | 47 | 2 | 62 |
-| 0.7.0 measured | 45.3 | 43.2 (#9) | 56.1 (#6) | 13 | 39 | 4 | 50 |
-| 0.8.0 measured | 56.0 | 55.2 (#5) | 64.4 (#2) | 28 | 31 | 7 | 25 |
-| 0.9.0 measured | 67.2 | 67.2 (#3) | 70.8 (#2) | 38 | 21 | 19 | 12 |
-| 0.10.0 measured | 74.9 | 75.5 (#2) | 78.4 (#1) | 47 | 12 | 24 | 12 |
-| 0.11.0 target | 78.9 | 78.8 (#1) | 82.9 (#1) | 55 | 8 | 30 | 12 |
-| 0.12.0 target | 82.3 | 82.5 (#1) | 84.8 (#1) | 56 | 3 | 30 | 12 |
-| 1.0.0 target | 84.9 | 85.0 (#1) | 87.1 (#1) | 61 | 1 | 34 | 12 |
+| 0.6.0 measured | 39.2 | 37.8 (#10) | 46.5 (#6) | 4 | 45 | 2 | 61 |
+| 0.7.0 measured | 46.1 | 43.7 (#9) | 56.5 (#6) | 13 | 37 | 4 | 38 |
+| 0.8.0 measured | 57.0 | 55.6 (#5) | 64.9 (#2) | 28 | 29 | 7 | 25 |
+| 0.9.0 measured | 68.5 | 68.1 (#3) | 71.4 (#2) | 39 | 19 | 20 | 12 |
+| 0.10.0 measured | 76.6 | 76.6 (#2) | 79.5 (#1) | 49 | 11 | 26 | 12 |
+| 0.11.0 measured | 79.4 | 79.2 (#1) | 83.9 (#1) | 56 | 9 | 31 | 12 |
+| 0.12.0 target | 84.2 | 84.2 (#1) | 86.5 (#1) | 59 | 3 | 33 | 12 |
+| 1.0.0 target | 86.5 | 86.5 (#1) | 88.4 (#1) | 63 | 1 | 37 | 11 |
 EOF
     got="$(id_rows "$file" version:0.6.0 version:0.7.0)"
-    got+=$'\n'"$(id_rows "$file" version:0.8.0 version:0.9.0 version:0.10.0 targets:0.11.0)"
+    got+=$'\n'"$(id_rows "$file" version:0.8.0 version:0.9.0 version:0.10.0 version:0.11.0)"
     got+=$'\n'"$(id_rows "$file" targets:0.12.0 targets:1.0.0)"
     expect "METHOD §5.2 version table" "$want" "$got"
 
     read -r -d '' want <<'EOF' || true
-| .NET | 75.1 | 77.3 | 71.1 |
-| Spring | 70.1 | 73.0 | 63.8 |
-| Phoenix | 60.3 | 59.6 | 59.5 |
-| Effect-TS | 56.8 | 56.0 | 60.4 |
-| ZIO | 54.2 | 51.8 | 56.6 |
-| Laravel | 52.2 | 53.3 | 42.3 |
-| Rails | 51.3 | 51.5 | 40.6 |
-| Django | 45.5 | 45.6 | 36.7 |
-| Next.js | 38.9 | 41.0 | 33.4 |
-| OTP | 37.3 | 36.6 | 43.2 |
+| .NET | 76.7 | 78.8 | 72.8 |
+| Spring | 70.6 | 73.6 | 64.5 |
+| Phoenix | 60.6 | 59.9 | 59.7 |
+| Effect-TS | 57.8 | 56.6 | 60.8 |
+| ZIO | 53.9 | 51.5 | 56.6 |
+| Laravel | 52.8 | 54.0 | 43.0 |
+| Rails | 52.0 | 52.2 | 41.3 |
+| Django | 46.4 | 46.4 | 37.4 |
+| Next.js | 39.5 | 41.5 | 33.9 |
+| OTP | 37.6 | 36.6 | 43.0 |
 EOF
     expect "METHOD §5.2 competitor table" "$want" "$(compute "$file" 0.7.0 version | render 0.7.0 competitors)"
 
@@ -871,6 +899,9 @@ bad-v2-check-ref v2.met.a has unknown check id "core.a#9"
 bad-v2-level v2.level.b = "beta" is not a level
 bad-v2-stored competitors[2] = 10 is not its checklist score 9
 bad-process-level process row: v2.level.b = "documented", want "production"
+bad-non-goal-row row "core.b": non_goal needs a decision id
+bad-non-goal-check check "core.a#7": non_goal needs a decision id
+bad-non-goal-met id_effect meets non-goal check "core.a#7" at 0.1.0
 EOF
 
     # Ties take the better rank (§5 step 5); id_effect also ties the best competitor on row core.b,
@@ -961,6 +992,31 @@ EOF
         "$(id_rows "$file" version:0.1.0)"
     expect "fixture valid/v2-primary --method 1 indices" "$(id_rows "$FIXTURES/valid/v2.json" version:0.1.0)" \
         "$(id_rows "$(historic "$file")" version:0.1.0)"
+
+    # Method 2.2 (METHOD §3.3, see each fixture's measures). non-goal-row: core.b (L15) leaves the core
+    # group mean, U, E, RT and the KPIs, so id_effect core 50 and web 100 give 75.0 (#1, tied with a
+    # and f to j); --method 1 counts every row, which puts core.b back (U 50.3, E 62.8, #8 behind a,
+    # b and f to j).
+    # non-goal-check: core.a#7 and #8 (L8) leave the checklist, so the row scores over 6 checks.
+    for name in non-goal-row non-goal-check; do
+        file="$FIXTURES/$name.json"
+        if out="$(check "$file" 2>&1)"; then
+            echo "self-test: ok   validate fixture $name"
+        else
+            echo "self-test: FAIL validate fixture $name"
+            printf '%s\n' "$out" | sed 's/^/    /'
+            failed=1
+        fi
+    done
+    expect "fixture non-goal-row indices" "| 0.1.0 measured | 75.0 | 75.0 (#1) | 75.0 (#1) | 1 | 0 | 1 | 50 |" \
+        "$(id_rows "$FIXTURES/non-goal-row.json" version:0.1.0)"
+    expect "fixture non-goal-row --method 1 counts every row" "| 0.1.0 measured | 50.3 | 62.8 (#8) | 62.8 (#8) | 1 | 1 | 1 | 50 |" \
+        "$(id_rows "$(historic "$FIXTURES/non-goal-row.json")" version:0.1.0)"
+    # shellcheck disable=SC2016 # jq program, not shell expansions
+    expect "fixture non-goal-check row scores" "83 100 1 89 50 50 50 50 50 50 50" \
+        "$(jq -r "$SCORE_JQ"'v2doc | .rows[] | [.id_effect["0.1.0"]] + .competitors | map(tostring) | join(" ")' "$FIXTURES/non-goal-check.json")"
+    expect "fixture non-goal-check indices" "| 0.1.0 measured | 83.0 | 83.0 (#3) | 83.0 (#3) | 1 | 0 | 0 | 17 |" \
+        "$(id_rows "$FIXTURES/non-goal-check.json" version:0.1.0)"
 
     # --html and --report must be byte-identical across runs (CI diffs the committed files).
     file="$DIR/scorecard.json"

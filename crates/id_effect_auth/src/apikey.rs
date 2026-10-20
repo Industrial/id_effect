@@ -172,6 +172,15 @@ impl ApiKeyRecord {
 pub trait ApiKeyStore: Send + Sync + 'static {
   /// The record with public id `id`, if any (a revoked key has none).
   fn find(&self, id: &str) -> Effect<Option<ApiKeyRecord>, AuthError>;
+
+  /// [`Self::find`] without an effect, for a store that looks keys up without I/O:
+  /// `Some(outcome)` of the lookup now, or `None` (the default) to run [`Self::find`]. The
+  /// `Authenticate` middleware (feature `axum`) tries it first, so an in-process store skips the
+  /// effect runtime.
+  fn find_now(&self, id: &str) -> Option<Result<Option<ApiKeyRecord>, AuthError>> {
+    let _ = id;
+    None
+  }
 }
 
 #[derive(Default)]
@@ -220,18 +229,27 @@ impl MemoryApiKeyStore {
   pub fn fail_with(&self, message: Option<&str>) {
     self.state().fail = message.map(str::to_owned);
   }
+
+  fn lookup(&self, id: &str) -> Result<Option<ApiKeyRecord>, AuthError> {
+    let st = self.state();
+    match &st.fail {
+      Some(m) => Err(AuthError::Unavailable(m.clone())),
+      None => Ok(st.records.get(id).cloned()),
+    }
+  }
 }
 
 impl ApiKeyStore for MemoryApiKeyStore {
   fn find(&self, id: &str) -> Effect<Option<ApiKeyRecord>, AuthError> {
     let (this, id) = (self.clone(), id.to_owned());
-    suspend(move || {
-      let st = this.state();
-      match &st.fail {
-        Some(m) => fail(AuthError::Unavailable(m.clone())),
-        None => succeed(st.records.get(&id).cloned()),
-      }
+    suspend(move || match this.lookup(&id) {
+      Ok(found) => succeed(found),
+      Err(e) => fail(e),
     })
+  }
+
+  fn find_now(&self, id: &str) -> Option<Result<Option<ApiKeyRecord>, AuthError>> {
+    Some(self.lookup(id))
   }
 }
 
@@ -271,17 +289,28 @@ impl ApiKeys {
   /// [`AuthError::InvalidCredentials`]; a store failure is [`AuthError::Unavailable`].
   pub fn verify(&self, presented: &str) -> Effect<AuthPrincipal, AuthError> {
     let Some((id, secret)) = self.split(presented) else {
-      return fail(AuthError::Malformed(
-        "not an API key of this service".into(),
-      ));
+      return fail(not_a_key());
     };
     let presented_digest = digest(secret);
-    self.store.find(id).flat_map(move |found| match found {
-      Some(record) if bool::from(record.digest.ct_eq(&presented_digest)) => {
-        succeed(record.principal.with_scheme(AuthScheme::ApiKey))
-      }
-      _ => fail(AuthError::InvalidCredentials),
-    })
+    self
+      .store
+      .find(id)
+      .flat_map(move |found| match accept(found, &presented_digest) {
+        Ok(principal) => succeed(principal),
+        Err(e) => fail(e),
+      })
+  }
+
+  /// [`Self::verify`] answered now, when the store looks keys up without I/O
+  /// ([`ApiKeyStore::find_now`]); `None` to run [`Self::verify`].
+  #[cfg(feature = "axum")]
+  pub(crate) fn verify_now(&self, presented: &str) -> Option<Result<AuthPrincipal, AuthError>> {
+    let Some((id, secret)) = self.split(presented) else {
+      return Some(Err(not_a_key()));
+    };
+    let found = self.store.find_now(id)?;
+    let presented_digest = digest(secret);
+    Some(found.and_then(|found| accept(found, &presented_digest)))
   }
 
   /// `(id, secret)` of a well-formed key with this prefix.
@@ -289,6 +318,24 @@ impl ApiKeys {
     let rest = key.strip_prefix(&*self.prefix)?.strip_prefix('_')?;
     let (id, secret) = rest.split_once('_')?;
     (is_hex(id, ID_BYTES * 2) && is_hex(secret, SECRET_BYTES * 2)).then_some((id, secret))
+  }
+}
+
+fn not_a_key() -> AuthError {
+  AuthError::Malformed("not an API key of this service".into())
+}
+
+/// The principal of the record `found` for a key whose secret digests to `presented_digest`
+/// (constant-time compare); an unknown id or a wrong secret is [`AuthError::InvalidCredentials`].
+fn accept(
+  found: Option<ApiKeyRecord>,
+  presented_digest: &[u8; 32],
+) -> Result<AuthPrincipal, AuthError> {
+  match found {
+    Some(record) if bool::from(record.digest.ct_eq(presented_digest)) => {
+      Ok(record.principal.with_scheme(AuthScheme::ApiKey))
+    }
+    _ => Err(AuthError::InvalidCredentials),
   }
 }
 
@@ -369,6 +416,46 @@ mod tests {
     );
     store.fail_with(None);
     assert!(run(keys.verify(key.expose())).is_ok());
+  }
+
+  #[cfg(feature = "axum")]
+  #[test]
+  fn verify_now_answers_like_verify() {
+    let store = MemoryApiKeyStore::new();
+    let (key, record) = ApiKey::generate("ide", AuthPrincipal::new("svc")).unwrap();
+    store.insert(record.clone());
+    let keys = ApiKeys::new(store.clone(), "ide");
+    let check = |presented: &str| {
+      assert_eq!(
+        keys.verify_now(presented),
+        Some(run(keys.verify(presented))),
+        "{presented}"
+      );
+    };
+    let wrong = format!("ide_{}_{}", record.id(), "0".repeat(64));
+    let unknown = format!("ide_{}_{}", "1".repeat(16), "0".repeat(64));
+    for presented in [
+      key.expose(),
+      &wrong,
+      &unknown,
+      "",
+      "other_0000000000000000_00",
+    ] {
+      check(presented);
+    }
+    store.fail_with(Some("db"));
+    check(key.expose());
+    // A store without an inline lookup leaves the key to the effect.
+    struct Remote(MemoryApiKeyStore);
+    impl ApiKeyStore for Remote {
+      fn find(&self, id: &str) -> Effect<Option<ApiKeyRecord>, AuthError> {
+        self.0.find(id)
+      }
+    }
+    store.fail_with(None);
+    let remote = ApiKeys::new(Remote(store), "ide");
+    assert_eq!(remote.verify_now(key.expose()), None);
+    assert!(run(remote.verify(key.expose())).is_ok());
   }
 
   #[test]

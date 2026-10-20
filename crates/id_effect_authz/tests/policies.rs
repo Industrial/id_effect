@@ -120,7 +120,10 @@ fn roles_and_tenancy_gate_posting() {
 
 #[test]
 fn ownership_acl_and_claims() {
-  assert!(decide(BasicPrincipal::new("aldo"), "account.read", account()).is_allowed());
+  let aldo = BasicPrincipal::new("aldo");
+  assert!(decide(aldo.clone().with_tenant("acme"), "account.read", account()).is_allowed());
+  // The access list grants within the account's tenant only (M19: tenant match by default).
+  assert!(decide(aldo, "account.read", account()).is_denied());
   assert!(decide(acme("vera", "viewer"), "account.read", account()).is_allowed());
   assert!(decide(BasicPrincipal::new("mallory"), "account.read", account()).is_denied());
 

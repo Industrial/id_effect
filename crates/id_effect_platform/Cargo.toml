@@ -21,7 +21,7 @@ auth = []
 test-util = ["auth"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.10.1", features = [
+id_effect = { path = "../id_effect", version = "0.11.0", features = [
   "schema-serde",
 ] }
 bytes = { version = "1" }
@@ -33,10 +33,14 @@ reqwest = { version = "0.13", default-features = false, features = [
   "gzip",
   "rustls",
 ] }
+# The SSRF guard's connector layer (`reqwest::ClientBuilder::connector_layer`).
+tower-layer = "0.3"
+tower-service = "0.3"
 tokio = { version = "1.50.0", features = [
   "fs",
   "io-util",
   "macros",
+  "net",
   "process",
   "rt",
   "sync",

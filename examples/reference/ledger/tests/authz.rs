@@ -184,14 +184,24 @@ async fn every_route_names_its_policy() {
       let table: Value = l.get("/_routes", &team.owner).await.json().unwrap();
       let routes = table.as_array().expect("a JSON route table");
       assert!(routes.len() >= 20, "{table}");
+      let mut public = Vec::new();
       for route in routes {
         let policies = route["policies"].as_array().unwrap();
+        if route["access"] == "public" {
+          assert!(policies.is_empty(), "{route}");
+          let (method, path) = (route["method"].as_str(), route["path"].as_str());
+          public.push(format!("{} {}", method.unwrap(), path.unwrap()));
+          continue;
+        }
+        assert_eq!(route["access"], "guarded", "{route}");
         assert_eq!(
           policies.len(),
           1,
-          "every typed route has one guard: {route}"
+          "every other typed route has one guard: {route}"
         );
       }
+      // Only signing up and signing in are open to anonymous callers.
+      assert_eq!(public, ["POST /orgs", "POST /auth/login"], "{table}");
       let text = l
         .send(l.client.get("/_routes?format=text").header(
           "cookie",

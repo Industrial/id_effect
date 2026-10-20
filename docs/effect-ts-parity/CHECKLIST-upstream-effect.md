@@ -27,7 +27,7 @@
 | `@effect/rpc` | RPC | **Phase D** — `labs/id_effect_rpc` (unpublished) | |
 | `@effect/cli` | CLI | **Phase E** — `crates/id_effect_cli` (`run_main`, exit-code mapping); template `examples/cli-minimal` | |
 | Supervision | Fiber supervision | `crates/id_effect/src/coordination/supervisor.rs` (`Supervisor`, `SupervisorPolicy`, `supervised`), `crates/id_effect_process` (OTP trees), mdBook §9.5 | Reviewed |
-| Cluster / workflow | Distributed | **Phase G** — `crates/id_effect_node` (Process Mesh), `labs/id_effect_workflow` (unpublished) | |
+| Cluster / workflow | Distributed | **Phase G** — `crates/id_effect_node` (Process Mesh), `crates/id_effect_workflow` (durable workflows on Postgres, 0.11) | |
 | `@effect/ai` | LLM clients | Partial — `labs/id_effect_ai` (unpublished): traits + OpenAI/Anthropic/Cursor HTTP | tool-calling backlog |
 
 ## Review log

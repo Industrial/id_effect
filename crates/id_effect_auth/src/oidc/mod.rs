@@ -41,8 +41,12 @@
 //! # let _ = client;
 //! ```
 //!
-//! Requests go through reqwest with rustls (redirects are not followed) and need a tokio
-//! runtime.
+//! Requests go through reqwest with rustls and need a tokio runtime. The provider decides which
+//! tokens are trusted, so they are strict (0.11 M3, the [`JwksClient`] rules): the issuer and the
+//! token, user-info and JWKS endpoints it publishes must be `https` (plain `http` only to a
+//! loopback host, for tests, or after [`OidcConfig::insecure_allow_http`]), redirects are not
+//! followed (a `3xx` from discovery or the token endpoint fails the call), and every request has
+//! a connect timeout ([`DEFAULT_CONNECT_TIMEOUT`]) and a total one ([`OidcConfig::timeout`]).
 
 mod routes;
 
@@ -85,6 +89,12 @@ use crate::session::{Session, SessionError};
 
 /// Default [`OidcConfig::timeout`] for provider requests.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Connect timeout of provider requests (the platform HTTP client's, or [`OidcConfig::timeout`]
+/// when that is shorter).
+pub const DEFAULT_CONNECT_TIMEOUT: Duration =
+  id_effect_platform::http::HttpClientConfig::DEFAULT_CONNECT_TIMEOUT;
+/// Posture id of [`OidcConfig::insecure_allow_http`].
+pub const INSECURE_ALLOW_HTTP: &str = "id_effect_auth::oidc::OidcConfig::insecure_allow_http";
 
 /// Flow-session attribute holding the pending login's `state`.
 const STATE_ATTR: &str = "oidc_state";
@@ -195,6 +205,7 @@ pub struct OidcConfig {
   leeway: Duration,
   jwks_min_refresh: Option<Duration>,
   clock: WallClock,
+  allow_http: bool,
 }
 
 impl fmt::Debug for OidcConfig {
@@ -233,6 +244,7 @@ impl OidcConfig {
       leeway: DEFAULT_LEEWAY,
       jwks_min_refresh: None,
       clock: WallClock::system(),
+      allow_http: false,
     }
   }
 
@@ -289,6 +301,23 @@ impl OidcConfig {
   #[must_use]
   pub fn jwks_min_refresh_interval(mut self, interval: Duration) -> Self {
     self.jwks_min_refresh = Some(interval);
+    self
+  }
+
+  /// Talk to the provider (discovery, token, user-info and JWKS endpoints) over plain `http`
+  /// from any host, not only loopback ones. Records [`INSECURE_ALLOW_HTTP`] in the posture
+  /// registry.
+  ///
+  /// **Insecure**: anyone on the network path can then read the client secret and the tokens,
+  /// or swap the key set and have ID tokens they signed accepted. Only for a provider reached
+  /// over a network that is itself trusted and encrypted (a service mesh with mTLS).
+  #[must_use]
+  pub fn insecure_allow_http(mut self) -> Self {
+    id_effect::observability::posture::record_dangerous(
+      INSECURE_ALLOW_HTTP,
+      "M3: OIDC discovery, token and JWKS requests may go over plain http to any host",
+    );
+    self.allow_http = true;
     self
   }
 
@@ -526,6 +555,7 @@ impl OidcClient {
       OidcError::Config(format!("{what} is not a valid URL: {e}"))
     };
     let issuer = IssuerUrl::new(config.issuer.clone()).map_err(|e| url("issuer", e))?;
+    require_https("issuer", issuer.as_str(), config.allow_http).map_err(OidcError::Config)?;
     let redirect =
       RedirectUrl::new(config.redirect_url.clone()).map_err(|e| url("redirect_url", e))?;
     let post_logout_redirect_url = config
@@ -536,6 +566,7 @@ impl OidcClient {
       .map_err(|e| url("post_logout_redirect_url", e))?;
     let http = reqwest::Client::builder()
       .redirect(reqwest::redirect::Policy::none())
+      .connect_timeout(config.timeout.min(DEFAULT_CONNECT_TIMEOUT))
       .timeout(config.timeout)
       .build()
       .map(Http)
@@ -554,12 +585,31 @@ impl OidcClient {
         "the provider does not support PKCE S256".into(),
       ));
     }
+    let endpoints = [
+      (
+        "token_endpoint",
+        metadata.token_endpoint().map(|u| u.as_str()),
+      ),
+      (
+        "userinfo_endpoint",
+        metadata.userinfo_endpoint().map(|u| u.as_str()),
+      ),
+      ("jwks_uri", Some(metadata.jwks_uri().as_str())),
+    ];
+    for (what, endpoint) in endpoints {
+      if let Some(endpoint) = endpoint {
+        require_https(what, endpoint, config.allow_http).map_err(OidcError::Discovery)?;
+      }
+    }
     let issuer = metadata.issuer().as_str().to_owned();
     let authorization_endpoint = metadata.authorization_endpoint().as_str().to_owned();
     let end_session_endpoint = metadata.additional_metadata().end_session_endpoint.clone();
     let mut jwks = JwksClient::new(metadata.jwks_uri().as_str()).timeout(config.timeout);
     if let Some(interval) = config.jwks_min_refresh {
       jwks = jwks.min_refresh_interval(interval);
+    }
+    if config.allow_http {
+      jwks = jwks.with_http_allowed();
     }
     let verifier = JwtVerifier::jwks(jwks.clone())
       .issuer(issuer.clone())
@@ -745,6 +795,21 @@ impl OidcClient {
       request = request.set_post_logout_redirect_uri(url.clone());
     }
     Some(request.http_get_url().into())
+  }
+}
+
+/// `Ok` when the `what` URL `url` is `https`, or `http` to a loopback host (or any host with
+/// `allow_http`); the reason otherwise.
+fn require_https(what: &str, url: &str, allow_http: bool) -> Result<(), String> {
+  let parsed =
+    reqwest::Url::parse(url).map_err(|e| format!("{what} {url:?} is not a valid URL: {e}"))?;
+  match parsed.scheme() {
+    "https" => Ok(()),
+    "http" if allow_http || crate::jwks::is_loopback(&parsed) => Ok(()),
+    _ => Err(format!(
+      "{what} {url:?} must be https (plain http only to a loopback host, or after \
+       insecure_allow_http())"
+    )),
   }
 }
 

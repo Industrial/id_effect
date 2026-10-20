@@ -8,6 +8,7 @@ It is growing into a batteries-included platform ([ADR 0012](docs/adrs/0012-plat
 [![CI](https://github.com/Industrial/id_effect/actions/workflows/ci.yml/badge.svg)](https://github.com/Industrial/id_effect/actions/workflows/ci.yml)
 [![Docs & Pages](https://github.com/Industrial/id_effect/actions/workflows/docs.yml/badge.svg)](https://github.com/Industrial/id_effect/actions/workflows/docs.yml)
 [![Security Audit](https://github.com/Industrial/id_effect/actions/workflows/audit.yml/badge.svg)](https://github.com/Industrial/id_effect/actions/workflows/audit.yml)
+[![CodeQL](https://github.com/Industrial/id_effect/actions/workflows/codeql.yml/badge.svg)](https://github.com/Industrial/id_effect/actions/workflows/codeql.yml)
 [![codecov](https://codecov.io/gh/Industrial/id_effect/branch/main/graph/badge.svg)](https://codecov.io/gh/Industrial/id_effect)
 
 <!-- Badge row 2: crates.io -->
@@ -16,6 +17,7 @@ It is growing into a batteries-included platform ([ADR 0012](docs/adrs/0012-plat
 [![downloads](https://img.shields.io/crates/d/id_effect.svg)](https://crates.io/crates/id_effect)
 
 <!-- Badge row 3: repository health -->
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Industrial/id_effect/badge)](https://scorecard.dev/viewer/?uri=github.com/Industrial/id_effect)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/MSRV-1.94-orange.svg)](https://www.rust-lang.org)
 [![Edition](https://img.shields.io/badge/edition-2024-orange.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/)
@@ -99,6 +101,7 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 | [`id_effect_redis`](crates/id_effect_redis) | [![crates.io](https://img.shields.io/crates/v/id_effect_redis.svg)](https://crates.io/crates/id_effect_redis) | Redis for id_effect services: pooled client layer, typed key-value, hash and JSON stores, a Cache backend, pub/sub streams, a Redis Streams message broker, sessions and rate limits |
 | [`id_effect_storage`](crates/id_effect_storage) | [![crates.io](https://img.shields.io/crates/v/id_effect_storage.svg)](https://crates.io/crates/id_effect_storage) | Object storage for id_effect services: one store interface over file-system, in-memory and S3-compatible backends |
 | [`id_effect_test`](crates/id_effect_test) | [![crates.io](https://img.shields.io/crates/v/id_effect_test.svg)](https://crates.io/crates/id_effect_test) | Integration-test support for id_effect: effect-native containers, per-test database isolation, fixtures |
+| [`id_effect_workflow`](crates/id_effect_workflow) | [![crates.io](https://img.shields.io/crates/v/id_effect_workflow.svg)](https://crates.io/crates/id_effect_workflow) | Durable workflows for id_effect services: journaled steps replayed on resume, on id_effect_sql and id_effect_jobs |
 
 **Maintenance (frozen API)**
 
@@ -114,7 +117,6 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 | [`id_effect_ai`](labs/id_effect_ai) | unpublished | Vendor-neutral LLM client traits and streaming for id_effect |
 | [`id_effect_parse`](labs/id_effect_parse) | unpublished | Parser combinators, pretty printing, invertible codecs, and value diffs for id_effect |
 | [`id_effect_rpc`](labs/id_effect_rpc) | unpublished | RPC client/server stack and HTTP boundary helpers for id_effect (@effect/rpc parity) |
-| [`id_effect_workflow`](labs/id_effect_workflow) | unpublished | Durable step log with SQLite (memory) or duroxide-pg (production) resume semantics |
 
 Tiers and their quality bar: [ADR 0010](docs/adrs/0010-crate-tiers.md), [docs/QUALITY_BAR.md](docs/QUALITY_BAR.md).
 <!-- crates:end -->
@@ -127,7 +129,7 @@ Add the crate:
 
 ```toml
 [dependencies]
-id_effect = "0.10"
+id_effect = "0.11"
 ```
 
 ```rust
@@ -184,7 +186,7 @@ devenv shell -- moon run :clippy
 # Tests (nextest)
 devenv shell -- moon run :test
 
-# Coverage (95% threshold)
+# Coverage (96% threshold)
 devenv shell -- moon run :coverage
 
 # Build
@@ -210,10 +212,10 @@ devenv shell -- pre-push
 
 | Workflow | Triggers | What it does |
 |----------|----------|--------------|
-| [CI](https://github.com/Industrial/id_effect/actions/workflows/ci.yml) | push/PR → `main` | Format, clippy, nextest, coverage (≥ 95 %), MSRV (1.94), Postgres integration, labs workspace, minimal versions, packaging, version drift, matrix (stable+beta × linux+mac+win) |
+| [CI](https://github.com/Industrial/id_effect/actions/workflows/ci.yml) | push/PR → `main` | Format, clippy, nextest, coverage (≥ 96 %), MSRV (1.94), Postgres integration, labs workspace, minimal versions, packaging, version drift, matrix (stable+beta × linux+mac+win) |
 | [Docs & Pages](https://github.com/Industrial/id_effect/actions/workflows/docs.yml) | push/PR → `main` | API docs + mdBook → GitHub Pages |
 | [Security Audit](https://github.com/Industrial/id_effect/actions/workflows/audit.yml) | daily + `Cargo.lock` changes | `cargo audit` |
-| [Publish](https://github.com/Industrial/id_effect/actions/workflows/publish.yml) | `v*.*.*` tag | Test, then publish crates in dependency order |
+| [Publish](https://github.com/Industrial/id_effect/actions/workflows/publish.yml) | signed `v*.*.*` tag | Test, package, SLSA Build L3 provenance and SBOMs, trusted publishing in dependency order, verify crates.io against the provenance, GitHub Release ([docs/RELEASING.md](docs/RELEASING.md)) |
 
 ### Releases
 
@@ -221,14 +223,14 @@ devenv shell -- pre-push
 # 1. Bump [workspace.package] version in the root Cargo.toml (all crates inherit it;
 #    keep labs/Cargo.toml in lockstep) and move CHANGELOG "Unreleased" under the version.
 # 2. bash scripts/validate-crate-packaging.sh   # publish order + packaging check
-# 3. Commit, push, then tag — CI publishes in dependency order
-git tag v0.7.0
-git push --tags
+# 3. Merge, then tag the merge commit with a signed annotated tag; CI publishes in dependency order
+git tag -s v0.11.0 -m "v0.11.0"
+git push origin v0.11.0
 ```
 
 The publish order has one source: `scripts/validate-crate-packaging.sh --print-order`. Labs crates are never published.
 
-Publishing expects `CARGO_REGISTRY_TOKEN` on crates.io; `CODECOV_TOKEN` is optional for coverage uploads. The publish workflow can use a `crates-io` GitHub environment for approval gates.
+Publishing uses crates.io trusted publishing (no registry token) from the `crates-io` GitHub environment, and the workflow refuses a lightweight or unverified tag; the full flow and the owner steps are in [docs/RELEASING.md](docs/RELEASING.md). `CODECOV_TOKEN` is optional for coverage uploads.
 
 ---
 
@@ -236,7 +238,8 @@ Publishing expects `CARGO_REGISTRY_TOKEN` on crates.io; `CODECOV_TOKEN` is optio
 
 [![codecov](https://codecov.io/gh/Industrial/id_effect/branch/main/graph/badge.svg)](https://codecov.io/gh/Industrial/id_effect)
 
-CI enforces **≥ 95%** lines, regions, and functions via `cargo llvm-cov nextest`.
+CI enforces **≥ 96%** lines, regions, and functions via `cargo llvm-cov nextest`
+(`scripts/llvm-cov-nextest.sh`).
 
 ![Coverage sunburst](https://codecov.io/gh/Industrial/id_effect/branch/main/graphs/sunburst.svg)
 

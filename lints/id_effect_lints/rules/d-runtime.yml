@@ -1,0 +1,86 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# D-01  block_on / try_block_on only at program entry points
+# ──────────────────────────────────────────────────────────────────────────────
+id: id_effect-run-blocking-only-at-edge
+language: Rust
+severity: error
+message: |
+  `effect.block_on()` / `effect.try_block_on()` park the thread and must only be
+  called from binary entry points (`main`, tests) — never from library functions.
+  In async code, `.await` `Runtime::run(effect)` instead.
+note: |
+  BAD:  pub fn execute(e: Effect<A, E>) -> Exit<A, E> { e.block_on() }
+  GOOD: // In main.rs or a test:
+        fn main() { let exit = my_effect().provide_env(env).block_on(); }
+rule:
+  all:
+    - any:
+        - pattern: $EFF.block_on()
+        - pattern: $EFF.try_block_on()
+    # Inside a function that is NOT main and NOT a test
+    - inside:
+        kind: function_item
+        stopBy: end
+    - not:
+        inside:
+          matches: test-scope
+          stopBy: end
+    - not:
+        inside:
+          kind: function_item
+          has:
+            field: name
+            regex: "^main$"
+          stopBy: end
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# D-02  Time-dependent tests run on a TestExecutor (hint)
+# ──────────────────────────────────────────────────────────────────────────────
+id: id_effect-tests-must-use-run-test
+language: Rust
+severity: hint
+message: |
+  `block_on` runs a test on the real clock. Effects that sleep, retry or time out
+  are deterministic on a `TestExecutor` (virtual time, `advance(d)`).
+note: |
+  OK:   #[test] fn my_test() { assert!(matches!(my_effect().block_on(), Exit::Success(_))); }
+  BETTER (time-dependent): run `my_effect()` on a `TestExecutor` and `advance(d)` its clock.
+rule:
+  all:
+    - pattern: $EFF.block_on()
+    - inside:
+        matches: test-fn
+        stopBy: end
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# D-03  No tokio::spawn
+# ──────────────────────────────────────────────────────────────────────────────
+id: id_effect-no-tokio-spawn
+language: Rust
+severity: error
+message: |
+  `tokio::spawn(…)` bypasses Effect's structured concurrency.
+  Use `.fork()` / `Runtime::fork` to create tracked fibers.
+note: |
+  BAD:  tokio::spawn(async move { rt.run(my_effect).await });
+  GOOD: let handle = my_effect.fork();
+        // later: handle.join()
+rule:
+  pattern: tokio::spawn($$$)
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# D-04  No std::thread::spawn
+# ──────────────────────────────────────────────────────────────────────────────
+id: id_effect-no-thread-spawn
+language: Rust
+severity: error
+message: |
+  `std::thread::spawn` bypasses Effect's fiber model.
+  Use `.fork()` and its `FiberHandle` for structured concurrency.
+note: |
+  BAD:  thread::spawn(|| { … });
+  GOOD: let handle = my_effect.fork();
+rule:
+  any:
+    - pattern: thread::spawn($$$)
+    - pattern: std::thread::spawn($$$)

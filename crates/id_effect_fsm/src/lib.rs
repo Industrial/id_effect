@@ -8,6 +8,8 @@
 //!   [`id_effect::Effect`])
 //! - [`FsmProcess`] / [`FsmHandle`] — host a machine in a supervised
 //!   [`id_effect_process`] process: events are mailbox messages, state is queryable
+//! - [`Statem`] / [`StatemProcess`] — `gen_statem` parity: data-carrying states with a separate
+//!   `Data`, state/event/generic timeouts, postpone, inserted events, replies and state enter
 //! - [`to_mermaid`] / [`table_to_mermaid`] — export Mermaid `stateDiagram-v2` charts
 //! - [`TaggedEvent`] / [`event_matcher`] — bridge events/states to [`id_effect::HasTag`] / [`id_effect::Matcher`]
 //! - [`Saga`] / [`SagaStep`] — forward steps with LIFO compensation, as one
@@ -17,8 +19,8 @@
 //! `R` (an HList, or `HNil`): stepping, running and compensating are plain effect composition,
 //! so nothing here blocks a thread.
 //!
-//! Durable snapshots of a [`StateMachine`] live in the unpublished labs crate
-//! `id_effect_workflow::fsm`.
+//! For a [`StateMachine`] that survives restarts, drive it from a durable workflow of the
+//! `id_effect_workflow` crate (events as signals, each transition a journaled step).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -41,6 +43,7 @@ mod interpreter;
 mod machine;
 mod matcher;
 mod saga;
+mod statem;
 mod visualize;
 
 pub use behaviour::{FsmCall, FsmHandle, FsmProcess, FsmReply, FsmSpec, Unhandled};
@@ -52,6 +55,10 @@ pub use interpreter::{Interpreter, RunError, TransitionEffect};
 pub use machine::{StateMachine, TransitionTable};
 pub use matcher::{TaggedEvent, TaggedState, classify_event, event_matcher, state_matcher};
 pub use saga::{Saga, SagaStep};
+pub use statem::{
+  Action, Entered, ReplyTo, Statem, StatemEvent, StatemHandle, StatemInit, StatemMsg,
+  StatemProcess, StatemQuery, Transition,
+};
 pub use visualize::{table_to_mermaid, to_mermaid, to_mermaid_display};
 
 /// Compiles and runs the README examples as doctests.

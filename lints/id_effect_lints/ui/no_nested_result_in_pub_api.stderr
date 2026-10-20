@@ -1,0 +1,21 @@
+warning: public type alias is `Result<Result<_, _>, _>`
+  --> $DIR/no_nested_result_in_pub_api.rs:5:1
+   |
+LL | pub type Nested = Result<Result<u8, ()>, ()>;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `Or<E1, E2>` or a flat `E: From<E1> + From<E2>` channel
+   = note: `#[warn(no_nested_result_in_pub_api)]` on by default
+
+warning: public function returns `Result<Result<_, _>, _>`
+  --> $DIR/no_nested_result_in_pub_api.rs:7:1
+   |
+LL | / pub fn nested() -> Result<Result<u8, ()>, ()> {
+LL | |   Ok(Ok(1))
+LL | | }
+   | |_^
+   |
+   = help: use `Or<E1, E2>` or flatten errors via `E: From<E1> + From<E2>`
+
+warning: 2 warnings emitted
+

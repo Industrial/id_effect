@@ -22,10 +22,44 @@ use id_effect::{Effect, Executor, Runtime, succeed};
 use crate::addr::Addr;
 use crate::cell::{MonitorSink, ProcessCell, ProcessTable, RegistryEntry};
 use crate::exit::ExitReason;
-use crate::mailbox::Mailbox;
+use crate::mailbox::{DEFAULT_MAILBOX_CAPACITY, Mailbox};
 use crate::msg::{ProcMsg, SysMsg};
 use crate::pid::{MonitorRef, NodeName, Pid};
 use crate::process::{Process, ProcessCtx, process_loop};
+
+/// Per-spawn settings for [`ProcessNode::spawn_with`] and
+/// [`ProcessNode::spawn_linked_to_with`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpawnOptions {
+  mailbox_capacity: usize,
+}
+
+impl Default for SpawnOptions {
+  fn default() -> Self {
+    Self {
+      mailbox_capacity: DEFAULT_MAILBOX_CAPACITY,
+    }
+  }
+}
+
+impl SpawnOptions {
+  /// The defaults: a mailbox of [`DEFAULT_MAILBOX_CAPACITY`] user messages.
+  pub fn new() -> Self {
+    Self::default()
+  }
+
+  /// Bound the process's mailbox at `capacity` user messages (at least one). Exit signals and
+  /// monitor downs bypass the bound.
+  pub fn mailbox_capacity(mut self, capacity: usize) -> Self {
+    self.mailbox_capacity = capacity.max(1);
+    self
+  }
+
+  /// The mailbox capacity these options spawn with.
+  pub fn capacity(&self) -> usize {
+    self.mailbox_capacity
+  }
+}
 
 struct NodeInner {
   name: NodeName,
@@ -98,7 +132,12 @@ impl ProcessNode {
   /// Spawn an unlinked process. Returns immediately with a typed address;
   /// `init` runs asynchronously inside the new process.
   pub fn spawn<P: Process>(&self, args: P::Args, env: P::Env) -> Addr<P> {
-    self.spawn_inner::<P>(args, env, None)
+    self.spawn_inner::<P>(args, env, None, SpawnOptions::default())
+  }
+
+  /// [`spawn`](Self::spawn) with per-process settings (mailbox capacity).
+  pub fn spawn_with<P: Process>(&self, args: P::Args, env: P::Env, opts: SpawnOptions) -> Addr<P> {
+    self.spawn_inner::<P>(args, env, None, opts)
   }
 
   /// Spawn a process bidirectionally linked to `parent`.
@@ -106,18 +145,36 @@ impl ProcessNode {
   /// The link is installed **before** the child starts, so no exit can be
   /// missed (BEAM's `spawn_link` atomicity).
   pub fn spawn_linked_to<P: Process>(&self, parent: &Pid, args: P::Args, env: P::Env) -> Addr<P> {
-    self.spawn_inner::<P>(args, env, Some(parent.clone()))
+    self.spawn_inner::<P>(args, env, Some(parent.clone()), SpawnOptions::default())
   }
 
-  fn spawn_inner<P: Process>(&self, args: P::Args, env: P::Env, link_to: Option<Pid>) -> Addr<P> {
+  /// [`spawn_linked_to`](Self::spawn_linked_to) with per-process settings (mailbox capacity).
+  pub fn spawn_linked_to_with<P: Process>(
+    &self,
+    parent: &Pid,
+    args: P::Args,
+    env: P::Env,
+    opts: SpawnOptions,
+  ) -> Addr<P> {
+    self.spawn_inner::<P>(args, env, Some(parent.clone()), opts)
+  }
+
+  fn spawn_inner<P: Process>(
+    &self,
+    args: P::Args,
+    env: P::Env,
+    link_to: Option<Pid>,
+    opts: SpawnOptions,
+  ) -> Addr<P> {
     let id = self.inner.next_pid.fetch_add(1, Ordering::Relaxed);
     let pid = Pid::new(self.inner.name.clone(), id, self.inner.incarnation);
 
-    let mailbox: Mailbox<ProcMsg<P>> = Mailbox::new();
+    let mailbox: Mailbox<ProcMsg<P>> = Mailbox::with_capacity(opts.mailbox_capacity);
 
+    // Exit signals and monitor downs bypass the mailbox bound (M10).
     let deliver = {
       let mailbox = mailbox.clone();
-      Box::new(move |sys: SysMsg| mailbox.offer_now(ProcMsg::<P>::Info(sys.into())))
+      Box::new(move |sys: SysMsg| mailbox.offer_system_now(ProcMsg::<P>::Info(sys.into())))
     };
     let close = {
       let mailbox = mailbox.clone();
@@ -131,7 +188,7 @@ impl ProcessNode {
       self.link(&parent, &pid);
     }
 
-    let ctx = ProcessCtx::new(pid.clone(), self.clone());
+    let ctx = ProcessCtx::new(pid.clone(), self.clone()).bind_mailbox::<P>(mailbox.clone());
     let addr = Addr::new(pid, mailbox.clone(), self.clone());
 
     // A daemon root fiber: the process outlives whoever spawned it and ends

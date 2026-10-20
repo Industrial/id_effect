@@ -7,6 +7,7 @@ use id_effect_node::handshake::Cookie;
 use id_effect_node::id::NodeId;
 use id_effect_node::session::Session;
 use id_effect_node::transport::memory::MemoryNetwork;
+#[cfg(feature = "insecure-plaintext-tcp")]
 use id_effect_node::transport::tcp::TcpTransport;
 use id_effect_node::transport::{Transport, TransportError};
 use id_effect_node::wire::Frame;
@@ -133,9 +134,11 @@ async fn wrong_cookie_is_rejected() {
   );
 }
 
+// TLS TCP sessions: tests/transport_tcp_tls.rs.
+#[cfg(feature = "insecure-plaintext-tcp")]
 #[tokio::test]
 async fn tcp_transport_round_trips_authenticated_frames() {
-  let tcp = TcpTransport;
+  let tcp = TcpTransport::dangerous_plaintext();
   let listener = tcp.listen("127.0.0.1:0").await.expect("bind");
   let addr = listener.local_addr();
   let cookie = Cookie::new("tcp-secret-of-at-least-thirty-two-bytes");

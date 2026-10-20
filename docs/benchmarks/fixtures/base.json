@@ -56,6 +56,16 @@
 			"median": 25000,
 			"std_dev": 250
 		},
+		"gate/axum_request_bare": {
+			"mean": 20000,
+			"median": 20000,
+			"std_dev": 200
+		},
+		"gate/axum_request_secure_stack": {
+			"mean": 22000,
+			"median": 22000,
+			"std_dev": 220
+		},
 		"stream/pull_map_10k": {
 			"mean": 300000,
 			"median": 300000,

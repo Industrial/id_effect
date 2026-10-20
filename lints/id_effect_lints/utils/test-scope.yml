@@ -1,0 +1,17 @@
+# A test function or a `#[cfg(test)]` module (the Dylint lints' `in_test_context`). Rules exclude
+# a match `inside: { matches: test-scope, stopBy: end }`.
+id: test-scope
+language: Rust
+rule:
+  any:
+    - matches: test-fn
+    - kind: mod_item
+      follows:
+        kind: attribute_item
+        regex: '^#\[cfg\(test\)\]$'
+        stopBy:
+          not:
+            any:
+              - kind: attribute_item
+              - kind: line_comment
+              - kind: block_comment

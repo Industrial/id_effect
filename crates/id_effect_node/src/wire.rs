@@ -18,7 +18,13 @@ use crate::id::NodeId;
 /// transcript and the TLS channel and widens the nonces to 128 bits; 0.10.0
 /// nodes (version 1) and 0.10.1 nodes refuse each other with
 /// [`HandshakeError::VersionMismatch`](crate::handshake::HandshakeError::VersionMismatch).
-pub const PROTOCOL_VERSION: u16 = 2;
+///
+/// Version 3 (0.11.0) adds at-least-once delivery to the process envelope
+/// ([`ProcessEnvelope::Reliable`](crate::envelope::ProcessEnvelope::Reliable) and
+/// [`ProcessEnvelope::Ack`](crate::envelope::ProcessEnvelope::Ack), see [`crate::delivery`]) and
+/// carries the sending fiber's trace context; 0.10.x nodes (versions 1 and 2) are refused with
+/// `VersionMismatch`.
+pub const PROTOCOL_VERSION: u16 = 3;
 
 /// Everything that can travel on a connection.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -181,8 +187,8 @@ mod tests {
   }
 
   #[test]
-  fn protocol_version_is_two() {
-    assert_eq!(PROTOCOL_VERSION, 2);
+  fn protocol_version_is_three() {
+    assert_eq!(PROTOCOL_VERSION, 3);
   }
 
   fn arb_frame() -> impl proptest::strategy::Strategy<Value = Frame> {

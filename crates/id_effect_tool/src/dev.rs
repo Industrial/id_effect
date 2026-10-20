@@ -815,4 +815,199 @@ mod tests {
     let err = String::from_utf8(err).unwrap();
     assert!(err.starts_with("error: no Cargo.toml in "), "{err}");
   }
+
+  mod services {
+    use super::*;
+
+    #[test]
+    fn without_a_compose_file_services_are_skipped() {
+      let tmp = tempfile::tempdir().unwrap();
+      let mut out = Vec::new();
+      assert_eq!(services(tmp.path(), &mut out), Ok(()));
+      let out = String::from_utf8(out).unwrap();
+      assert!(
+        out.starts_with("id-effect dev: --services: no compose file (compose.yaml, "),
+        "{out}"
+      );
+      assert!(out.trim_end().ends_with("; skipped"), "{out}");
+    }
+
+    #[test]
+    fn a_failing_compose_up_stops_dev_before_any_build() {
+      let tmp = tempfile::tempdir().unwrap();
+      write(&tmp.path().join("Cargo.toml"), "[package]\nname = \"x\"\n");
+      // Not a compose file: `docker compose up -d` refuses it (or docker is not installed).
+      write(&tmp.path().join("compose.yaml"), "services: [unclosed\n");
+      let argv = [
+        "id-effect",
+        "dev",
+        "--services",
+        "--path",
+        tmp.path().to_str().unwrap(),
+      ];
+      let (mut out, mut err) = (Vec::new(), Vec::new());
+      assert_eq!(crate::cli::run(argv, &mut out, &mut err), ExitCode::FAILURE);
+      let out = String::from_utf8(out).unwrap();
+      assert!(
+        out.contains("starting services (compose.yaml): docker compose up -d"),
+        "{out}"
+      );
+      let err = String::from_utf8(err).unwrap();
+      assert!(
+        err.starts_with("error: `docker compose up -d` failed")
+          || err.starts_with("error: cannot run `docker compose up -d`"),
+        "{err}"
+      );
+      assert!(!out.contains("cargo build"), "{out}");
+    }
+  }
+
+  #[cfg(unix)]
+  mod rebuild {
+    use super::*;
+
+    const MANIFEST: &str = "[package]\nname = \"devapp\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n# Not a member of the workspace the temp directory may sit in.\n[workspace]\n";
+
+    /// A one-crate project in a temp directory; `files` are written under it.
+    fn fixture(files: &[(&str, &str)]) -> tempfile::TempDir {
+      let tmp = tempfile::tempdir().unwrap();
+      write(&tmp.path().join("Cargo.toml"), MANIFEST);
+      for (path, text) in files {
+        write(&tmp.path().join(path), text);
+      }
+      tmp
+    }
+
+    fn args(dir: &Path) -> DevArgs {
+      DevArgs {
+        path: dir.to_path_buf(),
+        package: None,
+        bin: None,
+        watch: Vec::new(),
+        poll_ms: 100,
+        debounce_ms: 0,
+        grace_secs: 5,
+        services: false,
+        app_args: Vec::new(),
+      }
+    }
+
+    fn text(out: Vec<u8>) -> String {
+      String::from_utf8(out).unwrap()
+    }
+
+    fn reap(app: Option<Child>) {
+      if let Some(mut child) = app {
+        let _ = child.kill();
+        let _ = child.wait();
+      }
+    }
+
+    #[test]
+    fn a_failed_build_keeps_the_running_app() {
+      let tmp = fixture(&[("src/main.rs", "fn main() { does_not_compile }\n")]);
+      let running = Command::new("sleep").arg("30").spawn().unwrap();
+      let pid = running.id();
+      let mut app = Some(running);
+      let mut out = Vec::new();
+      let result = rebuild(&args(tmp.path()), &mut out, &mut app, Duration::ZERO);
+      assert_eq!(result, Ok(()));
+      let out = text(out);
+      assert!(out.contains("id-effect dev: cargo build\n"), "{out}");
+      assert!(
+        out.contains(&format!(
+          "build failed (`cargo build` exit status: 101); keeping the running app (pid {pid}); waiting for a change"
+        )),
+        "{out}"
+      );
+      assert_eq!(app.as_ref().map(Child::id), Some(pid));
+      reap(app);
+    }
+
+    #[test]
+    fn a_build_without_a_binary_runs_nothing() {
+      let tmp = fixture(&[("src/lib.rs", "pub fn f() {}\n")]);
+      let mut app = None;
+      let mut out = Vec::new();
+      assert_eq!(
+        rebuild(&args(tmp.path()), &mut out, &mut app, Duration::ZERO),
+        Ok(())
+      );
+      let out = text(out);
+      assert!(
+        out.contains(
+          "build failed (the build made no binary; pick a package with --package); no app running"
+        ),
+        "{out}"
+      );
+      assert!(app.is_none());
+    }
+
+    #[test]
+    fn a_good_build_replaces_the_app() {
+      let tmp = fixture(&[(
+        "src/main.rs",
+        "fn main() { std::thread::sleep(std::time::Duration::from_secs(30)); }\n",
+      )]);
+      let mut dev_args = args(tmp.path());
+      dev_args.package = Some("devapp".into());
+      dev_args.bin = Some("devapp".into());
+      dev_args.app_args = vec!["--port".into(), "9000".into()];
+
+      // An app that ignores SIGTERM is killed once the (zero) grace period is over.
+      let stubborn = Command::new("sh")
+        .args(["-c", "trap '' TERM; exec sleep 30"])
+        .spawn()
+        .unwrap();
+      let stubborn_pid = stubborn.id();
+      thread::sleep(Duration::from_millis(200));
+      let mut app = Some(stubborn);
+      let mut out = Vec::new();
+      assert_eq!(
+        rebuild(&dev_args, &mut out, &mut app, Duration::ZERO),
+        Ok(())
+      );
+      let first = text(std::mem::take(&mut out));
+      assert!(
+        first.contains(&format!(
+          "pid {stubborn_pid} did not exit within 0s of SIGTERM; killed"
+        )),
+        "{first}"
+      );
+      assert!(
+        first.contains(&format!(
+          "(pid {}, ID_EFFECT_PROFILE=dev)",
+          app.as_ref().expect("the new app runs").id()
+        )),
+        "{first}"
+      );
+      let built_pid = app.as_ref().map(Child::id).unwrap();
+
+      // The built app honours SIGTERM: it is stopped, then started again.
+      assert_eq!(
+        rebuild(&dev_args, &mut out, &mut app, Duration::from_secs(10)),
+        Ok(())
+      );
+      let second = text(out);
+      assert!(
+        second.contains(&format!("stopped pid {built_pid} (")),
+        "{second}"
+      );
+      assert!(second.contains("started "), "{second}");
+      assert_ne!(app.as_ref().map(Child::id), Some(built_pid));
+      reap(app);
+    }
+
+    #[test]
+    fn a_missing_executable_cannot_start() {
+      let tmp = tempfile::tempdir().unwrap();
+      let missing = tmp.path().join("no-such-app");
+      assert!(start(tmp.path(), &missing, &[]).is_err());
+      assert_eq!(relative(tmp.path(), &missing), "no-such-app");
+      assert_eq!(
+        relative(Path::new("/elsewhere"), &missing),
+        missing.display().to_string()
+      );
+    }
+  }
 }

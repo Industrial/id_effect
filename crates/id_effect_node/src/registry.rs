@@ -3,11 +3,14 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use id_effect::{Cause, Exit};
 use id_effect::{Deferred, Effect, from_async};
-use id_effect_process::{CallError, ExitReason, Info, Mailbox, Pid, ProcMsg, Process, ProcessNode};
+use id_effect_process::{
+  CallError, ExitReason, Info, Mailbox, OfferError, Pid, ProcMsg, Process, ProcessNode,
+};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -45,10 +48,15 @@ pub struct BehaviorEntry {
 }
 
 /// Behavior name map + live pid routes.
+///
+/// Remote delivery respects the target's mailbox bound (M10): a call to a full mailbox faults
+/// with [`RemoteFault::MailboxFull`]; a cast or info to a full mailbox is dropped and counted in
+/// [`BehaviorRegistry::dropped_full`].
 #[derive(Clone, Default)]
 pub struct BehaviorRegistry {
   entries: HashMap<String, BehaviorEntry>,
   routes: Arc<Mutex<HashMap<Pid, Route>>>,
+  dropped: Arc<AtomicU64>,
 }
 
 impl BehaviorRegistry {
@@ -60,6 +68,11 @@ impl BehaviorRegistry {
   /// Look up spawn entry.
   pub fn get(&self, name: &str) -> Option<&BehaviorEntry> {
     self.entries.get(name)
+  }
+
+  /// Remote casts and infos dropped because their target's mailbox was full.
+  pub fn dropped_full(&self) -> u64 {
+    self.dropped.load(Ordering::Relaxed)
   }
 
   /// True if pid has a wire route.
@@ -81,7 +94,7 @@ impl BehaviorRegistry {
     (entry.spawn)(node, args, link_to)
   }
 
-  /// Deliver cast bytes.
+  /// Deliver cast bytes. A cast to a full mailbox is dropped and counted (still `Ok`).
   pub fn deliver_cast(&self, pid: &Pid, bytes: &[u8]) -> Result<(), RemoteFault> {
     let route = self
       .routes
@@ -93,7 +106,7 @@ impl BehaviorRegistry {
     (route.cast)(bytes)
   }
 
-  /// Deliver info bytes.
+  /// Deliver info bytes. An info to a full mailbox is dropped and counted (still `Ok`).
   pub fn deliver_info(&self, pid: &Pid, bytes: &[u8]) -> Result<(), RemoteFault> {
     let route = self
       .routes
@@ -107,7 +120,8 @@ impl BehaviorRegistry {
 
   /// Deliver call bytes.
   ///
-  /// The call is decoded and enqueued now (so it is ordered after earlier casts); the returned
+  /// The call is decoded and enqueued now (so it is ordered after earlier casts), or refused
+  /// with [`RemoteFault::MailboxFull`] when the target's mailbox is full; the returned
   /// effect awaits the encoded reply. It is `Send` and interruptible: interrupting it abandons
   /// the wait only (at-most-once). Bound it with a timeout — a process that exits without
   /// replying never answers.
@@ -159,6 +173,7 @@ impl BehaviorRegistry {
   {
     let name = name.into();
     let routes = Arc::clone(&self.routes);
+    let dropped = Arc::clone(&self.dropped);
     let spawn: SpawnFn = Arc::new(move |node, args_bytes, link_to| {
       let args: P::Args =
         postcard::from_bytes(args_bytes).map_err(|e| RemoteFault::Decode(e.to_string()))?;
@@ -166,7 +181,7 @@ impl BehaviorRegistry {
         Some(parent) => node.spawn_linked_to::<P>(parent, args, P::Env::default()),
         None => node.spawn::<P>(args, P::Env::default()),
       };
-      install_route::<P>(&routes, addr.pid().clone(), addr.clone_mailbox());
+      install_route::<P>(&routes, &dropped, addr.pid().clone(), addr.clone_mailbox());
       Ok(addr.pid().clone())
     });
     self
@@ -184,13 +199,26 @@ impl BehaviorRegistry {
     P::Info: Serialize + DeserializeOwned + Send + 'static,
   {
     if self.entries.contains_key(name) {
-      install_route::<P>(&self.routes, pid.clone(), mailbox);
+      install_route::<P>(&self.routes, &self.dropped, pid.clone(), mailbox);
     }
+  }
+}
+
+/// A cast or info offer's outcome: dropped and counted when the mailbox is full.
+fn offered(result: Result<(), OfferError>, dropped: &AtomicU64) -> Result<(), RemoteFault> {
+  match result {
+    Ok(()) => Ok(()),
+    Err(OfferError::Full) => {
+      dropped.fetch_add(1, Ordering::Relaxed);
+      Ok(())
+    }
+    Err(_) => Err(RemoteFault::NoProc),
   }
 }
 
 fn install_route<P>(
   routes: &Arc<Mutex<HashMap<Pid, Route>>>,
+  dropped: &Arc<AtomicU64>,
   pid: Pid,
   mailbox: Mailbox<ProcMsg<P>>,
 ) where
@@ -202,26 +230,23 @@ fn install_route<P>(
 {
   let cast: WireFn = {
     let mailbox = mailbox.clone();
+    let dropped = Arc::clone(dropped);
     Arc::new(move |bytes| {
       let msg: P::Cast =
         postcard::from_bytes(bytes).map_err(|e| RemoteFault::Decode(e.to_string()))?;
-      if mailbox.offer_now(ProcMsg::Cast(msg)) {
-        Ok(())
-      } else {
-        Err(RemoteFault::NoProc)
-      }
+      offered(mailbox.try_offer_now(ProcMsg::Cast(msg)), &dropped)
     })
   };
   let info: WireFn = {
     let mailbox = mailbox.clone();
+    let dropped = Arc::clone(dropped);
     Arc::new(move |bytes| {
       let msg: P::Info =
         postcard::from_bytes(bytes).map_err(|e| RemoteFault::Decode(e.to_string()))?;
-      if mailbox.offer_now(ProcMsg::Info(Info::User(msg))) {
-        Ok(())
-      } else {
-        Err(RemoteFault::NoProc)
-      }
+      offered(
+        mailbox.try_offer_now(ProcMsg::Info(Info::User(msg))),
+        &dropped,
+      )
     })
   };
   let call: CallWireFn = {
@@ -231,8 +256,10 @@ fn install_route<P>(
         postcard::from_bytes(bytes).map_err(|e| RemoteFault::Decode(e.to_string()))?;
       let typed: Deferred<P::Reply, CallError> = Deferred::new();
       let wait = typed.wait_future();
-      if !mailbox.offer_now(ProcMsg::Call(msg, typed)) {
-        return Err(RemoteFault::NoProc);
+      match mailbox.try_offer_now(ProcMsg::Call(msg, typed)) {
+        Ok(()) => {}
+        Err(OfferError::Full) => return Err(RemoteFault::MailboxFull),
+        Err(_) => return Err(RemoteFault::NoProc),
       }
       let reply: ReplyFuture = Box::pin(async move { encode_reply(wait.await) });
       Ok(reply)
@@ -253,6 +280,7 @@ fn encode_reply<A: Serialize>(exit: Exit<A, CallError>) -> Result<Vec<u8>, Remot
     Exit::Failure(Cause::Fail(CallError::Down(reason))) => Err(RemoteFault::Down((&reason).into())),
     Exit::Failure(Cause::Fail(CallError::Timeout)) => Err(RemoteFault::Timeout),
     Exit::Failure(Cause::Fail(CallError::MailboxClosed)) => Err(RemoteFault::NoProc),
+    Exit::Failure(Cause::Fail(CallError::MailboxFull)) => Err(RemoteFault::MailboxFull),
     Exit::Failure(_) => {
       let wire: ExitReasonWire = (&ExitReason::Interrupted).into();
       Err(RemoteFault::Down(wire))
@@ -457,6 +485,28 @@ mod tests {
     );
   }
 
+  /// M10: remote delivery to a full mailbox faults a call and drops + counts a cast or info.
+  #[test]
+  fn m10_remote_send_to_full_mailbox_faults() {
+    let reg = registry();
+    let q: Mailbox<ProcMsg<Echo>> = Mailbox::with_capacity(1);
+    reg.adopt_local::<Echo>("echo", &pid(1), q.clone());
+    reg.deliver_cast(&pid(1), &enc(1)).expect("first cast fits");
+    assert_eq!(reg.dropped_full(), 0);
+    assert_eq!(
+      call(&reg, &pid(1), &enc(2)).err(),
+      Some(RemoteFault::MailboxFull)
+    );
+    assert_eq!(reg.deliver_cast(&pid(1), &enc(3)), Ok(()));
+    assert_eq!(reg.deliver_info(&pid(1), &enc(4)), Ok(()));
+    assert_eq!(reg.dropped_full(), 2, "the cast and the info were dropped");
+    assert_eq!(q.len(), 1, "only the first cast is buffered");
+    assert!(matches!(take(&q), ProcMsg::Cast(1)));
+    // Room again: the next call is enqueued.
+    assert!(call(&reg, &pid(1), &enc(5)).is_ok());
+    assert_eq!(RemoteFault::MailboxFull.to_string(), "mailbox full");
+  }
+
   #[test]
   fn typed_reply_is_encoded_onto_the_wire() {
     let bytes = call_outcome(|typed| {
@@ -471,6 +521,7 @@ mod tests {
     let cases = [
       (CallError::Timeout, RemoteFault::Timeout),
       (CallError::MailboxClosed, RemoteFault::NoProc),
+      (CallError::MailboxFull, RemoteFault::MailboxFull),
       (
         CallError::Down(ExitReason::Shutdown),
         RemoteFault::Down((&ExitReason::Shutdown).into()),

@@ -20,6 +20,12 @@ fn test_config(server_uri: &str) -> AiConfig {
   }
 }
 
+/// The default client with the local mock server (127.0.0.1) exempt from the SSRF guard.
+fn local_client() -> id_effect_platform::http::ReqwestHttpClient {
+  let config = id_effect_platform::http::HttpClientConfig::default().allow_hosts(["127.0.0.1"]);
+  id_effect_platform::http::ReqwestHttpClient::from_config(&config)
+}
+
 async fn run<A: Send + 'static>(eff: Effect<A, AiError>) -> Exit<A, AiError> {
   TokioRuntime::current().expect("tokio").run(eff).await
 }
@@ -37,7 +43,7 @@ async fn anthropic_complete_success() {
     .mount(&server)
     .await;
 
-  let client = Arc::new(id_effect_platform::http::ReqwestHttpClient::default_client());
+  let client = Arc::new(local_client());
   let cfg = test_config(&server.uri());
   let layer = provide_anthropic_language_model::<AiError>(client, cfg).expect("provider");
 
@@ -67,7 +73,7 @@ async fn anthropic_stream_parses_sse() {
     .mount(&server)
     .await;
 
-  let client = Arc::new(id_effect_platform::http::ReqwestHttpClient::default_client());
+  let client = Arc::new(local_client());
   let cfg = test_config(&server.uri());
   let model = AnthropicLanguageModel::new(client, &cfg).expect("model");
   let req = ChatRequest {

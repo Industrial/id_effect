@@ -21,28 +21,45 @@
 //! 4. On every exit path — including an interrupt of the process fiber —
 //!    the mailbox is closed (later sends fail with `SendError::Rejected`)
 //!    and the process is finalized exactly once: exit signals fan out to
-//!    links, monitors fire, and registered names are dropped.
+//!    links, monitors fire, registered names are dropped and pending
+//!    timers are cancelled.
+//! 5. With an idle timeout set ([`ProcessCtx::set_idle_timeout`]), a wait
+//!    for the next message that lasts the timeout dispatches
+//!    [`Info::Timeout`] instead; the next wait without a message in between
+//!    has no deadline (one timeout per idle period).
+//! 6. [`Next::Hibernate`] runs [`Process::hibernate`], releases the
+//!    mailbox buffer and waits for the next message like `Continue`.
 
+use std::any::Any;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use id_effect::{Cause, Exit, Never};
-use id_effect::{Effect, succeed, suspend, sync};
+use id_effect::{Effect, fail, succeed, suspend, sync};
 
 use crate::addr::Addr;
 use crate::cell::ProcessCell;
 use crate::exit::ExitReason;
 use crate::mailbox::Mailbox;
-use crate::msg::{Info, ProcMsg};
+use crate::msg::{Info, ProcMsg, ReceiveError};
 use crate::node::ProcessNode;
 use crate::pid::{MonitorRef, Pid};
+use crate::timer::{self, TimerRef};
 
 /// Continue-or-stop decision returned by behavior callbacks.
+///
+/// `#[non_exhaustive]`: a `match` needs a wildcard arm, so later decisions are additive.
+#[non_exhaustive]
 pub enum Next<P> {
   /// Keep processing messages with the new state.
   Continue(P),
   /// Stop with `reason`; `terminate` runs with the final state.
   Stop(ExitReason, P),
+  /// Keep the new state but shed memory while idle (BEAM's `hibernate`): the loop runs
+  /// [`Process::hibernate`], releases the mailbox buffer
+  /// ([`Mailbox::shrink_to_fit`]) and resumes on the next message.
+  Hibernate(P),
 }
 
 /// An OTP-style behavior: GenServer-shaped, effect-native.
@@ -97,6 +114,14 @@ pub trait Process: Sized + Send + 'static {
     succeed(Next::Continue(self))
   }
 
+  /// Hibernation hook, run when a callback returns [`Next::Hibernate`] and before the mailbox
+  /// buffer is released: compact the state here (drop caches, shrink collections). A failure
+  /// crashes the process like a handler failure. Default: keep the state as is.
+  fn hibernate(self, ctx: ProcessCtx) -> Effect<Self, Self::Error, Self::Env> {
+    let _ = ctx;
+    succeed(self)
+  }
+
   /// Graceful-cleanup hook. Runs on [`Next::Stop`] and on cooperative
   /// kills; **not** on handler crashes (state already consumed).
   fn terminate(self, reason: &ExitReason, ctx: ProcessCtx) -> Effect<(), Never, Self::Env> {
@@ -113,11 +138,97 @@ pub trait Process: Sized + Send + 'static {
 pub struct ProcessCtx {
   pid: Pid,
   node: ProcessNode,
+  /// The process's own `Mailbox<ProcMsg<P>>`, type-erased (for [`ProcessCtx::receive`]).
+  mailbox: Option<Arc<dyn Any + Send + Sync>>,
 }
 
 impl ProcessCtx {
   pub(crate) fn new(pid: Pid, node: ProcessNode) -> Self {
-    Self { pid, node }
+    Self {
+      pid,
+      node,
+      mailbox: None,
+    }
+  }
+
+  pub(crate) fn bind_mailbox<P: Process>(mut self, mailbox: Mailbox<ProcMsg<P>>) -> Self {
+    self.mailbox = Some(Arc::new(mailbox));
+    self
+  }
+
+  /// Selective receive (BEAM's `receive ... after`): take the first message in this process's
+  /// mailbox that `matcher` accepts, waiting up to `timeout` (on the executor clock) for one to
+  /// arrive. Every skipped message stays queued, in arrival order, for the normal loop.
+  ///
+  /// `P` is this process's behavior (`Self` inside its callbacks). The matched message is
+  /// returned as is: a matched [`ProcMsg::Call`] must be answered through its reply. The scan
+  /// covers at most the mailbox capacity ([`ReceiveError::ScanLimit`] past it); a kill fails it
+  /// with [`ReceiveError::Closed`] and the deadline with [`ReceiveError::Timeout`]. `matcher`
+  /// runs under the mailbox lock: it may only inspect the message.
+  pub fn receive<P: Process, R: Send + Sync + 'static>(
+    &self,
+    matcher: impl FnMut(&ProcMsg<P>) -> bool + Send + 'static,
+    timeout: Duration,
+  ) -> Effect<ProcMsg<P>, ReceiveError, R> {
+    match self
+      .mailbox
+      .as_ref()
+      .and_then(|m| m.downcast_ref::<Mailbox<ProcMsg<P>>>())
+    {
+      Some(mailbox) => mailbox
+        .take_matching(Box::new(matcher))
+        .timeout_fail(timeout, || ReceiveError::Timeout),
+      None => fail(ReceiveError::BehaviorMismatch),
+    }
+  }
+
+  /// Deliver `msg` to this process's `handle_info` (as [`Info::User`]) after `after` on the
+  /// executor clock (BEAM's `erlang:send_after/3`). `P` is this process's behavior (`Self`
+  /// inside its callbacks); for another behavior the timer is inert and never delivers.
+  ///
+  /// The timer dies with the process. The message counts against the mailbox bound when it
+  /// fires: a full mailbox drops it (D17). Cancel with [`cancel_timer`](Self::cancel_timer).
+  pub fn send_after<P: Process>(&self, msg: P::Info, after: Duration) -> TimerRef {
+    match self
+      .mailbox
+      .as_ref()
+      .and_then(|m| m.downcast_ref::<Mailbox<ProcMsg<P>>>())
+    {
+      Some(mailbox) => {
+        let mailbox = mailbox.clone();
+        timer::start(
+          &self.node,
+          &self.pid,
+          after,
+          Box::new(move || {
+            let _ = mailbox.offer_now(ProcMsg::Info(Info::User(msg)));
+          }),
+        )
+      }
+      None => TimerRef::inert(),
+    }
+  }
+
+  /// Cancel a timer (BEAM's `erlang:cancel_timer/1`). `true` means its message will never be
+  /// delivered; `false` that it already fired or was cancelled.
+  pub fn cancel_timer(&self, timer: TimerRef) -> bool {
+    timer.cancel()
+  }
+
+  /// Deliver [`Info::Timeout`] when this process waits `after` (executor clock) for its next
+  /// message: once per idle period, re-armed by the next message. Replaces an earlier setting;
+  /// applies from the next wait.
+  pub fn set_idle_timeout(&self, after: Duration) {
+    if let Some(cell) = self.node.table().lookup(&self.pid) {
+      cell.set_idle_timeout(Some(after));
+    }
+  }
+
+  /// Remove the idle timeout set with [`set_idle_timeout`](Self::set_idle_timeout).
+  pub fn clear_idle_timeout(&self) {
+    if let Some(cell) = self.node.table().lookup(&self.pid) {
+      cell.set_idle_timeout(None);
+    }
   }
 
   /// This process's pid.
@@ -212,6 +323,8 @@ struct Looper<P: Process> {
   ctx: ProcessCtx,
   mailbox: Mailbox<ProcMsg<P>>,
   cell: Option<Arc<ProcessCell>>,
+  /// Whether the next wait honours the idle timeout (`false` right after an `Info::Timeout`).
+  idle_armed: bool,
 }
 
 impl<P: Process> Looper<P> {
@@ -238,24 +351,57 @@ fn step<P: Process>(state: P, lp: Looper<P>) -> Step<P> {
   if let Some(r) = lp.killed() {
     return terminate(state, r, lp.ctx);
   }
-  lp.mailbox
-    .take()
-    .exit::<Never>()
-    .flat_map(move |exit| match exit {
-      Exit::Success(msg) => dispatch(state, msg, lp),
-      // Closed: either a kill (reason recorded) or a graceful stop.
-      Exit::Failure(Cause::Fail(_)) => {
-        let r = lp.killed().unwrap_or(ExitReason::Normal);
-        terminate(state, r, lp.ctx)
-      }
-      Exit::Failure(cause) => terminate(state, crash_reason(&cause), lp.ctx),
-    })
+  let idle = match &lp.cell {
+    Some(cell) if lp.idle_armed => cell.idle_timeout(),
+    _ => None,
+  };
+  let next = match idle {
+    Some(after) => {
+      let deadline = lp.ctx.node().runtime().executor().sleep(after);
+      lp.mailbox.take_or_idle(deadline)
+    }
+    None => lp.mailbox.take().map(Some),
+  };
+  next.exit::<Never>().flat_map(move |exit| match exit {
+    Exit::Success(Some(msg)) => dispatch(
+      state,
+      msg,
+      Looper {
+        idle_armed: true,
+        ..lp
+      },
+    ),
+    Exit::Success(None) => dispatch(
+      state,
+      ProcMsg::Info(Info::Timeout),
+      Looper {
+        idle_armed: false,
+        ..lp
+      },
+    ),
+    // Closed: either a kill (reason recorded) or a graceful stop.
+    Exit::Failure(Cause::Fail(_)) => {
+      let r = lp.killed().unwrap_or(ExitReason::Normal);
+      terminate(state, r, lp.ctx)
+    }
+    Exit::Failure(cause) => terminate(state, crash_reason(&cause), lp.ctx),
+  })
 }
 
 fn proceed<P: Process>(outcome: Result<Next<P>, ExitReason>, lp: Looper<P>) -> Step<P> {
   match outcome {
     Ok(Next::Continue(s)) => step(s, lp),
     Ok(Next::Stop(r, s)) => terminate(s, r, lp.ctx),
+    Ok(Next::Hibernate(s)) => {
+      let ctx = lp.ctx.clone();
+      guarded(move || P::hibernate(s, ctx)).flat_map(move |r| match r {
+        Ok(s) => {
+          lp.mailbox.shrink_to_fit();
+          step(s, lp)
+        }
+        Err(crash) => succeed(crash),
+      })
+    }
     Err(crash) => succeed(crash),
   }
 }
@@ -295,6 +441,7 @@ pub(crate) fn process_loop<P: Process>(
     ctx: ctx.clone(),
     mailbox: mailbox.clone(),
     cell: node.table().lookup(&pid),
+    idle_armed: true,
   };
   let outcome: Arc<Mutex<Option<ExitReason>>> = Arc::new(Mutex::new(None));
   let slot = Arc::clone(&outcome);
@@ -343,6 +490,7 @@ mod tests {
     MonitorThenDemonitor(Pid),
     SpawnSibling,
     IsKilled,
+    Monitor(Pid),
   }
 
   impl Process for Probe {
@@ -383,6 +531,10 @@ mod tests {
             i64::from(sibling.pid() != ctx.pid() && sibling.is_alive())
           }
           ProbeCall::IsKilled => i64::from(ctx.is_killed()),
+          ProbeCall::Monitor(peer) => {
+            let _ = ctx.monitor(&peer);
+            0
+          }
         };
         (reply, Next::Continue(self))
       })
@@ -538,6 +690,218 @@ mod tests {
     assert_eq!(
       crash_reason(&Cause::<String>::Fail("e".into())),
       ExitReason::Error("\"e\"".into())
+    );
+    let fiber = id_effect::FiberId::ROOT;
+    assert_eq!(
+      crash_reason(&Cause::<String>::Interrupt(fiber)),
+      ExitReason::Interrupted
+    );
+    assert_eq!(
+      crash_reason(&Cause::both(
+        Cause::<String>::Interrupt(fiber),
+        Cause::Fail("x".into())
+      )),
+      ExitReason::Interrupted
+    );
+  }
+
+  #[test]
+  fn probe_ignores_harmless_casts_and_infos_and_counts_downs() {
+    let h = harness();
+    let probe = h.node.spawn::<Probe>((), HNil);
+    let peer = h.node.spawn::<Probe>((), HNil);
+    assert!(matches!(h.run(probe.cast(false)), Exit::Success(())));
+    assert!(matches!(h.run(probe.send(false)), Exit::Success(())));
+    h.call(&probe, ProbeCall::Monitor(peer.pid().clone()));
+    h.node.exit(peer.pid(), ExitReason::Killed);
+    h.exec.run_until_stalled();
+    assert_eq!(h.call(&probe, ProbeCall::Downs), 1);
+  }
+
+  /// Behavior that keeps every default callback (`handle_cast`, `handle_info`, `hibernate`,
+  /// `terminate`) and exercises the context operations aimed at other behaviors.
+  struct Plain;
+
+  enum PlainCall {
+    Hibernate,
+    Stop,
+    ReceiveForeign,
+    SendAfterForeign,
+    SpawnLinked,
+  }
+
+  #[derive(Clone, Debug, PartialEq)]
+  enum PlainReply {
+    Done,
+    Flag(bool),
+    Child(Pid),
+  }
+
+  impl Process for Plain {
+    type Args = ();
+    type Env = HNil;
+    type Call = PlainCall;
+    type Reply = PlainReply;
+    type Cast = ();
+    type Info = ();
+    type Error = String;
+
+    fn init(_args: (), _ctx: ProcessCtx) -> Effect<Self, String, HNil> {
+      succeed(Plain)
+    }
+
+    fn handle_call(
+      self,
+      msg: PlainCall,
+      ctx: ProcessCtx,
+    ) -> Effect<(PlainReply, Next<Self>), String, HNil> {
+      match msg {
+        PlainCall::Hibernate => succeed((PlainReply::Done, Next::Hibernate(self))),
+        PlainCall::Stop => succeed((PlainReply::Done, Next::Stop(ExitReason::Normal, self))),
+        PlainCall::ReceiveForeign => ctx
+          .receive::<Probe, HNil>(|_| true, Duration::from_secs(1))
+          .exit::<String>()
+          .map(move |exit| {
+            let mismatch = matches!(
+              exit,
+              Exit::Failure(Cause::Fail(ReceiveError::BehaviorMismatch))
+            );
+            (PlainReply::Flag(mismatch), Next::Continue(self))
+          }),
+        PlainCall::SendAfterForeign => {
+          let timer = ctx.send_after::<Probe>(false, Duration::from_secs(1));
+          succeed((PlainReply::Flag(timer.is_pending()), Next::Continue(self)))
+        }
+        PlainCall::SpawnLinked => {
+          let child = ctx.spawn_link::<Plain>((), HNil);
+          succeed((PlainReply::Child(child.pid().clone()), Next::Continue(self)))
+        }
+      }
+    }
+  }
+
+  fn plain_call(h: &Harness, addr: &Addr<Plain>, msg: PlainCall) -> PlainReply {
+    match h.run(addr.call(msg, Duration::from_secs(10))) {
+      Exit::Success(r) => r,
+      Exit::Failure(c) => panic!("call failed: {c:?}"),
+    }
+  }
+
+  #[test]
+  fn default_callbacks_keep_the_process_running() {
+    let h = harness();
+    let plain = h.node.spawn::<Plain>((), HNil);
+    assert!(matches!(h.run(plain.cast(())), Exit::Success(())));
+    assert!(matches!(h.run(plain.send(())), Exit::Success(())));
+    assert_eq!(
+      plain_call(&h, &plain, PlainCall::Hibernate),
+      PlainReply::Done
+    );
+    // Still serving after the default hibernate hook.
+    assert_eq!(
+      plain_call(&h, &plain, PlainCall::ReceiveForeign),
+      PlainReply::Flag(true)
+    );
+    let exit = h.exit_watch(plain.pid());
+    assert_eq!(plain_call(&h, &plain, PlainCall::Stop), PlainReply::Done);
+    h.exec.run_until_stalled();
+    assert_eq!(exit.try_recv().expect("exit"), ExitReason::Normal);
+  }
+
+  #[test]
+  fn send_after_for_another_behavior_is_inert() {
+    let h = harness();
+    let plain = h.node.spawn::<Plain>((), HNil);
+    assert_eq!(
+      plain_call(&h, &plain, PlainCall::SendAfterForeign),
+      PlainReply::Flag(false)
+    );
+  }
+
+  #[test]
+  fn spawn_link_ties_the_child_to_its_parent() {
+    let h = harness();
+    let parent = h.node.spawn::<Plain>((), HNil);
+    let PlainReply::Child(child) = plain_call(&h, &parent, PlainCall::SpawnLinked) else {
+      panic!("expected a child pid");
+    };
+    let child_exit = h.exit_watch(&child);
+    h.node
+      .exit(parent.pid(), ExitReason::Error("parent died".into()));
+    h.exec.run_until_stalled();
+    assert_eq!(
+      child_exit.try_recv().expect("child exit"),
+      ExitReason::Error("parent died".into())
+    );
+  }
+
+  /// Behavior whose `hibernate` fails and whose `terminate` panics.
+  struct Fragile;
+
+  impl Process for Fragile {
+    type Args = ();
+    type Env = HNil;
+    type Call = bool;
+    type Reply = ();
+    type Cast = ();
+    type Info = ();
+    type Error = String;
+
+    fn init(_args: (), _ctx: ProcessCtx) -> Effect<Self, String, HNil> {
+      succeed(Fragile)
+    }
+
+    /// `true` hibernates, `false` stops.
+    fn handle_call(
+      self,
+      hibernate: bool,
+      _ctx: ProcessCtx,
+    ) -> Effect<((), Next<Self>), String, HNil> {
+      if hibernate {
+        succeed(((), Next::Hibernate(self)))
+      } else {
+        succeed(((), Next::Stop(ExitReason::Shutdown, self)))
+      }
+    }
+
+    fn hibernate(self, _ctx: ProcessCtx) -> Effect<Self, String, HNil> {
+      fail("hibernate boom".to_string())
+    }
+
+    fn terminate(self, _reason: &ExitReason, _ctx: ProcessCtx) -> Effect<(), Never, HNil> {
+      panic!("terminate boom")
+    }
+  }
+
+  #[test]
+  fn failing_hibernate_crashes_the_process() {
+    let h = harness();
+    let fragile = h.node.spawn::<Fragile>((), HNil);
+    let exit = h.exit_watch(fragile.pid());
+    assert!(matches!(
+      h.run(fragile.call(true, Duration::from_secs(10))),
+      Exit::Success(())
+    ));
+    h.exec.run_until_stalled();
+    match exit.try_recv().expect("exit") {
+      ExitReason::Error(msg) => assert!(msg.contains("hibernate boom"), "{msg}"),
+      other => panic!("unexpected exit: {other:?}"),
+    }
+  }
+
+  #[test]
+  fn panicking_terminate_replaces_the_stop_reason() {
+    let h = harness();
+    let fragile = h.node.spawn::<Fragile>((), HNil);
+    let exit = h.exit_watch(fragile.pid());
+    assert!(matches!(
+      h.run(fragile.call(false, Duration::from_secs(10))),
+      Exit::Success(())
+    ));
+    h.exec.run_until_stalled();
+    assert_eq!(
+      exit.try_recv().expect("exit"),
+      ExitReason::Error("panic: terminate boom".into())
     );
   }
 }

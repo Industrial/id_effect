@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::post;
 use id_effect::schema;
-use id_effect_axum::json::decode_json_schema;
+use id_effect_axum::json::decode_json;
 use id_effect_rpc::RpcError;
 use id_effect_rpc::correlation::{append_correlation_header, ensure_correlation_id};
 use id_effect_rpc::span::{record_request_metadata, rpc_request_span};
@@ -38,7 +38,7 @@ async fn main() {
         let _enter = span.enter();
         record_request_metadata(&span, Some(cid.as_str()), "POST", "/greet", "greet");
 
-        let (name, enthusiasm) = match decode_json_schema(schema.as_ref(), &body) {
+        let (name, enthusiasm) = match decode_json(schema.as_ref(), &body) {
           Ok(v) => v,
           Err(e) => return e.into_response(),
         };

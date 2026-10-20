@@ -128,19 +128,31 @@ fn app(state: App) -> axum::Router {
   Router::new()
     .route(
       Route::get("/orgs/{org}/accounts/{id}")
+        .public()
         .path::<AccountPath>()
         .query::<Paging>()
         .handler(show),
     )
     .route(
       Route::post("/orgs/{org}/accounts")
+        .public()
         .path::<OrgName>()
         .query::<Paging>()
         .body::<NewAccount>()
         .handler(create),
     )
-    .route(Route::get("/tenant").headers::<Tenant>().handler(tenant))
-    .route(Route::get("/ids/{id}").path::<AccountId>().handler(by_id))
+    .route(
+      Route::get("/tenant")
+        .public()
+        .headers::<Tenant>()
+        .handler(tenant),
+    )
+    .route(
+      Route::get("/ids/{id}")
+        .public()
+        .path::<AccountId>()
+        .handler(by_id),
+    )
     .with_state(state)
     .into_axum()
 }
@@ -351,15 +363,17 @@ async fn scalar_path_and_typed_failures_map_like_routing_helpers() {
 async fn undeclared_parts_are_ignored_and_the_handler_is_a_plain_effect() {
   let app = Router::new()
     .route(
-      Route::delete("/things/{id}").handler(|_: &mut (), input: Input| {
-        let Input {
-          path: (),
-          query: (),
-          headers: (),
-          body: (),
-        } = input;
-        succeed::<_, Infallible, ()>(StatusCode::NO_CONTENT)
-      }),
+      Route::delete("/things/{id}")
+        .public()
+        .handler(|_: &mut (), input: Input| {
+          let Input {
+            path: (),
+            query: (),
+            headers: (),
+            body: (),
+          } = input;
+          succeed::<_, Infallible, ()>(StatusCode::NO_CONTENT)
+        }),
     )
     .into_axum();
   let req = Request::builder()

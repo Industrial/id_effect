@@ -37,14 +37,16 @@ default), so its finalizers (`ensuring`, `acquire_release`, scoped layers) run.
   `Exit<A, E>` back (`into_result()` for `Result<A, Cause<E>>`).
 - **`RequestCaps` + `CapOverrideLayer`** — per-request capabilities over a `DynEnv`
   (`execute_with_request_caps`).
-- **`route`** — typed routes: `Route::get(..).path::<P>().query::<Q>().body::<B>().handler(f)`
-  decodes every request part through a `Schema` before `f` runs, and answers invalid input with an
-  RFC 9457 `Problem` (**422**, `application/problem+json`) listing every issue with a JSON Pointer.
-  `route::Router` keeps a registry of the routes; `ValidPath` / `ValidQuery` / `ValidHeaders` /
+- **`route`** — typed routes:
+  `Route::get(..).public().path::<P>().query::<Q>().body::<B>().handler(f)` decodes every request
+  part through a `Schema` before `f` runs, and answers invalid input with an RFC 9457 `Problem`
+  (**422**, `application/problem+json`) listing every issue with a JSON Pointer. Every route
+  declares its access — `.public()` or `.guard(g)` — or `route::Router::route` does not compile
+  it. `route::Router` keeps a registry of the routes; `ValidPath` / `ValidQuery` / `ValidHeaders` /
   `ValidJson` / `ValidForm` do the same decoding in plain axum handlers. See
   [Typed routes and validation](../part6/ch29-01-typed-routes.md).
 - **`json::decode_json`** — decode a JSON body with a `Schema`, failing with the same `Problem`
-  (it replaces the deprecated `decode_json_schema`).
+  (it replaces `decode_json_schema`, removed in 0.11).
 - **`body::{stream_body, body_stream}`** — response bodies from a `Stream<Bytes, E>` (dropping the
   body interrupts the producer), request bodies as a stream.
 - **`server`** — the server as a scoped layer: `server_layer(app)`, `serve(app)`,

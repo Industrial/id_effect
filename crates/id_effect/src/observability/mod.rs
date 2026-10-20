@@ -58,9 +58,16 @@
 //!
 //! Nothing here uses thread-local storage: all per-fiber state lives in `FiberRef` slots of the
 //! fiber's context (design A §1.3).
+//!
+//! # Posture
+//!
+//! [`posture`] is the process-wide registry of security opt-outs (ADR 0013 R10): every
+//! `dangerous_*` / `insecure_*` API calls [`posture::record_dangerous`], and the prod posture
+//! check reads [`posture::dangerous_opt_outs`].
 
 pub mod log_level;
 pub mod metric;
+pub mod posture;
 pub mod prometheus;
 pub mod registry;
 pub mod runtime_metrics;

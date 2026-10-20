@@ -272,6 +272,13 @@ let app: axum::Router = axum::Router::new()
 # let _ = app;
 ```
 
+A typed route has to declare its access before `route::Router::route` accepts it (deny by
+default): `Route::get(..).guard(guard)` or `.public()`. A `Guard` is a `RouteGuard`, so it goes
+straight into `.guard(..)`. On a typed route it answers **401** to the anonymous principal before
+its policy runs, whatever the policy (even `allow_all()`): anonymous callers reach public routes
+only. The authentication middleware still lets a request without credentials continue as
+`Anonymous`, and the route's decision does the rest.
+
 A typed endpoint keeps its declaration: `.authorize(..)` on an `Endpoint` returns an
 `AuthorizedEndpoint` that lists its guards' policy names and mounts with its `RouteInfo`
 recorded in the route registry.

@@ -9,7 +9,10 @@ pub mod shutdown;
 pub mod static_files;
 
 pub use bootstrap::{HostConfig, bootstrap_env, load_host_config, provide_host_config_env};
-pub use connection::{ConnectionLimits, serve_listener};
+pub use connection::{
+  ConnectionLimits, DANGEROUS_NO_HEADER_READ_TIMEOUT, DANGEROUS_UNLIMITED_CONNECTIONS,
+  DANGEROUS_UNLIMITED_REQUESTS_PER_CONNECTION, serve_listener,
+};
 pub use lifecycle::{
   Host, HostBuilder, HostError, ServerHandle, serve, serve_router, serve_router_with_limits,
   serve_until, serve_until_shutdown, serve_until_shutdown_with_limits, serve_with_limits,

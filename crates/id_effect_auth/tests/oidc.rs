@@ -746,6 +746,90 @@ async fn discovery_is_validated() {
   }
 }
 
+/// 0.11 M3: a discovery document that redirects is not followed; discovery fails and the
+/// redirect target never sees a request.
+#[tokio::test]
+async fn m3_oidc_discovery_redirect_is_refused() {
+  let idp = Idp::start().await;
+  let moved = MockServer::start().await;
+  Mock::given(method("GET"))
+    .and(path("/realms/test/.well-known/openid-configuration"))
+    .respond_with(ResponseTemplate::new(302).insert_header(
+      "location",
+      format!("{}/.well-known/openid-configuration", idp.issuer),
+    ))
+    .mount(&moved)
+    .await;
+  let config = OidcConfig::new(format!("{}/realms/test", moved.uri()), CLIENT_ID, REDIRECT);
+  let e = run(OidcClient::discover(config)).await.unwrap_err();
+  assert!(matches!(&e, OidcError::Discovery(_)), "{e:?}");
+  assert!(idp.server.received_requests().await.unwrap().is_empty());
+}
+
+/// 0.11 M3: a token endpoint that redirects (307 would resend the code and the client secret)
+/// is not followed; the exchange fails and the redirect target never sees a request.
+#[tokio::test]
+async fn m3_oidc_token_endpoint_redirect_is_refused() {
+  let idp = Idp::start().await;
+  let client = idp.client().await;
+  let pending = client.begin().pending;
+  let t = idp.id_token(json!({"nonce": pending.nonce()})).await;
+  let elsewhere = MockServer::start().await;
+  Mock::given(method("POST"))
+    .and(path("/token"))
+    .respond_with(ResponseTemplate::new(200).set_body_json(tokens(Some(&t))))
+    .mount(&elsewhere)
+    .await;
+  for status in [302, 307] {
+    Mock::given(method("POST"))
+      .and(path("/realms/test/token"))
+      .respond_with(
+        ResponseTemplate::new(status)
+          .insert_header("location", format!("{}/token", elsewhere.uri())),
+      )
+      .up_to_n_times(1)
+      .mount(&idp.server)
+      .await;
+    let e = run(client.exchange("code", &pending)).await.unwrap_err();
+    assert!(matches!(&e, OidcError::Provider(_)), "{status}: {e:?}");
+  }
+  assert!(elsewhere.received_requests().await.unwrap().is_empty());
+}
+
+/// 0.11 M3: the issuer and the endpoints the provider publishes must be https (plain http only
+/// to loopback, or after the recorded `insecure_allow_http` opt-out).
+#[tokio::test]
+async fn m3_oidc_endpoints_must_be_https() {
+  let plain = OidcConfig::new("http://id.example.com/realms/x", CLIENT_ID, REDIRECT);
+  let e = run(OidcClient::discover(plain)).await.unwrap_err();
+  assert!(
+    matches!(&e, OidcError::Config(m) if m.contains("must be https")),
+    "{e:?}"
+  );
+
+  let idp = Idp::with_discovery(|d| {
+    d.insert(
+      "token_endpoint".into(),
+      json!("http://id.example.com/token"),
+    );
+  })
+  .await;
+  let e = run(OidcClient::discover(idp.config())).await.unwrap_err();
+  assert!(
+    matches!(&e, OidcError::Discovery(m) if m.contains("token_endpoint")),
+    "{e:?}"
+  );
+
+  let lax = run(OidcClient::discover(idp.config().insecure_allow_http())).await;
+  assert!(lax.is_ok(), "{lax:?}");
+  let recorded = id_effect::observability::posture::dangerous_opt_outs();
+  assert!(
+    recorded
+      .iter()
+      .any(|(id, _)| *id == id_effect_auth::oidc::INSECURE_ALLOW_HTTP)
+  );
+}
+
 #[tokio::test]
 async fn logout_url_carries_the_hint_when_it_parses() {
   let idp = Idp::start().await;

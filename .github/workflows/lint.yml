@@ -1,0 +1,91 @@
+# Dylint lints (0.11.0.md E1.9; book appendix D): lints/id_effect_lints builds with the nightly
+# pinned in its own rust-toolchain.toml (rustup installs it) and runs over the workspace. The
+# library's UI tests (ui/, ui_test/, including the `--fix` output in *.fixed) run first; the demo
+# crate (examples/demo) must trip the lints it shows. The ast-grep job runs the same library's
+# stable-toolchain rules (sgconfig.yml): they must load and fire on the demo crate.
+name: Lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  dylint:
+    name: cargo dylint
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Every dangerous_*/insecure_* opt-out records itself (ADR 0013 R10)
+        run: bash scripts/check-dangerous.sh --self-test && bash scripts/check-dangerous.sh
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            . -> target
+            lints/id_effect_lints -> target
+      - name: Install cargo-dylint and dylint-link
+        run: cargo install --locked cargo-dylint@6.2.0 dylint-link@6.2.0
+      - name: Lint library UI tests
+        working-directory: lints/id_effect_lints
+        run: cargo test
+      - name: cargo dylint over the workspace
+        run: cargo dylint --path lints/id_effect_lints --all -- --workspace
+      - name: cargo dylint on the demo crate (lints/id_effect_lints/examples/demo)
+        working-directory: lints/id_effect_lints/examples/demo
+        run: |
+          set -euo pipefail
+          cargo dylint --all 2>&1 | tee "$RUNNER_TEMP/dylint-demo.log"
+          for lint in no_result_return_in_pub_fn no_unwrap_inside_effect no_system_time_in_domain \
+            no_rc_refcell_in_effect_code no_thread_spawn raw_sql_non_literal; do
+            grep -qF "#[warn($lint)]" "$RUNNER_TEMP/dylint-demo.log" \
+              || { echo "::error::$lint did not fire on examples/demo"; exit 1; }
+          done
+  ast-grep:
+    name: ast-grep rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AST_GREP_VERSION: 0.42.1
+      # sha256 of the release's app-x86_64-unknown-linux-gnu.zip (GitHub's asset digest)
+      AST_GREP_SHA256: 5de8b87cba67fc8dc3e239d54b6484802ad745a7ae3de76be4fe89661dc52657
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install ast-grep (pinned release, checksum-verified)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/ast-grep.zip" \
+            "https://github.com/ast-grep/ast-grep/releases/download/$AST_GREP_VERSION/app-x86_64-unknown-linux-gnu.zip"
+          echo "$AST_GREP_SHA256  $RUNNER_TEMP/ast-grep.zip" | sha256sum -c -
+          unzip -q -o "$RUNNER_TEMP/ast-grep.zip" ast-grep -d "$RUNNER_TEMP/ast-grep"
+          echo "$RUNNER_TEMP/ast-grep" >> "$GITHUB_PATH"
+      - name: The rules load and fire on the demo crate (lints/id_effect_lints/examples/demo)
+        run: |
+          set -euo pipefail
+          ast-grep scan -c lints/id_effect_lints/sgconfig.yml --warning --json=stream \
+            lints/id_effect_lints/examples/demo | jq -r .ruleId | sort -u > "$RUNNER_TEMP/found"
+          printf '%s\n' id_effect-no-rc-refcell id_effect-no-result-return-pub-fn \
+            id_effect-no-system-time-in-domain id_effect-no-thread-spawn \
+            id_effect-no-unwrap-in-effect | sort > "$RUNNER_TEMP/expected"
+          diff "$RUNNER_TEMP/expected" "$RUNNER_TEMP/found"
+      # Report only, as the Dylint step warns: the rules are written for application code, and the
+      # workspace's adapters are where `async fn`, `tokio::spawn` and `Instant::now` belong.
+      - name: ast-grep over the workspace (findings per rule in the job summary)
+        run: |
+          set -euo pipefail
+          ast-grep scan -c lints/id_effect_lints/sgconfig.yml --warning --json=stream . \
+            | jq -r .ruleId | sort | uniq -c | sort -rn > "$RUNNER_TEMP/by-rule"
+          { echo '### ast-grep findings per rule (report only)'; echo '```'
+            cat "$RUNNER_TEMP/by-rule"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/by-rule"

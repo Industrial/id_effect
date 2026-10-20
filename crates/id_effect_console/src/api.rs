@@ -137,7 +137,8 @@ impl Console {
 
   /// The console routes under [`API_PREFIX`] and the dashboard page at `/_console`, every one of
   /// them (and the console API's fallback) behind `guard`. Merge the result into the app's
-  /// router, inside its authentication layer.
+  /// router, inside its authentication layer; on a listener of its own, wrap it in
+  /// [`ConsoleConfig::check_host_and_origin`](crate::ConsoleConfig::check_host_and_origin).
   pub fn router(self, guard: Guard) -> Router {
     let api = Router::new()
       .route("/fibers", get(fibers))
@@ -396,7 +397,7 @@ async fn no_store(mut response: Response) -> Response {
 }
 
 /// A Problem Details (RFC 9457) answer, as the guard's denials are.
-fn problem(status: StatusCode, detail: impl Into<String>) -> Response {
+pub(crate) fn problem(status: StatusCode, detail: impl Into<String>) -> Response {
   let body = json!({
     "type": "about:blank",
     "title": status.canonical_reason().unwrap_or("Error"),

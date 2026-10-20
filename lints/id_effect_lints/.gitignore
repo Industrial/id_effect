@@ -1,0 +1,5 @@
+/target
+# The root .gitignore drops every `config.toml` and `Cargo.lock`; this library needs its linker
+# setting (dylint-link) and pins its dependencies to the nightly it builds with.
+!/.cargo/config.toml
+!/Cargo.lock

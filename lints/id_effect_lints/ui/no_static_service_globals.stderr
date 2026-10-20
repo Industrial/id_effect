@@ -1,0 +1,11 @@
+warning: `static` item found; services must not live in global statics
+  --> $DIR/no_static_service_globals.rs:6:1
+   |
+LL | static DB: Database = Database;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: list the service in `R` (`caps!(Key, …)`), provide it with a `Layer`, and read it with `~Key` in `effect!` or `need::<Key>()`
+   = note: `#[warn(no_static_service_globals)]` on by default
+
+warning: 1 warning emitted
+

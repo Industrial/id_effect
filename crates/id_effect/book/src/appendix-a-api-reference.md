@@ -181,10 +181,11 @@ Crates are grouped by tier ([ADR 0010](https://github.com/Industrial/id_effect/b
 | `id_effect_jobs` | platform | Postgres job queue, workers, retries, unique keys; `cron` feature | [Background jobs](./part6/ch31-01-jobs.md) |
 | `id_effect_messaging` | platform | `MessageBroker`, `MemoryBroker`, transactional outbox, relay, inbox | [Messaging](./part6/ch31-02-messaging.md) |
 | `id_effect_events` | integration | Event store, projections, snapshots, CQRS dispatch | [Events and projections](./part5/ch23-00-events-and-projections.md) |
+| `id_effect_workflow` | integration | Durable workflows: journal and replay, activities, timers, signals, sagas on Postgres | [Workflow and cluster](./part6/ch32-00-workflow-cluster.md) |
 | `id_effect_opentelemetry` | integration | OpenTelemetry span hook, metrics bridge, logs | [Observability](./part6/ch27-00-observability.md) |
 | `id_effect_cli` | integration | `run_main`, `Exit`/`Cause` → `ExitCode` | [CLI with clap](./part3/ch16-00-cli-with-clap.md) |
 | `id_effect_fp` | maintenance | algebra, persistent collections, STM | [Part V](./part5/ch17-00-algebra-type-classes.md), [STM](./part4/ch12-00-stm.md) |
 | `id_effect_optics` | maintenance | Lenses, prisms, traversals | [Optics](./part5/ch18-00-optics.md) |
-| `id_effect_rpc`, `id_effect_ai`, `id_effect_parse`, `id_effect_lint`, `id_effect_workflow` | labs (unpublished) | Experimental; path/git dependency on `labs/`, built with `--manifest-path labs/Cargo.toml` | Part VI chapters marked "labs" |
+| `id_effect_rpc`, `id_effect_ai`, `id_effect_parse`, `id_effect_lint` | labs (unpublished) | Experimental; path/git dependency on `labs/`, built with `--manifest-path labs/Cargo.toml` | Part VI chapters marked "labs" |
 
 For a single local index, run `cargo doc --workspace --no-deps` from the repository root (see each crate's `README` for optional examples). Labs crates: `cargo doc --manifest-path labs/Cargo.toml --workspace --no-deps`.

@@ -1,0 +1,196 @@
+{
+	"schema_version": 1,
+	"method_version": "2.2",
+	"method_doc": "../METHOD.md",
+	"competitor_snapshot": {
+		"date": "2026-10-18",
+		"assessor": "scripts/scorecard.sh --self-test fixture: invalid, id_effect meets a non-goal check (a met check is never a non-goal)"
+	},
+	"frameworks": [
+		{
+			"id": "id_effect",
+			"name": "id_effect",
+			"scope": "fixture"
+		},
+		{
+			"id": "a",
+			"name": "A",
+			"scope": "fixture"
+		},
+		{
+			"id": "b",
+			"name": "B",
+			"scope": "fixture"
+		},
+		{
+			"id": "c",
+			"name": "C",
+			"scope": "fixture"
+		},
+		{
+			"id": "d",
+			"name": "D",
+			"scope": "fixture"
+		},
+		{
+			"id": "e",
+			"name": "E",
+			"scope": "fixture"
+		},
+		{
+			"id": "f",
+			"name": "F",
+			"scope": "fixture"
+		},
+		{
+			"id": "g",
+			"name": "G",
+			"scope": "fixture"
+		},
+		{
+			"id": "h",
+			"name": "H",
+			"scope": "fixture"
+		},
+		{
+			"id": "i",
+			"name": "I",
+			"scope": "fixture"
+		},
+		{
+			"id": "j",
+			"name": "J",
+			"scope": "fixture"
+		}
+	],
+	"groups": [
+		{
+			"id": "core",
+			"name": "Core model",
+			"w_enterprise": 1.0,
+			"w_runtime": 1.0
+		}
+	],
+	"tracks": {
+		"T2": "Core runtime completeness"
+	},
+	"competitor_order": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+	"rows": [
+		{
+			"id": "core.a",
+			"group": "core",
+			"name": "Row core.a",
+			"measures": "Fixture row, 8 checks, #7 and #8 non-goal (L8): id_effect #1-#5 (5/6, 83); a all (6/6, 100); b #7 #8 only (0/6, 1); c #1-#6 documented (89); d to j #1-#3 (3/6, 50).",
+			"competitors": [100, 1, 89, 50, 50, 50, 50, 50, 50, 50],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": {
+				"0.1.0": 83
+			},
+			"evidence": "fixture",
+			"targets": {},
+			"checks": [
+				{
+					"id": "core.a#1",
+					"text": "Check 1"
+				},
+				{
+					"id": "core.a#2",
+					"text": "Check 2"
+				},
+				{
+					"id": "core.a#3",
+					"text": "Check 3"
+				},
+				{
+					"id": "core.a#4",
+					"text": "Check 4"
+				},
+				{
+					"id": "core.a#5",
+					"text": "Check 5"
+				},
+				{
+					"id": "core.a#6",
+					"text": "Check 6"
+				},
+				{
+					"id": "core.a#7",
+					"text": "Check 7",
+					"non_goal": {
+						"decision": "L8"
+					}
+				},
+				{
+					"id": "core.a#8",
+					"text": "Check 8",
+					"non_goal": {
+						"decision": "L8"
+					}
+				}
+			],
+			"v2": {
+				"level": {
+					"id_effect": {
+						"0.1.0": "production"
+					},
+					"a": "production",
+					"b": "production",
+					"c": "documented",
+					"d": "production",
+					"e": "production",
+					"f": "production",
+					"g": "production",
+					"h": "production",
+					"i": "production",
+					"j": "production"
+				},
+				"met": {
+					"id_effect": {
+						"0.1.0": [
+							"core.a#1",
+							"core.a#2",
+							"core.a#3",
+							"core.a#4",
+							"core.a#5",
+							"core.a#7"
+						]
+					},
+					"a": [
+						"core.a#1",
+						"core.a#2",
+						"core.a#3",
+						"core.a#4",
+						"core.a#5",
+						"core.a#6",
+						"core.a#7",
+						"core.a#8"
+					],
+					"b": ["core.a#7", "core.a#8"],
+					"c": [
+						"core.a#1",
+						"core.a#2",
+						"core.a#3",
+						"core.a#4",
+						"core.a#5",
+						"core.a#6"
+					],
+					"d": ["core.a#1", "core.a#2", "core.a#3"],
+					"e": ["core.a#1", "core.a#2", "core.a#3"],
+					"f": ["core.a#1", "core.a#2", "core.a#3"],
+					"g": ["core.a#1", "core.a#2", "core.a#3"],
+					"h": ["core.a#1", "core.a#2", "core.a#3"],
+					"i": ["core.a#1", "core.a#2", "core.a#3"],
+					"j": ["core.a#1", "core.a#2", "core.a#3"]
+				}
+			},
+			"v1": {
+				"competitors": [100, 1, 89, 50, 50, 50, 50, 50, 50, 50],
+				"id_effect": {
+					"0.1.0": 83
+				},
+				"targets": {}
+			}
+		}
+	]
+}

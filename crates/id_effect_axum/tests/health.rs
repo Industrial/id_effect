@@ -195,6 +195,7 @@ async fn server_handle_shutdown_marks_readiness_shutting_down() {
     bind_host: "127.0.0.1".into(),
     bind_port: 0,
     shutdown_timeout: Duration::from_secs(5),
+    ..HostConfig::default()
   };
   let app = HealthRegistry::new()
     .with_readiness(readiness.clone())

@@ -29,7 +29,7 @@ STM assumes conflicts are rare. Instead of locking, a transaction:
 If something changed between step 1 and step 3, the transaction restarts from step 1.
 
 ```rust
-use id_effect_fp::{Stm, TRef, commit};
+use id_effect::stm::{Stm, TRef, commit};
 # use id_effect::{Cause, Effect, Exit};
 # fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
 #   match eff.block_on() {
@@ -72,7 +72,7 @@ No locks and no lock ordering. The runnable example starts two threads that make
 between the same two accounts in opposite directions, the case that deadlocks with two mutexes, and
 asserts the balances at the end. A transfer that fails with `InsufficientFunds` writes nothing.
 
-Full example: [`crates/id_effect_fp/examples/083_stm_transfer.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/examples/083_stm_transfer.rs) (`cargo run -p id_effect_fp --example 083_stm_transfer`).
+Full example: [`crates/id_effect/examples/083_stm_transfer.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/examples/083_stm_transfer.rs) (`cargo run -p id_effect --example 083_stm_transfer`).
 
 Transactions are plain values built with `flat_map`; there is no `stm!` do-notation macro. Clone the
 `TRef` handles you need into each closure (they are cheap `Arc` clones). The closures are `Fn`

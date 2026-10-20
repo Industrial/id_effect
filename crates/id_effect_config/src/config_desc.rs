@@ -238,7 +238,10 @@ impl<T: Send + Sync + 'static> Config<T> {
   /// assert_eq!(format!("{key:?}"), "<redacted>");
   /// assert_eq!(key.expose(), "s3cr3t");
   /// ```
-  pub fn secret(self) -> Config<Secret<T>> {
+  pub fn secret(self) -> Config<Secret<T>>
+  where
+    T: zeroize::Zeroize,
+  {
     let loader = self.loader;
     Config {
       loader: Arc::new(move |p| {

@@ -33,6 +33,7 @@
 //!
 //! let router = Router::new().route(
 //!   Route::get("/accounts/{id}")
+//!     .public()
 //!     .path::<AccountId>()
 //!     .response::<AccountId>(StatusCode::OK)
 //!     .handler(show),
@@ -41,6 +42,7 @@
 //! assert_eq!(table[0].path, "/accounts/{id}");
 //! assert!(table[0].handler.as_deref().unwrap().ends_with("::show"));
 //! assert_eq!(table[0].path_params.as_deref(), Some("AccountId"));
+//! assert_eq!(table[0].access, "public");
 //! assert!(route_table_text(router.registry()).starts_with("METHOD"));
 //!
 //! let listing: axum::Router = routes_router(router.registry());
@@ -91,6 +93,9 @@ pub struct RouteEntry {
   pub responses: Vec<ResponseEntry>,
   /// Guarding policy names ([`RouteInfo::policies`]).
   pub policies: Vec<String>,
+  /// Access decision ([`RouteAccess::as_str`](super::RouteAccess::as_str): `public`,
+  /// `guarded`, `unchecked`).
+  pub access: String,
 }
 
 fn name(schema: Option<&SchemaRef>) -> Option<String> {
@@ -123,6 +128,7 @@ impl From<&RouteInfo> for RouteEntry {
         })
         .collect(),
       policies: info.policies.clone(),
+      access: info.access.as_str().to_owned(),
     }
   }
 }

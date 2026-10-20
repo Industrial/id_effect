@@ -209,4 +209,103 @@ mod tests {
     }
     assert_eq!(kind_of(&PgTypeInfo::with_name("INET")), None);
   }
+
+  #[test]
+  fn every_supported_type_name_has_its_kind() {
+    for (name, kind, sql_type) in [
+      ("BOOL", Kind::Bool, SqlType::Bool),
+      ("INT2", Kind::I16, SqlType::I16),
+      ("INT4", Kind::I32, SqlType::I32),
+      ("INT8", Kind::I64, SqlType::I64),
+      ("OID", Kind::Oid, SqlType::I64),
+      ("FLOAT4", Kind::F32, SqlType::F32),
+      ("FLOAT8", Kind::F64, SqlType::F64),
+      ("TEXT", Kind::Text, SqlType::Text),
+      ("VARCHAR", Kind::Text, SqlType::Text),
+      ("BPCHAR", Kind::Text, SqlType::Text),
+      ("NAME", Kind::Text, SqlType::Text),
+      ("UNKNOWN", Kind::Text, SqlType::Text),
+      ("BYTEA", Kind::Bytes, SqlType::Bytes),
+      ("UUID", Kind::Uuid, SqlType::Uuid),
+      ("TIMESTAMPTZ", Kind::Timestamp, SqlType::Timestamp),
+      ("TIMESTAMP", Kind::DateTime, SqlType::DateTime),
+      ("DATE", Kind::Date, SqlType::Date),
+      ("TIME", Kind::Time, SqlType::Time),
+      ("NUMERIC", Kind::Decimal, SqlType::Decimal),
+      ("JSON", Kind::Json, SqlType::Json),
+      ("JSONB", Kind::Json, SqlType::Json),
+      ("citext", Kind::OtherText, SqlType::Text),
+      ("CITEXT", Kind::OtherText, SqlType::Text),
+    ] {
+      let ty = PgTypeInfo::with_name(name);
+      assert_eq!(kind_of(&ty), Some((kind, sql_type)), "{name}");
+    }
+    // Unresolved (declared by name, no OID) and unsupported types have no kind.
+    for name in ["INTERVAL", "INT4[]", "my_enum"] {
+      assert_eq!(kind_of(&PgTypeInfo::with_name(name)), None, "{name}");
+    }
+  }
+
+  #[test]
+  fn untyped_null_binds_as_null_with_oid_zero() {
+    assert_eq!(
+      <UntypedNull as sqlx::Type<Postgres>>::type_info(),
+      PgTypeInfo::with_oid(Oid(0))
+    );
+    let mut buf = PgArgumentBuffer::default();
+    assert!(matches!(
+      UntypedNull.encode_by_ref(&mut buf),
+      Ok(IsNull::Yes)
+    ));
+    assert!(buf.is_empty());
+  }
+
+  #[test]
+  fn bind_query_binds_every_variant() {
+    let params = vec![
+      SqlValue::Null,
+      SqlValue::Bool(true),
+      SqlValue::I16(-2),
+      SqlValue::I32(3),
+      SqlValue::I64(4),
+      SqlValue::F32(1.5),
+      SqlValue::F64(2.25),
+      SqlValue::Text("t".into()),
+      SqlValue::Bytes(vec![1, 2]),
+      SqlValue::Uuid(uuid::Uuid::nil()),
+      SqlValue::Timestamp(jiff::Timestamp::UNIX_EPOCH),
+      SqlValue::DateTime(jiff::civil::date(2024, 2, 29).at(13, 4, 5, 0)),
+      SqlValue::Date(jiff::civil::date(2024, 2, 29)),
+      SqlValue::Time(jiff::civil::time(13, 4, 5, 6_000)),
+      SqlValue::Decimal(rust_decimal::Decimal::new(12345, 2)),
+      SqlValue::Json(serde_json::json!({"a": [1, null]})),
+    ];
+    assert!(bind_query(sqlx::query("SELECT 1"), &params).is_ok());
+    assert!(bind_query(sqlx::query("SELECT 1"), &[]).is_ok());
+  }
+
+  #[test]
+  fn bind_query_rejects_dates_before_pg_earliest_naming_the_parameter() {
+    let early = jiff::civil::date(-9999, 1, 1);
+    for bad in [
+      SqlValue::Timestamp(jiff::Timestamp::MIN),
+      SqlValue::DateTime(early.at(0, 0, 0, 0)),
+      SqlValue::Date(early),
+    ] {
+      let params = [SqlValue::I32(1), SqlValue::Null, bad.clone()];
+      match bind_query(sqlx::query("SELECT $1, $2, $3"), &params) {
+        Err(SqlError::ValueOutOfRange { column, message }) => {
+          assert_eq!(column, "$3", "{bad:?}");
+          assert!(message.contains("4714"), "{bad:?}: {message}");
+        }
+        Err(e) => panic!("{bad:?}: unexpected error {e:?}"),
+        Ok(_) => panic!("{bad:?}: bound"),
+      }
+    }
+  }
+
+  #[test]
+  fn an_empty_result_set_decodes_to_no_rows() {
+    assert_eq!(decode_rows(&[]).map(|rows| rows.len()), Ok(0));
+  }
 }

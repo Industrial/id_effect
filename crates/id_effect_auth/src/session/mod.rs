@@ -48,7 +48,7 @@ pub use cookie::{CookieConfig, SameSite};
 #[cfg(feature = "axum")]
 pub use layer::{SessionLayer, SessionService};
 pub use manager::{Sessions, SessionsEnv, load_session, login, logout, revoke_all, sessions_layer};
-#[cfg(feature = "accounts")]
+#[cfg(feature = "pg")]
 pub(crate) use pg::statements;
 #[cfg(feature = "pg")]
 pub use pg::{PgSessionStore, pg_session_store_layer};
@@ -102,7 +102,10 @@ impl fmt::Debug for SessionId {
 }
 
 /// One server-side session.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// `Debug` shows the id prefix, the user, the attribute keys and the timestamps, never the
+/// attribute values (they can hold OIDC tokens or a CSRF secret).
+#[derive(Clone, PartialEq, Eq)]
 pub struct Session {
   id: SessionId,
   user_id: String,
@@ -206,6 +209,20 @@ impl Session {
   #[inline]
   pub fn is_expired(&self, now: UtcDateTime) -> bool {
     now >= self.expires_at()
+  }
+}
+
+impl fmt::Debug for Session {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.debug_struct("Session")
+      .field("id", &self.id)
+      .field("user_id", &self.user_id)
+      .field("attr_keys", &self.attrs.keys().collect::<Vec<_>>())
+      .field("created_at", &self.created_at)
+      .field("last_seen_at", &self.last_seen_at)
+      .field("idle_expires_at", &self.idle_expires_at)
+      .field("absolute_expires_at", &self.absolute_expires_at)
+      .finish()
   }
 }
 
@@ -314,6 +331,36 @@ mod tests {
     assert_eq!(s.remove_attr("role"), Some("admin".to_owned()));
     assert_eq!(s.attr("role"), None);
     assert_eq!(s.user_id(), "u");
+  }
+
+  #[test]
+  fn m14_session_debug_hides_attr_values_and_tokens() {
+    let id = SessionId::generate().unwrap();
+    let mut s = Session::from_parts(
+      id.clone(),
+      "u-7",
+      BTreeMap::new(),
+      at(0),
+      at(1),
+      at(2),
+      at(3),
+    );
+    s.set_attr("oidc_id_token", "eyJhbGciOiJSUzI1NiJ9.secret-claims")
+      .set_attr("csrf", "csrf-secret-value");
+    let shown = format!("{s:?}");
+    assert!(shown.contains(&format!("{id:?}")), "{shown}");
+    assert!(shown.contains("u-7"), "{shown}");
+    assert!(
+      shown.contains("oidc_id_token") && shown.contains("csrf"),
+      "{shown}"
+    );
+    assert!(shown.contains(&format!("{:?}", at(3))), "{shown}");
+    assert!(!shown.contains("eyJhbGciOiJSUzI1NiJ9"), "{shown}");
+    assert!(!shown.contains("secret-claims"), "{shown}");
+    assert!(!shown.contains("csrf-secret-value"), "{shown}");
+    assert!(!shown.contains(id.as_str()), "only the id prefix: {shown}");
+    let shown = format!("{s:#?}");
+    assert!(!shown.contains("csrf-secret-value"), "{shown}");
   }
 
   #[test]

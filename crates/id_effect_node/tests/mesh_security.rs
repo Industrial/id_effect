@@ -4,16 +4,16 @@
 
 use std::time::Duration;
 
-use id_effect_node::handshake::{
-  Cookie, CookieError, HandshakeError, MIN_COOKIE_BYTES, PRE_AUTH_MAX_FRAME_BYTES,
-};
+use id_effect_node::handshake::{Cookie, CookieError, HandshakeError, MIN_COOKIE_BYTES};
 use id_effect_node::id::NodeId;
 use id_effect_node::session::{Session, SessionError};
+use id_effect_node::transport::Transport;
+#[cfg(any(feature = "quic", feature = "insecure-plaintext-tcp"))]
+use id_effect_node::transport::TransportError;
 use id_effect_node::transport::memory::MemoryNetwork;
+#[cfg(feature = "insecure-plaintext-tcp")]
 use id_effect_node::transport::tcp::TcpTransport;
-use id_effect_node::transport::{Transport, TransportError};
 use id_effect_node::wire::{Frame, HandshakeMsg, PROTOCOL_VERSION, decode, encode};
-use tokio::io::AsyncWriteExt;
 
 const SECRET: &str = "a-cluster-cookie-of-at-least-32-bytes";
 
@@ -107,18 +107,19 @@ mod quic {
 
   #[tokio::test]
   async fn h3_dangerous_accept_any_is_explicit() {
-    let server = QuicConfig::self_signed("node-b").expect("cert");
+    let client = QuicConfig::self_signed("node-a")
+      .expect("cert")
+      .dangerous_accept_any_server_cert();
+    // 0.11 mutual TLS: the listener pins the dialer's certificate.
+    let server = QuicConfig::self_signed("node-b")
+      .expect("cert")
+      .with_pinned_client_cert_sha256(client.cert_sha256());
     let listener = QuicTransport::new(server)
       .listen("127.0.0.1:0")
       .await
       .expect("bind");
     let addr = listener.local_addr();
-    let client = QuicTransport::try_new(
-      QuicConfig::self_signed("node-a")
-        .expect("cert")
-        .dangerous_accept_any_server_cert(),
-    )
-    .expect("opted out");
+    let client = QuicTransport::try_new(client).expect("opted out");
     let (dialed, accepted) = tokio::join!(
       async {
         let conn = client.connect(&addr).await.expect("dial");
@@ -145,7 +146,13 @@ mod quic {
   async fn h4_relayed_proof_fails() {
     let (a, b) = (id("a@test", 1), id("b@test", 2));
 
-    let b_config = QuicConfig::self_signed("node-b").expect("cert");
+    let a_config = QuicConfig::self_signed("node-a").expect("cert");
+    let m_client_config = QuicConfig::self_signed("mitm-client").expect("cert");
+    // 0.11 mutual TLS: B has also been lured into trusting M's client
+    // certificate, so only the cookie's channel binding stands in the way.
+    let b_config = QuicConfig::self_signed("node-b")
+      .expect("cert")
+      .with_pinned_client_cert_sha256(m_client_config.cert_sha256());
     let b_pin = b_config.cert_sha256();
     let b_listener = QuicTransport::new(b_config)
       .listen("127.0.0.1:0")
@@ -153,7 +160,9 @@ mod quic {
       .expect("bind b");
     let b_addr = b_listener.local_addr();
 
-    let m_config = QuicConfig::self_signed("mitm").expect("cert");
+    let m_config = QuicConfig::self_signed("mitm")
+      .expect("cert")
+      .with_pinned_client_cert_sha256(a_config.cert_sha256());
     let m_pin = m_config.cert_sha256();
     let m_listener = QuicTransport::new(m_config)
       .listen("127.0.0.1:0")
@@ -161,18 +170,10 @@ mod quic {
       .expect("bind m");
     let m_addr = m_listener.local_addr();
     // M trusts B properly; A has been lured into pinning M.
-    let m_dialer = QuicTransport::try_new(
-      QuicConfig::self_signed("mitm-client")
-        .expect("cert")
-        .with_pinned_server_cert_sha256(b_pin),
-    )
-    .expect("m dialer");
-    let a_dialer = QuicTransport::try_new(
-      QuicConfig::self_signed("node-a")
-        .expect("cert")
-        .with_pinned_server_cert_sha256(m_pin),
-    )
-    .expect("a dialer");
+    let m_dialer = QuicTransport::try_new(m_client_config.with_pinned_server_cert_sha256(b_pin))
+      .expect("m dialer");
+    let a_dialer =
+      QuicTransport::try_new(a_config.with_pinned_server_cert_sha256(m_pin)).expect("a dialer");
 
     let b_side = {
       let b = b.clone();
@@ -210,19 +211,18 @@ mod quic {
   #[tokio::test]
   async fn h4_direct_quic_handshake_succeeds() {
     let (a, b) = (id("a@test", 1), id("b@test", 2));
-    let b_config = QuicConfig::self_signed("node-b").expect("cert");
+    let a_config = QuicConfig::self_signed("node-a").expect("cert");
+    let b_config = QuicConfig::self_signed("node-b")
+      .expect("cert")
+      .with_pinned_peer_cert_sha256(a_config.cert_sha256());
     let b_pin = b_config.cert_sha256();
     let listener = QuicTransport::new(b_config)
       .listen("127.0.0.1:0")
       .await
       .expect("bind");
     let addr = listener.local_addr();
-    let dialer = QuicTransport::try_new(
-      QuicConfig::self_signed("node-a")
-        .expect("cert")
-        .with_pinned_server_cert_sha256(b_pin),
-    )
-    .expect("dialer");
+    let dialer =
+      QuicTransport::try_new(a_config.with_pinned_peer_cert_sha256(b_pin)).expect("dialer");
     let responder = {
       let b = b.clone();
       tokio::spawn(async move {
@@ -333,9 +333,17 @@ async fn m9_handshake_times_out() {
   drop(silent);
 }
 
+// Raw bytes onto the socket: the plaintext TCP opt-out.
+#[cfg(feature = "insecure-plaintext-tcp")]
 #[tokio::test]
 async fn m9_oversized_pre_auth_frame_rejected() {
-  let listener = TcpTransport.listen("127.0.0.1:0").await.expect("bind");
+  use id_effect_node::handshake::PRE_AUTH_MAX_FRAME_BYTES;
+  use tokio::io::AsyncWriteExt;
+
+  let listener = TcpTransport::dangerous_plaintext()
+    .listen("127.0.0.1:0")
+    .await
+    .expect("bind");
   let addr = listener.local_addr();
   let (raw, accepted) = tokio::join!(tokio::net::TcpStream::connect(&addr), listener.accept());
   let mut raw = raw.expect("raw dial");
@@ -359,11 +367,13 @@ async fn m9_oversized_pre_auth_frame_rejected() {
   );
 }
 
+#[cfg(feature = "insecure-plaintext-tcp")]
 #[tokio::test]
 async fn m9_frame_cap_lifts_after_authentication() {
-  let listener = TcpTransport.listen("127.0.0.1:0").await.expect("bind");
+  let tcp = TcpTransport::dangerous_plaintext();
+  let listener = tcp.listen("127.0.0.1:0").await.expect("bind");
   let addr = listener.local_addr();
-  let (dial, accept) = tokio::join!(TcpTransport.connect(&addr), listener.accept());
+  let (dial, accept) = tokio::join!(tcp.connect(&addr), listener.accept());
   let (a, b, cookie) = (id("a@test", 1), id("b@test", 2), cookie());
   let (to_b, to_a) = tokio::join!(
     Session::initiate(dial.expect("dial"), &a, &cookie),
@@ -417,7 +427,6 @@ async fn m9_short_cookie_rejected() {
 /// version mismatch, and the older peer is told why.
 #[tokio::test]
 async fn h4_v1_peers_are_refused_with_version_mismatch() {
-  assert_eq!(PROTOCOL_VERSION, 2);
   let net = MemoryNetwork::new();
   let listener = net.transport("b").listen("b").await.expect("bind");
   let old = net.transport("a").connect("b").await.expect("dial");
@@ -438,13 +447,14 @@ async fn h4_v1_peers_are_refused_with_version_mismatch() {
     .expect("refused");
   assert!(matches!(
     err,
-    SessionError::Handshake(HandshakeError::VersionMismatch { ours: 2, theirs: 1 })
+    SessionError::Handshake(HandshakeError::VersionMismatch { ours, theirs: 1 })
+      if ours == PROTOCOL_VERSION
   ));
   let refusal = decode(&old.recv().await.expect("refusal")).expect("decode");
   assert_eq!(
     refusal,
     Frame::Handshake(HandshakeMsg::Rejected {
-      reason: "version mismatch: have 2, got 1".to_string()
+      reason: format!("version mismatch: have {PROTOCOL_VERSION}, got 1")
     })
   );
 }

@@ -1,0 +1,71 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# E-02  No static service globals
+# ──────────────────────────────────────────────────────────────────────────────
+id: id_effect-no-static-service-globals
+language: Rust
+severity: error
+message: |
+  `static` globals for service instances are forbidden.
+  Services must be provided through the `R` type parameter at the program edge.
+note: |
+  BAD:  static DB: Lazy<Arc<dyn Database>> = Lazy::new(|| Arc::new(PgDatabase::new()));
+  GOOD: define_capability!(DatabaseKey, Arc<dyn Database>);
+        // Inject at program edge: Layer::new(…).provide_as::<DatabaseKey>(db)
+rule:
+  kind: static_item
+  not:
+    # Allow simple primitive/string constants commonly used as constants.
+    has:
+      field: type
+      regex: "^(u8|u16|u32|u64|u128|usize|i8|i16|i32|i64|i128|isize|f32|f64|bool|char|&str|&'static str|str)$"
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# E-03  No thread_local! for request/fiber context
+# ──────────────────────────────────────────────────────────────────────────────
+id: id_effect-no-thread-local
+language: Rust
+severity: error
+message: |
+  `thread_local!` storage leaks across fiber boundaries and hides dependencies.
+  Use `FiberRef::new(initial_value)` for fiber-scoped dynamic state.
+note: |
+  BAD:  thread_local! { static REQUEST_ID: Cell<Uuid> = Cell::new(Uuid::nil()); }
+  GOOD: static REQUEST_ID: FiberRef<Uuid> = FiberRef::new(Uuid::nil);
+rule:
+  kind: macro_invocation
+  has:
+    field: macro
+    regex: '^(std::)?thread_local$'
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# E-04  .provide() must not be called inside library functions
+# ──────────────────────────────────────────────────────────────────────────────
+id: id_effect-provide-at-edge-not-in-library
+language: Rust
+severity: warning
+message: |
+  `.provide(…)` called inside a library function.
+  Dependency injection should happen at the program edge (`main` or tests),
+  not buried inside implementation functions.
+note: |
+  BAD:  fn get_user(id: Uuid) -> Effect<User, DbError> {
+            fetch_user(id).provide(default_db_layer())
+        }
+  GOOD: // In main: run_with([provide!(DatabaseLive), provide!(CacheLive)], app())
+rule:
+  all:
+    - pattern: $RECV.provide($$$)
+    - inside:
+        kind: function_item
+        stopBy: end
+    - not:
+        inside:
+          kind: function_item
+          has:
+            field: name
+            regex: "^main$"
+          stopBy: end
+    - not:
+        inside:
+          matches: test-scope
+          stopBy: end

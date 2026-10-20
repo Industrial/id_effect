@@ -1,0 +1,47 @@
+# ClusterFuzzLite nightly batch fuzzing (0.11.0.md D20; docs/security/fuzzing.md): fuzzes every
+# target in fuzz/ on main, grows and prunes the corpus, and stores it as workflow artifacts that
+# the next batch and the PR job (cflite_pr.yml) start from. A crash fails the run.
+name: ClusterFuzzLite batch fuzzing
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  BatchFuzzing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      # Find the corpus artifacts of the previous run.
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer:
+          - address
+    steps:
+      - name: Build fuzzers (${{ matrix.sanitizer }})
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: rust
+          sanitizer: ${{ matrix.sanitizer }}
+      - name: Run fuzzers (${{ matrix.sanitizer }})
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Split evenly across the targets: 10 minutes each for the 11 in fuzz/. Add 600 per
+          # target added to fuzz/Cargo.toml (and raise timeout-minutes with it).
+          fuzz-seconds: 6600
+          mode: batch
+          sanitizer: ${{ matrix.sanitizer }}
+      - name: Prune the corpus
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: prune
+          sanitizer: ${{ matrix.sanitizer }}

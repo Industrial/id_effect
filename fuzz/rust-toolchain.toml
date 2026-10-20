@@ -1,0 +1,5 @@
+# The one nightly the fuzz targets build on (0.11.0.md D20), the same date devenv.nix pins.
+# .clusterfuzzlite/Dockerfile installs it and sets RUSTUP_TOOLCHAIN to it; bump both together.
+[toolchain]
+channel = "nightly-2026-07-10"
+profile = "minimal"

@@ -19,11 +19,13 @@
 //! - **Security.** Schemes declared with [`OpenApi::security_scheme`] (bearer JWT, session
 //!   cookie, OpenID Connect, …) appear under `components/securitySchemes`; every route guarded by
 //!   policies ([`RouteInfo::policies`](crate::route::RouteInfo::policies)) requires one of them,
-//!   and lists its policies as `x-policies`.
+//!   and lists its policies as `x-policies`. A route declared
+//!   [`Route::public`](crate::route::Route::public) has an empty `security` (no authentication).
 //!
 //! The document is plain serde data: adjust any [`Operation`] through [`OpenApi::operation_mut`]
 //! and serve [`OpenApi::to_json`] — or merge [`openapi_router`] ([`OpenApi::routes`]) for
-//! `/openapi.json` plus a Scalar `/docs` page with its own strict CSP (see [`ui`]). The
+//! `/openapi.json` plus a Scalar `/docs` page with its own strict CSP, mounted outside the `dev`
+//! and `test` profiles only when guarded or explicitly public (see [`ui`]). The
 //! route table itself is served by [`route::introspect`](crate::route::introspect) (`/_routes`).
 //!
 //! ```rust
@@ -53,6 +55,7 @@
 //!
 //! let router = Router::new().route(
 //!   Route::post("/accounts")
+//!     .public()
 //!     .body::<Account>()
 //!     .response::<Account>(StatusCode::CREATED)
 //!     .handler(create),
@@ -68,6 +71,7 @@
 //! );
 //! let op = doc.operation(&Method::POST, "/accounts").unwrap();
 //! assert!(op.responses.contains_key("422"));
+//! assert_eq!(op.security, Some(Vec::new()));
 //! ```
 
 mod build;
@@ -84,7 +88,10 @@ pub use model::{
   ApiKeyLocation, Components, Info, MediaType, Operation, Parameter, ParameterIn, PathItem,
   RequestBody, Response, SecurityRequirement, SecurityScheme, Server, Tag,
 };
-pub use ui::{DEFAULT_SCALAR_URL, DOCS_PATH, OPENAPI_JSON_PATH, OpenApiUi, openapi_router};
+pub use ui::{
+  DEFAULT_SCALAR_INTEGRITY, DEFAULT_SCALAR_URL, DOCS_PATH, OPENAPI_JSON_PATH, OpenApiUi,
+  PROFILE_ENV, openapi_router,
+};
 
 use crate::route::{RouteInfo, RouteRegistry, Router};
 

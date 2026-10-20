@@ -1,0 +1,11 @@
+warning: `tokio::spawn` used in Effect code
+  --> $DIR/no_tokio_spawn.rs:9:3
+   |
+LL |   tokio::spawn(async {});
+   |   ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `my_effect.fork()` (a `FiberHandle`) or `Runtime::fork` for structured fibers
+   = note: `#[warn(no_tokio_spawn)]` on by default
+
+warning: 1 warning emitted
+

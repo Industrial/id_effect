@@ -4,7 +4,7 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::run;
+use common::{local_config, run};
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
   HttpClientConfig, HttpClientEnv, HttpMethod, HttpRequest, ReqwestHttpClientProvider, RetryPolicy,
@@ -15,7 +15,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// The default policy with a 1 ms base delay (same methods and attempts, fast tests).
 fn fast_config() -> HttpClientConfig {
-  HttpClientConfig::default().with_retry(RetryPolicy::exponential(
+  local_config().with_retry(RetryPolicy::exponential(
     RetryPolicy::DEFAULT_MAX_ATTEMPTS,
     Duration::from_millis(1),
   ))
@@ -59,7 +59,7 @@ async fn post_not_retried_by_default() {
   let url = format!("{}/submit", server.uri());
 
   let program = execute::<HttpClientEnv, _>(HttpRequest::post(url.clone(), b"x".to_vec()))
-    .provide_layer(ReqwestHttpClientProvider::layer());
+    .provide_layer(ReqwestHttpClientProvider::layer_with(local_config()));
   assert_eq!(run(program).await.expect("http ok").status, 503);
   assert_eq!(requests(&server).await, 1);
 

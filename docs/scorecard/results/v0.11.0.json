@@ -1,0 +1,319 @@
+{
+	"version": "0.11.0",
+	"basis": "measured",
+	"method_version": "2.2",
+	"competitor_snapshot": "2026-10-14",
+	"id_effect": {
+		"u": 79.4,
+		"e": 79.2,
+		"rt": 83.9,
+		"rank": {
+			"u": 1,
+			"e": 1,
+			"rt": 1
+		},
+		"ge80": 56,
+		"lt40": 9,
+		"leader": 31,
+		"median_gap": 12
+	},
+	"frameworks": [
+		{
+			"id": "id_effect",
+			"name": "id_effect",
+			"u": 79.4,
+			"e": 79.2,
+			"rt": 83.9,
+			"rank": {
+				"u": 1,
+				"e": 1,
+				"rt": 1
+			},
+			"groups": {
+				"core": 89.7,
+				"conc": 84,
+				"fault": 91.6,
+				"dist": 88.2,
+				"data": 87.8,
+				"web": 54.8,
+				"sec": 90.4,
+				"obs": 92.6,
+				"msg": 87.6,
+				"ai": 38,
+				"test": 88,
+				"dx": 83.7,
+				"eco": 44.2
+			}
+		},
+		{
+			"id": "effect_ts",
+			"name": "Effect-TS",
+			"u": 57.8,
+			"e": 56.6,
+			"rt": 60.8,
+			"rank": {
+				"u": 5,
+				"e": 5,
+				"rt": 4
+			},
+			"groups": {
+				"core": 96.4,
+				"conc": 66.8,
+				"fault": 42.7,
+				"dist": 59.8,
+				"data": 64.7,
+				"web": 50.3,
+				"sec": 27.8,
+				"obs": 63,
+				"msg": 38,
+				"ai": 88,
+				"test": 60.7,
+				"dx": 62.2,
+				"eco": 47.2
+			}
+		},
+		{
+			"id": "zio",
+			"name": "ZIO",
+			"u": 53.9,
+			"e": 51.5,
+			"rt": 56.6,
+			"rank": {
+				"u": 6,
+				"e": 8,
+				"rt": 6
+			},
+			"groups": {
+				"core": 94.7,
+				"conc": 71,
+				"fault": 37.3,
+				"dist": 53.2,
+				"data": 62,
+				"web": 49,
+				"sec": 33,
+				"obs": 62.6,
+				"msg": 35.6,
+				"ai": 13,
+				"test": 58.7,
+				"dx": 42,
+				"eco": 50.5
+			}
+		},
+		{
+			"id": "otp",
+			"name": "OTP",
+			"u": 37.6,
+			"e": 36.6,
+			"rt": 43,
+			"rank": {
+				"u": 11,
+				"e": 11,
+				"rt": 7
+			},
+			"groups": {
+				"core": 50.3,
+				"conc": 43.8,
+				"fault": 50,
+				"dist": 72.2,
+				"data": 5.4,
+				"web": 18.7,
+				"sec": 28,
+				"obs": 45.4,
+				"msg": 15.8,
+				"ai": 1,
+				"test": 39.7,
+				"dx": 49.4,
+				"eco": 55.6
+			}
+		},
+		{
+			"id": "phoenix",
+			"name": "Phoenix",
+			"u": 60.6,
+			"e": 59.9,
+			"rt": 59.7,
+			"rank": {
+				"u": 4,
+				"e": 4,
+				"rt": 5
+			},
+			"groups": {
+				"core": 57.6,
+				"conc": 50.2,
+				"fault": 59.4,
+				"dist": 78.5,
+				"data": 61.3,
+				"web": 65.1,
+				"sec": 47.6,
+				"obs": 60.6,
+				"msg": 65.4,
+				"ai": 39,
+				"test": 44,
+				"dx": 73.3,
+				"eco": 63.4
+			}
+		},
+		{
+			"id": "spring",
+			"name": "Spring",
+			"u": 70.6,
+			"e": 73.6,
+			"rt": 64.5,
+			"rank": {
+				"u": 3,
+				"e": 3,
+				"rt": 3
+			},
+			"groups": {
+				"core": 55.6,
+				"conc": 42,
+				"fault": 51.1,
+				"dist": 53.5,
+				"data": 74.1,
+				"web": 82.7,
+				"sec": 92.8,
+				"obs": 85.2,
+				"msg": 77.6,
+				"ai": 100,
+				"test": 59,
+				"dx": 74.7,
+				"eco": 86.2
+			}
+		},
+		{
+			"id": "dotnet",
+			"name": ".NET",
+			"u": 76.7,
+			"e": 78.8,
+			"rt": 72.8,
+			"rank": {
+				"u": 2,
+				"e": 2,
+				"rt": 2
+			},
+			"groups": {
+				"core": 61,
+				"conc": 56.5,
+				"fault": 63,
+				"dist": 84.8,
+				"data": 77.6,
+				"web": 86.2,
+				"sec": 90.2,
+				"obs": 90.2,
+				"msg": 60,
+				"ai": 100,
+				"test": 63.2,
+				"dx": 84.3,
+				"eco": 93.8
+			}
+		},
+		{
+			"id": "rails",
+			"name": "Rails",
+			"u": 52,
+			"e": 52.2,
+			"rt": 41.3,
+			"rank": {
+				"u": 8,
+				"e": 7,
+				"rt": 9
+			},
+			"groups": {
+				"core": 34.3,
+				"conc": 17.2,
+				"fault": 35,
+				"dist": 16.2,
+				"data": 64,
+				"web": 63.8,
+				"sec": 53.2,
+				"obs": 33.4,
+				"msg": 60.6,
+				"ai": 39,
+				"test": 46.3,
+				"dx": 78.9,
+				"eco": 80.4
+			}
+		},
+		{
+			"id": "django",
+			"name": "Django",
+			"u": 46.4,
+			"e": 46.4,
+			"rt": 37.4,
+			"rank": {
+				"u": 9,
+				"e": 9,
+				"rt": 10
+			},
+			"groups": {
+				"core": 43.1,
+				"conc": 21.3,
+				"fault": 25.6,
+				"dist": 10.2,
+				"data": 59.6,
+				"web": 59.3,
+				"sec": 48.2,
+				"obs": 31,
+				"msg": 38.2,
+				"ai": 39,
+				"test": 50.5,
+				"dx": 51.3,
+				"eco": 80.5
+			}
+		},
+		{
+			"id": "laravel",
+			"name": "Laravel",
+			"u": 52.8,
+			"e": 54,
+			"rt": 43,
+			"rank": {
+				"u": 7,
+				"e": 6,
+				"rt": 8
+			},
+			"groups": {
+				"core": 30.9,
+				"conc": 15.2,
+				"fault": 36.9,
+				"dist": 16.2,
+				"data": 57,
+				"web": 74,
+				"sec": 55.2,
+				"obs": 38.2,
+				"msg": 72.8,
+				"ai": 75,
+				"test": 54.7,
+				"dx": 70.8,
+				"eco": 74.5
+			}
+		},
+		{
+			"id": "nextjs",
+			"name": "Next.js",
+			"u": 39.5,
+			"e": 41.5,
+			"rt": 33.9,
+			"rank": {
+				"u": 10,
+				"e": 10,
+				"rt": 11
+			},
+			"groups": {
+				"core": 36.1,
+				"conc": 21.3,
+				"fault": 20.3,
+				"dist": 10.2,
+				"data": 37,
+				"web": 40.1,
+				"sec": 40.2,
+				"obs": 38.4,
+				"msg": 25.6,
+				"ai": 100,
+				"test": 40,
+				"dx": 61.3,
+				"eco": 66.5
+			}
+		}
+	]
+}

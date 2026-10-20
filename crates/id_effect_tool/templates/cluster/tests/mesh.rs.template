@@ -1,13 +1,68 @@
-//! Two nodes on one in-process fabric: remote spawn, cast and call.
+//! Two nodes on one in-process fabric: remote spawn, cast and call; and two nodes over the
+//! mutual-TLS mesh transport with the dev certificates.
 
+use std::path::PathBuf;
 use std::process::Command;
 
 use id_effect::{Cause, Exit};
-use id_effect_kit::node::{MeshFabric, RemoteFault};
+use id_effect_kit::node::{Cookie, MeshFabric, NodeId, RemoteFault, Session, Transport};
+use id_effect_kit::posture::Posture;
 
-use {{crate_name}}::{node, round_trip};
+use {{crate_name}}::{dev_certificates, mesh_certs, mesh_transport, node, posture, round_trip};
 
 const BIN: &str = env!("CARGO_BIN_EXE_{{name}}");
+
+/// A fresh directory under the system temp dir.
+fn temp_dir(tag: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "{}-{tag}-{}",
+        env!("CARGO_PKG_NAME"),
+        std::process::id()
+    ))
+}
+
+/// Two nodes with the dev certificates authenticate each other over TLS, then run the cookie
+/// handshake on the session.
+#[tokio::test]
+async fn dev_certificates_give_a_mutual_tls_session() {
+    let dir = temp_dir("mtls");
+    let certs = dev_certificates(&dir).expect("dev certificates");
+    let dialer = mesh_transport(&certs).expect("dialer");
+    let listener = mesh_transport(&certs)
+        .expect("listener")
+        .listen("127.0.0.1:0")
+        .await
+        .expect("bind");
+    assert!(dialer.is_encrypted());
+    let addr = listener.local_addr();
+    let (dialed, accepted) = tokio::join!(dialer.connect(&addr), listener.accept());
+    let cookie = Cookie::try_new("a-dev-cluster-cookie-of-at-least-32-bytes").expect("cookie");
+    let (a, b) = (
+        NodeId::from_parts("a@test", 1),
+        NodeId::from_parts("b@test", 2),
+    );
+    let (to_b, to_a) = tokio::join!(
+        Session::initiate(dialed.expect("dial"), &a, &cookie),
+        Session::respond(accepted.expect("accept"), &b, &cookie),
+    );
+    assert_eq!(to_b.expect("initiator").peer(), &b);
+    assert_eq!(to_a.expect("responder").peer(), &a);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// The node as generated passes the `prod` posture check (ADR 0013 R10), and `prod` refuses
+/// to run on dev certificates it did not name.
+#[test]
+fn the_cluster_passes_the_prod_posture_check() {
+    let dir = temp_dir("posture");
+    let transport =
+        mesh_transport(&dev_certificates(&dir).expect("dev certificates")).expect("transport");
+    let report = posture(Posture::new("prod"), &transport).check();
+    assert!(report.passed(), "{report}");
+    assert!(report.enforce().is_ok());
+    assert!(mesh_certs("prod").is_err());
+    let _ = std::fs::remove_dir_all(dir);
+}
 
 #[test]
 fn a_counter_on_another_node_answers_calls() {

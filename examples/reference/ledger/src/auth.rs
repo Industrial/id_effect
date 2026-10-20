@@ -81,12 +81,11 @@ struct UserRow {
   email_verified: bool,
 }
 
-const USER_COLUMNS: &str =
-  "org_id, username, password_hash, role, totp_secret, email, email_verified";
+const FIND_USER: &str = "SELECT org_id, username, password_hash, role, totp_secret, email, \
+  email_verified FROM users WHERE username = $1";
 
 fn find_user(db: &Arc<dyn SqlClient>, username: &str) -> Effect<Option<UserRow>, SqlError> {
-  let sql = format!("SELECT {USER_COLUMNS} FROM users WHERE username = $1");
-  db::query_all::<UserRow>(db, &sql, params![username]).map(|rows| rows.into_iter().next())
+  db::query_all::<UserRow>(db, FIND_USER, params![username]).map(|rows| rows.into_iter().next())
 }
 
 /// TOTP replay protection in the `users` table: each user's last consumed step, raised by a
@@ -817,30 +816,29 @@ pub async fn reject_revoked_tokens(
 }
 
 /// Sign-in routes; `login_limit` throttles `POST /orgs` and `POST /auth/login`, per client and
-/// per organisation.
+/// per organisation. Those two are public (anonymous callers sign up and sign in); every other
+/// route names its policy.
 pub fn routes(policies: &Policies, login_limit: LoginLimit) -> Router<AppEnv> {
   Router::new()
-    .route(guarded(
-      policies,
-      "public",
+    .route(
       Route::post("/orgs")
+        .public()
         .headers::<CookieHeader>()
         .body::<Register>()
         .response::<Me>(StatusCode::CREATED)
         .handler_with_request_caps(register)
         .layer(login_limit.client.clone()),
-    ))
-    .route(guarded(
-      policies,
-      "public",
+    )
+    .route(
       Route::post("/auth/login")
+        .public()
         .headers::<CookieHeader>()
         .body::<Login>()
         .response::<Me>(StatusCode::OK)
         .handler_with_request_caps(login)
         .layer(login_limit.tenant)
         .layer(login_limit.client),
-    ))
+    )
     .route(guarded(
       policies,
       "signed_in",

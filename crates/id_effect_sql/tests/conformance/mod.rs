@@ -231,37 +231,6 @@ pub async fn row_get_by_name_and_index(b: &impl Backend) {
   assert!(!row.columns()[0].db_type().is_empty());
 }
 
-#[allow(deprecated)]
-pub async fn deprecated_sqlparam_still_binds(b: &impl Backend, table: &str) {
-  use id_effect_sql::SqlParam;
-  let columns = [
-    ("n", SqlType::I64),
-    ("s", SqlType::Text),
-    ("nil", SqlType::Text),
-    ("ok", SqlType::Bool),
-    ("raw", SqlType::Bytes),
-  ];
-  create(b, table, &columns).await;
-  let legacy = [
-    SqlParam::Int(5),
-    SqlParam::Text("five".into()),
-    SqlParam::Null,
-    SqlParam::Bool(false),
-    SqlParam::Bytes(vec![5]),
-  ];
-  let bound: Vec<SqlValue> = legacy.iter().cloned().map(SqlValue::from).collect();
-  execute(
-    b,
-    &insert_sql(b, table, &["n", "s", "nil", "ok", "raw"]),
-    &bound,
-  )
-  .await;
-  let rows = query(b, &format!("SELECT n, s, nil, ok, raw FROM {table}"), &[]).await;
-  assert_eq!(rows[0].values(), legacy);
-  assert_eq!(rows[0].text_cells(), ["5", "five", "", "false", "[5]"]);
-  drop_table(b, table).await;
-}
-
 pub async fn untyped_null_binds_into_int_text_uuid_columns(b: &impl Backend, table: &str) {
   let columns = [
     ("n", SqlType::I32),
@@ -647,13 +616,6 @@ macro_rules! conformance_suite {
         return;
       };
       $crate::conformance::row_get_by_name_and_index(&b).await;
-    }
-
-    #[tokio::test]
-    async fn deprecated_sqlparam_still_binds() {
-      let t = concat!($prefix, "_sqlparam");
-      let Some(b) = $make(t).await else { return };
-      $crate::conformance::deprecated_sqlparam_still_binds(&b, t).await;
     }
 
     #[tokio::test]

@@ -136,8 +136,9 @@ async fn csrf_tokens_are_random_per_session() {
   let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
     .decode(&token_a)
     .unwrap();
-  assert_eq!(raw.len(), 32);
-  // The same session keeps its token and is not re-issued a cookie.
+  // Masked: a 32-byte pad, then the pad XOR the 32-byte secret.
+  assert_eq!(raw.len(), 64);
+  // The same session keeps its secret and is not re-issued a cookie.
   let again = send(
     &app,
     Request::builder()
@@ -148,7 +149,10 @@ async fn csrf_tokens_are_random_per_session() {
   )
   .await;
   assert!(again.headers().get(header::SET_COOKIE).is_none());
-  assert_eq!(body_string(again).await, token_a);
+  let token_again = body_string(again).await;
+  assert_ne!(token_again, token_a, "re-masked per response");
+  let res = send(&app, post_with(Some(&cookie_a), Some(&token_again))).await;
+  assert_eq!(res.status(), StatusCode::OK);
 }
 
 #[tokio::test]
@@ -265,7 +269,7 @@ async fn recommended_layer_allows_exempt_prefix() {
 async fn without_csrf_allows_post() {
   let app = Router::new()
     .route("/", post(|| async { "posted" }))
-    .layer(SecurityLayer::recommended(key()).without_csrf());
+    .layer(SecurityLayer::recommended(key()).dangerous_without_csrf());
   let res = send(&app, post_with(None, None)).await;
   assert_eq!(res.status(), StatusCode::OK);
   assert!(res.headers().get(header::SET_COOKIE).is_none());
@@ -278,7 +282,7 @@ async fn csrf_token_response_part_sets_header() {
     .layer(SecurityLayer::recommended(key()));
   let res = send(&app, get_root()).await;
   let header_token = res.headers()[CSRF_HEADER].to_str().unwrap().to_owned();
-  assert_eq!(header_token.len(), 43);
+  assert_eq!(header_token.len(), 86);
 }
 
 // ---- CORS (#3) ------------------------------------------------------------------------------
@@ -536,7 +540,7 @@ async fn cookie_signed_and_private_round_trip() {
         format!("{uid:?} {secret:?}")
       }),
     )
-    .layer(SecurityLayer::recommended(key()).without_csrf());
+    .layer(SecurityLayer::recommended(key()).dangerous_without_csrf());
   let res = send(
     &app,
     Request::builder().uri("/set").body(Body::empty()).unwrap(),
@@ -548,8 +552,9 @@ async fn cookie_signed_and_private_round_trip() {
     .iter()
     .map(|v| v.to_str().unwrap().split(';').next().unwrap().to_owned())
     .collect();
+  // Exact match: random ciphertext can contain the substring "s3" by chance.
   assert!(
-    !pairs.iter().any(|p| p.contains("s3")),
+    !pairs.iter().any(|p| p == "secret=s3"),
     "private cookie is encrypted"
   );
   let read = |cookie: String| {

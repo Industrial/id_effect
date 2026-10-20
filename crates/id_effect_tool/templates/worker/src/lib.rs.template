@@ -9,6 +9,18 @@ use id_effect::{
     Cron, CronError, CronJob, CronRegistry, CronRun, Effect, MissedRunPolicy, Never, OverlapPolicy,
     WallClock, sync,
 };
+use id_effect_kit::posture::{Posture, Surface};
+
+/// What the worker states for the startup posture check (ADR 0013 R10): no console, no
+/// `/docs`, no browser and no mesh. The probes read from the posture registry (redaction, SSRF
+/// guard, memory-only state, unaccepted opt-outs) still apply.
+pub fn posture(posture: Posture) -> Posture {
+    posture
+        .console(Surface::Absent)
+        .docs(Surface::Absent)
+        .no_mesh()
+        .no_browser()
+}
 
 /// What the jobs have done so far.
 #[derive(Clone, Debug, Default)]

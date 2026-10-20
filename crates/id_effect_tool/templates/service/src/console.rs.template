@@ -6,11 +6,13 @@
 {{/if}}
 //!
 //! It listens on `127.0.0.1:CONSOLE_PORT` (default [`DEFAULT_PORT`]) only, so it answers on the
-//! machine or container itself (`docker exec`, `kubectl port-forward`, an SSH tunnel). Every
-//! console route is behind an `id_effect_kit::authz` guard that requires the [`OPERATOR_ROLE`];
-//! on that loopback listener, [`local_operator`] grants it to every request. Before binding the
-//! console to any other address, replace [`local_operator`] with real authentication
-//! (`id_effect_kit::auth`) and keep the guard.
+//! machine or container itself (`docker exec`, `kubectl port-forward`, an SSH tunnel), and only
+//! to requests for its own host: a `Host` or `Origin` outside `CONSOLE_ALLOWED_HOSTS` (default:
+//! the bind address) is answered `403`, so a web page cannot reach it through DNS rebinding.
+//! Every console route is behind an `id_effect_kit::authz` guard that requires the
+//! [`OPERATOR_ROLE`]. In the `dev` profile ([`PROFILE_ENV`] unset or `dev`) [`local_operator`]
+//! grants it to every request; in any other profile nothing does, so the console answers `401`
+//! until you add real authentication (`id_effect_kit::auth`) in front of the guard.
 
 use std::net::SocketAddr;
 
@@ -32,44 +34,85 @@ pub const PORT_ENV: &str = "CONSOLE_PORT";
 /// The console's port when [`PORT_ENV`] is not set.
 pub const DEFAULT_PORT: u16 = 9090;
 
+/// The variable listing the hosts the console answers to (comma-separated `host` or
+/// `host:port`; default: the bind address), for a console reached under another name.
+pub const ALLOWED_HOSTS_ENV: &str = "CONSOLE_ALLOWED_HOSTS";
+
+/// The variable naming the profile (`dev`, `test`, `prod`); the local operator exists only in
+/// `dev`.
+pub const PROFILE_ENV: &str = "ID_EFFECT_PROFILE";
+
 /// The role the console's guard requires.
 pub const OPERATOR_ROLE: &str = "operator";
 
-/// Where the console listens: `127.0.0.1` and [`PORT_ENV`] (default [`DEFAULT_PORT`]).
+/// Where the console listens: `127.0.0.1` and [`PORT_ENV`] (default [`DEFAULT_PORT`]),
+/// answering to [`ALLOWED_HOSTS_ENV`] (default: that address).
 pub fn config() -> Result<ConsoleConfig, String> {
-    match std::env::var(PORT_ENV) {
+    let config = match std::env::var(PORT_ENV) {
         Ok(port) if !port.trim().is_empty() => port
             .trim()
             .parse::<u16>()
             .map(ConsoleConfig::loopback)
-            .map_err(|e| format!("{PORT_ENV}: {e}")),
-        _ => Ok(ConsoleConfig::loopback(DEFAULT_PORT)),
-    }
+            .map_err(|e| format!("{PORT_ENV}: {e}"))?,
+        _ => ConsoleConfig::loopback(DEFAULT_PORT),
+    };
+    let hosts = std::env::var(ALLOWED_HOSTS_ENV).unwrap_or_default();
+    Ok(config.allow_hosts(hosts.split(',')))
+}
+
+/// Whether the service runs in the `dev` profile ([`PROFILE_ENV`] unset, empty or `dev`).
+pub fn dev_profile() -> bool {
+    std::env::var(PROFILE_ENV)
+        .ok()
+        .is_none_or(|p| matches!(p.trim(), "" | "dev"))
 }
 
 {{#if !jobs}}
-/// The console routes over `health`, behind the operator guard, for a loopback listener.
+/// The console routes over `health`, behind the operator guard: [`routes`] in the current
+/// profile ([`dev_profile`]).
 pub fn router(health: &HealthRegistry) -> Router {
-    Console::new()
+    routes(health, dev_profile())
+}
+
+/// The console routes over `health`, behind the operator guard; with `dev`, every request is
+/// the [`local_operator`].
+pub fn routes(health: &HealthRegistry, dev: bool) -> Router {
+    let console = Console::new()
         .health(health.clone())
-        .router(Guard::new("console", require_role(OPERATOR_ROLE)))
-        .layer(middleware::from_fn(local_operator))
+        .router(Guard::new("console", require_role(OPERATOR_ROLE)));
+    with_operator(console, dev)
 }
 {{/if}}
 {{#if jobs}}
-/// The console routes over `health` and the job queue `jobs`, behind the operator guard, for a
-/// loopback listener.
+/// The console routes over `health` and the job queue `jobs`, behind the operator guard:
+/// [`routes`] in the current profile ([`dev_profile`]).
 pub fn router(health: &HealthRegistry, jobs: impl JobQueue) -> Router {
-    Console::new()
+    routes(health, jobs, dev_profile())
+}
+
+/// The console routes over `health` and the job queue `jobs`, behind the operator guard; with
+/// `dev`, every request is the [`local_operator`].
+pub fn routes(health: &HealthRegistry, jobs: impl JobQueue, dev: bool) -> Router {
+    let console = Console::new()
         .health(health.clone())
         .jobs(jobs)
-        .router(Guard::new("console", require_role(OPERATOR_ROLE)))
-        .layer(middleware::from_fn(local_operator))
+        .router(Guard::new("console", require_role(OPERATOR_ROLE)));
+    with_operator(console, dev)
 }
 {{/if}}
 
-/// Every request on the loopback listener is the local operator. Only sound on a loopback
-/// address ([`ConsoleConfig::requires_guard`] is false there).
+/// `console` with the [`local_operator`] in `dev`; as it is otherwise, so that only real
+/// authentication added in front of the guard lets operators in.
+fn with_operator(console: Router, dev: bool) -> Router {
+    if dev {
+        console.layer(middleware::from_fn(local_operator))
+    } else {
+        console
+    }
+}
+
+/// Every request is the local operator: the `dev` profile's shortcut on the loopback listener
+/// ([`ConsoleConfig::requires_guard`] is false there), never mounted in another profile.
 pub async fn local_operator(mut request: Request, next: Next) -> Response {
     let operator = BasicPrincipal::new("local").with_role(OPERATOR_ROLE);
     request
@@ -78,8 +121,8 @@ pub async fn local_operator(mut request: Request, next: Next) -> Response {
     next.run(request).await
 }
 
-/// Binds `config`'s address and serves `routes` there in the background, until the process
-/// exits; returns the bound address.
+/// Binds `config`'s address and serves `routes` there in the background, behind `config`'s Host
+/// and Origin check, until the process exits; returns the bound address.
 pub async fn spawn(config: ConsoleConfig, routes: Router) -> Result<SocketAddr, String> {
     if config.requires_guard() {
         return Err(format!(
@@ -91,6 +134,7 @@ pub async fn spawn(config: ConsoleConfig, routes: Router) -> Result<SocketAddr, 
         .await
         .map_err(|e| format!("console: bind {}: {e}", config.bind()))?;
     let addr = listener.local_addr().map_err(|e| format!("console: {e}"))?;
+    let routes = config.check_host_and_origin(routes);
     tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, routes).await {
             eprintln!("console: {e}");

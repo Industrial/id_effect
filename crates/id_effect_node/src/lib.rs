@@ -1,16 +1,19 @@
 //! # id_effect_node — distribution layer of the Process Mesh
 //!
 //! Node identity, cookie-authenticated handshake, pluggable transports,
-//! SWIM membership, remote processes, process groups, and distributed
-//! supervision (ADR 0009).
+//! SWIM membership, remote processes (at-most-once by default, at-least-once
+//! on request: [`delivery`]), process groups, and distributed supervision
+//! (ADR 0009).
 
 #![deny(missing_docs)]
 
 pub mod control;
+pub mod delivery;
 pub mod discovery;
 pub mod dist_supervisor;
 pub mod envelope;
 pub mod fanout;
+pub mod global_registry;
 pub mod groups;
 pub mod handshake;
 pub mod id;
@@ -26,13 +29,22 @@ pub mod wire;
 pub use control::{
   ClusterStatus, DrainRequest, MemberView, ProcessView, RebalanceRequest, TreeNodeView,
 };
+pub use delivery::{
+  DeliveryConfig, DeliveryFailed, DeliveryFailure, DeliveryMode, DeliveryMonitor, SendReliable,
+};
 pub use discovery::{ChainedDiscovery, Discovery, DnsDiscovery, StaticDiscovery};
+#[cfg(feature = "kubernetes")]
+pub use discovery::{KubernetesDiscovery, KubernetesError};
 pub use dist_supervisor::{DistChildSpec, DistributedSupervisor};
 pub use envelope::{
-  ExitReasonWire, PidWire, ProcessEnvelope, RemoteFault, TraceContext, decode_envelope,
-  empty_trace, encode_envelope, trace_pair,
+  ExitReasonWire, PidWire, ProcessEnvelope, ReliableMessage, RemoteFault, TRACEPARENT,
+  TraceContext, TracePropagator, W3cTraceContext, decode_envelope, empty_trace, encode_envelope,
+  trace_pair, traceparent_in, traceparent_of,
 };
 pub use fanout::{SharedGroups, fanout_cast, fanout_cast_on_node};
+pub use global_registry::{
+  GlobalNameError, GlobalRegistry, MAX_NAME_LEN, NameClaim, conflicting_name, name_conflict,
+};
 pub use groups::{Dot, OrSwot, ProcessGroups};
 pub use handshake::{Cookie, CookieError, HandshakeError};
 pub use id::NodeId;
@@ -53,6 +65,8 @@ pub use singleton::{
 };
 pub use transport::memory::{InMemoryTransport, MemoryNetwork};
 pub use transport::tcp::TcpTransport;
+#[cfg(feature = "tls-tcp")]
+pub use transport::tls_tcp::{TlsTcpConfig, TlsTcpConfigError};
 pub use transport::{Connection, Listener, Transport, TransportError};
 pub use wire::{Frame, PROTOCOL_VERSION, WireError};
 

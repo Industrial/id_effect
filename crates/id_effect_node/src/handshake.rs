@@ -1,4 +1,4 @@
-//! Cookie-authenticated mutual handshake (wire protocol v2).
+//! Cookie-authenticated mutual handshake (wire protocol [`PROTOCOL_VERSION`], v3).
 //!
 //! BEAM's shared-secret cookie scheme with a modern MAC: both sides prove
 //! knowledge of the cookie by HMAC-SHA256 over the whole handshake
@@ -9,11 +9,12 @@
 //! Binding the proof to the TLS channel means a man-in-the-middle that
 //! terminates TLS on both sides cannot relay one node's proof to another.
 //!
-//! This authenticates but does **not** encrypt — pair with the QUIC
-//! transport (TLS 1.3) or a trusted network for confidentiality (ADR 0009
-//! § security). On TCP there is no channel to bind: the transcript stops a
-//! proof from being reused across sessions, names or directions, but an
-//! on-path relay of the raw bytes is not detectable there.
+//! This authenticates but does **not** encrypt — pair with a TLS transport
+//! (QUIC, or TCP with feature `tls-tcp`) for confidentiality (ADR 0009
+//! § security). On plaintext TCP (`TcpTransport::dangerous_plaintext`)
+//! there is no channel to bind: the transcript stops a proof from being
+//! reused across sessions, names or directions, but an on-path relay of the
+//! raw bytes is not detectable there.
 //!
 //! Before the peer is authenticated the handshake bounds what it will
 //! read: the whole exchange must finish within the cookie's
@@ -49,6 +50,9 @@ pub const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 /// TLS exporter label (RFC 5705 / RFC 8446 § 7.5) of the 32-byte channel
 /// binding mixed into the cookie proof on TLS transports.
 pub const CHANNEL_BINDING_LABEL: &[u8] = b"EXPORTER-id-effect-mesh";
+
+/// Posture id of [`Cookie::dangerous_allow_short`].
+pub const DANGEROUS_ALLOW_SHORT_COOKIE: &str = "id_effect_node::Cookie::dangerous_allow_short";
 
 /// Domain separator for the transcript MAC.
 const TRANSCRIPT_DOMAIN: &[u8] = b"id-effect-mesh/handshake";
@@ -107,8 +111,14 @@ impl Cookie {
   /// This re-opens offline guessing of the cookie: anyone who records one
   /// handshake can test candidate cookies against its MACs at hash speed,
   /// and a short or human-chosen secret falls quickly. Only for tests and
-  /// throwaway clusters.
+  /// throwaway clusters. Recorded in the posture registry as
+  /// [`DANGEROUS_ALLOW_SHORT_COOKIE`].
   pub fn dangerous_allow_short(mut self) -> Self {
+    id_effect::observability::posture::record_dangerous(
+      DANGEROUS_ALLOW_SHORT_COOKIE,
+      "M9: the cluster cookie may be shorter than MIN_COOKIE_BYTES, so one recorded handshake \
+       lets an attacker guess it offline",
+    );
     self.allow_short = true;
     self
   }
@@ -583,6 +593,16 @@ mod tests {
     let t = transcript(&a, &b);
     let digest = short.digest(Role::Responder, &t);
     assert!(short.verify(Role::Responder, &t, &digest));
+  }
+
+  #[test]
+  fn dangerous_allow_short_is_recorded_in_posture() {
+    let _ = Cookie::new("short").dangerous_allow_short();
+    assert!(
+      id_effect::observability::posture::dangerous_opt_outs()
+        .iter()
+        .any(|(id, reopens)| *id == DANGEROUS_ALLOW_SHORT_COOKIE && reopens.contains("M9"))
+    );
   }
 
   #[test]

@@ -1,0 +1,11 @@
+warning: `.provide(…)` called inside a library function
+  --> $DIR/provide_at_edge_not_in_library.rs:18:3
+   |
+LL |   needs_env().provide(7)
+   |   ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: provide dependencies at the program edge (`main` or tests); library functions should declare requirements in `R`
+   = note: `#[warn(provide_at_edge_not_in_library)]` on by default
+
+warning: 1 warning emitted
+

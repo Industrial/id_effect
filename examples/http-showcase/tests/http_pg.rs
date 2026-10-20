@@ -86,6 +86,7 @@ fn host_config(port: u16) -> HostConfig {
     bind_host: "127.0.0.1".into(),
     bind_port: port,
     shutdown_timeout: Duration::from_secs(5),
+    ..HostConfig::default()
   }
 }
 

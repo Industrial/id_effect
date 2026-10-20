@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::run;
+use common::{local_config, run};
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
   HttpClientEnv, HttpMethod, HttpRequest, ReqwestHttpClient, execute, http_client_env,
@@ -12,7 +12,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn env() -> HttpClientEnv {
-  http_client_env(ReqwestHttpClient::default_client())
+  http_client_env(ReqwestHttpClient::from_config(&local_config()))
 }
 
 fn request(method: HttpMethod, url: String, body: Option<&[u8]>) -> HttpRequest {

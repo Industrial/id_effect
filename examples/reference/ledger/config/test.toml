@@ -6,6 +6,10 @@
 # The test harness plays the reverse proxy: every in-process request comes from 127.0.0.1.
 trusted_proxies = ["127.0.0.1/32"]
 
+[outbound]
+# The SendGrid fake (wiremock) listens on loopback, which the SSRF guard refuses otherwise.
+allow_hosts = ["127.0.0.1"]
+
 [db]
 password = "postgres"
 
@@ -27,3 +31,7 @@ reload_limits_secs = 0
 [jobs]
 # The tests drive the worker, the cron, the relay and the consumers themselves.
 run = false
+
+[console]
+# The console tests open `/_console` (`base.toml` turns it off outside dev).
+enabled = true

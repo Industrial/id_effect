@@ -1,0 +1,13 @@
+warning: public API exposes a 0.6 `Context<Cons<…>>` as `R` type
+  --> $DIR/no_concrete_context_in_pub_api.rs:12:1
+   |
+LL | / pub fn old_env() -> Effect<u8, (), Context<Cons<u8, Nil>>> {
+LL | |   Effect(PhantomData)
+LL | | }
+   | |_^
+   |
+   = help: spell `R` with `caps!(Key, …)` (an `HCons` list), or take a generic `R: Selector<Key, I>`
+   = note: `#[warn(no_concrete_context_in_pub_api)]` on by default
+
+warning: 1 warning emitted
+

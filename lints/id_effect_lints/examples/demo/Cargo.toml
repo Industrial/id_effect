@@ -1,0 +1,13 @@
+[package]
+name = "id_effect_lints_demo"
+version = "0.0.0"
+description = "A crate that trips id_effect_lints (Dylint) and the ast-grep rules: book appendix D"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Its own workspace: not a member of the lint library's or of the main one.
+# `cargo dylint --all` from this directory builds the library at ../.. and runs it here; Dylint
+# reads the list from `workspace.metadata.dylint` only (`package.metadata` finds no libraries).
+[workspace.metadata.dylint]
+libraries = [{ path = "../.." }]

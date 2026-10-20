@@ -61,9 +61,18 @@ async fn run<A: Send + 'static>(eff: Effect<A, TestError>) -> Result<A, TestErro
 
 type Db = caps!(SqlClientService);
 
-/// `SELECT COUNT(*) FROM table`.
+/// `SELECT COUNT(*) FROM table` (a table name, so the `SqlClient` method, not `query`).
 fn count(table: &str) -> Effect<i64, SqlError, Db> {
-  query_one_as::<(i64,), Db, _>(format!("SELECT COUNT(*) AS n FROM {table}"), vec![]).map(|(n,)| n)
+  let sql = format!("SELECT COUNT(*) AS n FROM {table}");
+  need::<SqlClientService>().flat_map(move |c| {
+    c.query(&sql, &[])
+      .narrow()
+      .flat_map(|rows| match rows.first().map(|row| row.get::<i64>("n")) {
+        Some(Ok(n)) => succeed(n),
+        Some(Err(e)) => fail(e),
+        None => fail(SqlError::RowNotFound),
+      })
+  })
 }
 
 fn sql<A: Send + 'static>(eff: Effect<A, SqlError, Db>) -> Effect<A, TestError, Db> {
@@ -389,8 +398,11 @@ static PG: Shared<Postgres> = Shared::new(Postgres::new);
 async fn pg_table(table: &'static str) {
   let ddl = format!("CREATE TABLE {table} (id BIGINT PRIMARY KEY, name TEXT NOT NULL UNIQUE)");
   let seed = format!("INSERT INTO {table} VALUES (0, 'seed')");
-  let setup: Effect<u64, TestError, Db> =
-    sql(execute(ddl, vec![]).flat_map(move |_| execute(seed, vec![])));
+  let setup: Effect<u64, TestError, Db> = sql(need::<SqlClientService>().flat_map(move |c| {
+    c.execute(&ddl, &[])
+      .flat_map(move |_| c.execute(&seed, &[]))
+      .narrow()
+  }));
   run(setup.provide_layer(PG.sql_layer()))
     .await
     .expect("table");

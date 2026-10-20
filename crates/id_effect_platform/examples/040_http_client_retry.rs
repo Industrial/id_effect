@@ -29,8 +29,10 @@ async fn main() {
     .mount(&server)
     .await;
 
-  // Connect 10 s / total 5 s, 3 attempts from 50 ms; GET, PUT and DELETE are retried.
+  // Connect 10 s / total 5 s, 3 attempts from 50 ms; GET, PUT and DELETE are retried. The SSRF
+  // guard refuses loopback, so the local mock server is allowlisted.
   let config = HttpClientConfig::default()
+    .allow_hosts(["127.0.0.1"])
     .with_timeout(Duration::from_secs(5))
     .with_retry(RetryPolicy::exponential(3, Duration::from_millis(50)));
   let program = execute::<HttpClientEnv, _>(HttpRequest::get(format!("{}/flaky", server.uri())))

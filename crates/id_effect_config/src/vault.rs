@@ -509,7 +509,10 @@ impl VaultProvider {
   /// The secret at the dotted key `key` (`db.password`) of the current snapshot, as
   /// [`Secret<T>`]. Absent is [`ConfigError::Missing`]; a value that is not a `T` is
   /// [`ConfigError::Invalid`] with the value redacted.
-  pub fn secret<T: DeserializeOwned>(&self, key: &str) -> Result<Secret<T>, ConfigError> {
+  pub fn secret<T: DeserializeOwned + zeroize::Zeroize>(
+    &self,
+    key: &str,
+  ) -> Result<Secret<T>, ConfigError> {
     let snapshot = self.snapshot();
     if !snapshot.vault.contains(key) {
       return Err(ConfigError::Missing { path: key.into() });

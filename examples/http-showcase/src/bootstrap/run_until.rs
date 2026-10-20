@@ -123,6 +123,7 @@ mod tests {
         bind_host: "127.0.0.1".into(),
         bind_port: 0,
         shutdown_timeout: Duration::from_secs(5),
+        ..HostConfig::default()
       },
       request_timeout: AppConfig::DEFAULT_REQUEST_TIMEOUT,
       database: Some(DatabaseConfig {

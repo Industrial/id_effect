@@ -1,0 +1,19 @@
+warning: `panic!` / `unreachable!` used inside an Effect-returning function
+  --> $DIR/no_panic_inside_effect.rs:9:5
+   |
+LL |     panic!("boom");
+   |     ^^^^^^^^^^^^^^
+   |
+   = help: use `fail(MyError::…)` for expected failures; reserve `panic!` only for true logic invariant violations at the top level
+   = note: `#[warn(no_panic_inside_effect)]` on by default
+
+warning: `panic!` / `unreachable!` used inside an Effect-returning function
+  --> $DIR/no_panic_inside_effect.rs:11:3
+   |
+LL |   unreachable!()
+   |   ^^^^^^^^^^^^^^
+   |
+   = help: use `fail(MyError::…)` for expected failures; reserve `panic!` only for true logic invariant violations at the top level
+
+warning: 2 warnings emitted
+

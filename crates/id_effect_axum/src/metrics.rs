@@ -4,6 +4,9 @@
 //!   0.0.4 ([`prometheus::CONTENT_TYPE`]): the [`MetricRegistry`] snapshot plus the runtime
 //!   metrics read at scrape time — `id_effect_fibers_live`, `id_effect_fibers_started_total`
 //!   ([`runtime_metrics`]) and [`EXECUTOR_IN_FLIGHT`] (the global [`EffectExecutor`]).
+//! - [`guarded_metrics_router`] serves the same route behind a [`RouteGuard`] (a scrape token,
+//!   an operator role), for a router the public can reach. The metrics name every route and
+//!   show the traffic: serve them unguarded only on an operator listener (ADR 0013 R7).
 //! - [`http_metrics_layer`] records every request handled by the router it wraps:
 //!   [`HTTP_SERVER_REQUESTS_TOTAL`]`{method,route,status}` and
 //!   [`HTTP_SERVER_REQUEST_DURATION_SECONDS`]`{method,route}` (seconds, wall clock, until the
@@ -52,6 +55,7 @@ use tower_layer::Layer;
 use tower_service::Service;
 
 use crate::EffectExecutor;
+use crate::route::RouteGuard;
 
 /// Counter: HTTP requests answered, by `method`, `route` and `status`.
 pub const HTTP_SERVER_REQUESTS_TOTAL: &str = "http_server_requests_total";
@@ -119,9 +123,78 @@ pub fn metrics_route_with<S: Clone + Send + Sync + 'static>(
   })
 }
 
-/// Router with `GET /metrics` over [`MetricRegistry::global`].
+/// Router with `GET /metrics` over [`MetricRegistry::global`]. Unguarded: mount it on an
+/// operator listener, or use [`guarded_metrics_router`] on a public one.
 pub fn metrics_router<S: Clone + Send + Sync + 'static>() -> Router<S> {
   Router::new().route("/metrics", metrics_route())
+}
+
+/// [`metrics_router`] behind `guard`: a scrape the guard rejects gets the guard's answer
+/// (typically `401` or `403`) and no metrics.
+///
+/// ```rust
+/// use axum::body::Body;
+/// use axum::http::request::Parts;
+/// use axum::http::{Request, StatusCode};
+/// use axum::response::IntoResponse;
+/// use id_effect_axum::metrics::guarded_metrics_router;
+/// use id_effect_axum::route::{GuardFuture, RouteGuard};
+/// use tower::ServiceExt;
+///
+/// /// Admits scrapes carrying `authorization: Bearer scrape`.
+/// struct ScrapeToken;
+///
+/// impl RouteGuard for ScrapeToken {
+///   fn policy(&self) -> &str {
+///     "metrics"
+///   }
+///
+///   fn check<'a>(&'a self, parts: &'a Parts) -> GuardFuture<'a> {
+///     let ok = parts.headers.get("authorization").is_some_and(|v| v == "Bearer scrape");
+///     Box::pin(async move { if ok { Ok(()) } else { Err(StatusCode::UNAUTHORIZED.into_response()) } })
+///   }
+/// }
+///
+/// let app: axum::Router = guarded_metrics_router(ScrapeToken);
+/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+/// let anonymous = Request::get("/metrics").body(Body::empty()).unwrap();
+/// let answer = app.clone().oneshot(anonymous).await.unwrap();
+/// assert_eq!(answer.status(), StatusCode::UNAUTHORIZED);
+/// let scraper = Request::get("/metrics")
+///   .header("authorization", "Bearer scrape")
+///   .body(Body::empty())
+///   .unwrap();
+/// assert_eq!(app.oneshot(scraper).await.unwrap().status(), StatusCode::OK);
+/// # });
+/// ```
+pub fn guarded_metrics_router<S: Clone + Send + Sync + 'static>(
+  guard: impl RouteGuard,
+) -> Router<S> {
+  guard_routes(metrics_router(), Arc::new(guard))
+}
+
+/// Every route of `router` behind `guard` (a `route_layer`: unmatched requests are not checked).
+pub(crate) fn guard_routes<S: Clone + Send + Sync + 'static>(
+  router: Router<S>,
+  guard: Arc<dyn RouteGuard>,
+) -> Router<S> {
+  router.route_layer(axum::middleware::from_fn(
+    move |request: axum::extract::Request, next: axum::middleware::Next| {
+      let guard = Arc::clone(&guard);
+      async move {
+        let (parts, body) = request.into_parts();
+        let checked = guard.check(&parts).await;
+        match checked {
+          Ok(()) => {
+            next
+              .run(axum::extract::Request::from_parts(parts, body))
+              .await
+          }
+          Err(rejection) => rejection,
+        }
+      }
+    },
+  ))
 }
 
 /// [`HttpMetricsLayer`] recording into [`MetricRegistry::global`].

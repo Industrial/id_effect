@@ -76,7 +76,8 @@ What the verifier enforces:
   HMAC secret (the classic algorithm-confusion attack). `.algorithms([..])` narrows further.
 - **Issuer and audience.** Once `.issuer(..)` / `.audience(..)` are set, `iss` / `aud` are
   required and must match. A verifier with neither fails every token with `AuthError::Config`
-  (since 0.10.1); `.any_issuer_dangerous()` plus `.any_audience_dangerous()` turn that off.
+  (since 0.10.1); `.dangerous_any_issuer()` plus `.dangerous_any_audience()` turn that off
+  and record the opt-outs in the posture registry.
   Always set the audience: without one, a token minted for another service of the same issuer
   is accepted.
 - **Key length.** An HMAC secret shorter than 32 bytes (`MIN_HMAC_KEY_LEN`) fails with

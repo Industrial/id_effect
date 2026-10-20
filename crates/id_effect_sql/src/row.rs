@@ -205,24 +205,6 @@ impl SqlRow {
       _ => format!("#{i}"),
     }
   }
-
-  /// A row of text cells under columns `#0`, `#1`, … (the 0.8 constructor).
-  #[deprecated(since = "0.9.0", note = "build rows with SqlRow::from_pairs")]
-  pub fn new(cells: Vec<String>) -> Self {
-    Self::from_pairs(
-      cells
-        .into_iter()
-        .enumerate()
-        .map(|(i, cell)| (format!("#{i}"), SqlValue::Text(cell))),
-    )
-  }
-
-  /// The values rendered as 0.8 text cells: NULL is empty, numbers and booleans are their
-  /// `to_string`, bytes are `{:?}`, uuids hyphenated, dates and times ISO 8601, JSON compact.
-  #[deprecated(since = "0.9.0", note = "use SqlRow::get::<T>(idx) or value(idx)")]
-  pub fn text_cells(&self) -> Vec<String> {
-    self.values.iter().map(SqlValue::render).collect()
-  }
 }
 
 #[cfg(test)]
@@ -338,22 +320,5 @@ mod tests {
         ("done".to_owned(), Unknown::Null),
       ]))
     );
-  }
-
-  #[test]
-  #[allow(deprecated)]
-  fn legacy_new_and_text_cells_keep_the_0_8_strings() {
-    let legacy = SqlRow::new(vec!["1".into(), String::new()]);
-    assert_eq!(legacy.text_cells(), ["1", ""]);
-    assert_eq!(legacy.columns()[1].name(), "#1");
-    assert_eq!(legacy.get::<String>(0usize), Ok("1".into()));
-    let typed = SqlRow::from_pairs([
-      ("n", SqlValue::Null),
-      ("b", SqlValue::Bool(false)),
-      ("i", SqlValue::I32(42)),
-      ("f", SqlValue::F64(3.25)),
-      ("bytes", SqlValue::Bytes(vec![1, 2, 3])),
-    ]);
-    assert_eq!(typed.text_cells(), ["", "false", "42", "3.25", "[1, 2, 3]"]);
   }
 }

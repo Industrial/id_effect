@@ -174,7 +174,8 @@ pub fn socket_addr(config: &HostConfig) -> Result<SocketAddr, HostError> {
 /// On a signal, [`Host::readiness`] is marked shutting down first; the listener keeps
 /// accepting while [`Host::drain`] drains, then stops. Count the requests in it with
 /// [`track_in_flight`](crate::track_in_flight). Connections are bounded by the default
-/// [`ConnectionLimits`] and every request carries `ConnectInfo<SocketAddr>`.
+/// [`ConnectionLimits`], requests in flight by [`HostConfig::load_shed`] (`503` beyond it), and
+/// every request carries `ConnectInfo<SocketAddr>`.
 #[allow(clippy::result_large_err)]
 pub async fn serve_router(host: Host, app: Router) -> Result<(), HostError> {
   serve_router_with_limits(host, app, ConnectionLimits::default()).await
@@ -192,6 +193,7 @@ pub async fn serve_router_with_limits(
     .await
     .map_err(|e| HostError::Serve(e.to_string()))?;
   let timeout = host.config.shutdown_timeout;
+  let app = host.config.load_shed.install(app);
   let drain = host.drain;
   let readiness = host.readiness;
 
@@ -215,7 +217,8 @@ pub struct ServerHandle {
 }
 
 impl ServerHandle {
-  /// Binds `config`'s address and serves `app` on a tokio task (call inside a tokio runtime).
+  /// Binds `config`'s address and serves `app` on a tokio task (call inside a tokio runtime),
+  /// behind the load shedding of [`HostConfig::load_shed`].
   ///
   /// # Errors
   ///
@@ -257,6 +260,7 @@ impl ServerHandle {
     let local_addr = listener
       .local_addr()
       .map_err(|e| HostError::Serve(e.to_string()))?;
+    let app = config.load_shed.install(app);
     let stop = Arc::new(Notify::new());
     let signal = Arc::clone(&stop);
     let task = tokio::spawn(serve_listener(listener, app, limits, async move {
@@ -304,7 +308,8 @@ impl ServerHandle {
 }
 
 /// The HTTP server as a scoped layer (Effect.ts `Layer.scoped`): acquiring it binds the
-/// [`HostConfig`] address and starts serving `app`; releasing it (when the owning scope closes:
+/// [`HostConfig`] address and starts serving `app` (behind [`HostConfig::load_shed`]: past the
+/// in-flight cap a request is answered `503` at once); releasing it (when the owning scope closes:
 /// after a [`provide_layer`](Effect::provide_layer)ed effect, or when a [`serve`] is interrupted)
 /// shuts the server down gracefully within [`HostConfig::shutdown_timeout`].
 pub fn server_layer(
@@ -448,6 +453,7 @@ mod tests {
       bind_host: "127.0.0.1".into(),
       bind_port: 9090,
       shutdown_timeout: Duration::from_secs(1),
+      ..HostConfig::default()
     };
     let addr = socket_addr(&cfg).unwrap();
     assert_eq!(addr.port(), 9090);
@@ -463,6 +469,7 @@ mod tests {
       bind_host: "127.0.0.1".into(),
       bind_port: port,
       shutdown_timeout: Duration::from_secs(5),
+      ..HostConfig::default()
     }])
   }
 

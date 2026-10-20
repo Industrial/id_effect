@@ -9,6 +9,7 @@ Input that does not decode never reaches it. The client gets an RFC 9457 *proble
 | Need | API |
 |---|---|
 | Declare a route | `Route::get(path)` / `post` / `put` / `patch` / `delete`, then `.path::<P>()`, `.query::<Q>()`, `.headers::<H>()`, `.body::<B>()` or `.form::<B>()`, `.response::<R>(status)` |
+| Decide who may call it | `.public()` or `.guard(g)` (any `RouteGuard`, e.g. `id_effect_authz::Guard`); `Router::route` does not compile without one |
 | Handle it | `.handler(f)` with `f: Fn(&mut S, Input<P, Q, H, B>) -> Effect<A, E, S>` |
 | Collect routes | `route::Router`: `.route(endpoint)`, `.merge(..)`, `.with_state(..)`, `.into_axum()` |
 | List routes | `router.routes()`, `router.registry()`: one `RouteInfo` per route |
@@ -68,6 +69,7 @@ fn show(_: &mut (), input: Input<AccountId>) -> Effect<String, Infallible, ()> {
 
 let router = Router::new().route(
   Route::get("/accounts/{id}")
+    .public()
     .path::<AccountId>()
     .response::<Account>(StatusCode::OK)
     .handler(show),
@@ -79,6 +81,23 @@ let app: axum::Router = router.into_axum();
 The path template uses axum's syntax (`{id}`), which is also OpenAPI's. `.handler(..)` returns an
 `Endpoint`, and `Router::route` mounts it and records what it declares. `into_axum()` gives back
 a plain `axum::Router`. You can add layers to it, merge it with other routers or serve it.
+
+### Every route declares its access
+
+Routes are closed by default (ADR 0013 R1). Before `Router::route` accepts an endpoint, the route
+says who may call it:
+
+- `.public()`: anyone, anonymous callers included. `Router::access_report()` lists these routes,
+  and `into_axum()` logs the report at startup.
+- `.guard(g)`: a `RouteGuard` (such as `id_effect_authz::Guard`, see
+  [Authorization](ch30-02-authorization.md)) decides before the handler runs. You can add more
+  than one; the policy names go into `RouteInfo::policies` and the OpenAPI document.
+
+Forget both and the route does not compile ("the route has no access decision"). `into_axum()` also
+installs a deny-by-default layer: a plain axum route merged with `Router::merge_axum` declares no
+access, so it answers **404** Problem Details. The deprecated `Router::route_unchecked` keeps the
+0.10 behaviour for one minor version and records itself in the posture registry. See
+`docs/MIGRATION-0.11.md`, "H8 routing".
 
 ## Schemas per part
 
@@ -202,6 +221,7 @@ fn create(
 }
 
 let route = Route::post("/orgs/{org}/accounts")
+  .public()
   .path::<OrgSlug>()
   .query::<ListAccounts>()
   .headers::<TenantHeaders>()
@@ -292,7 +312,7 @@ fn create(
 }
 
 let app: axum::Router = Router::new()
-  .route(Route::post("/accounts").body::<Email>().handler(create))
+  .route(Route::post("/accounts").public().body::<Email>().handler(create))
   .with_state(Store::default())
   .into_axum();
 
@@ -380,7 +400,13 @@ fn deposit(
 }
 
 let app: axum::Router = Router::new()
-  .route(Route::post("/deposits").query::<Paging>().body::<Deposit>().handler(deposit))
+  .route(
+    Route::post("/deposits")
+      .public()
+      .query::<Paging>()
+      .body::<Deposit>()
+      .handler(deposit),
+  )
   .into_axum();
 
 # tokio::runtime::Runtime::new().unwrap().block_on(async {
@@ -543,9 +569,10 @@ fn listing(registry: &RouteRegistry) -> Value {
 }
 
 let router = Router::new()
-  .route(Route::get("/accounts").handler(ok))
+  .route(Route::get("/accounts").public().handler(ok))
   .route(
     Route::get("/accounts/{id}")
+      .public()
       .path::<AccountId>()
       .response::<AccountId>(StatusCode::OK)
       .handler(ok),
@@ -568,11 +595,10 @@ by `into_axum` / `into_parts`, are served but are not in the registry.
 ## Migrating from `decode_json_schema`
 
 `id_effect_axum::json::decode_json_schema` (0.8) stopped at the first schema error and answered
-`{"path": "a.b", "message": ".."}` as `application/json`. It is deprecated in 0.9 and will be
-removed in a later release. The 0.8 code:
+`{"path": "a.b", "message": ".."}` as `application/json`. It was deprecated in 0.9 and removed
+in 0.11. The 0.8 code (no longer compiles):
 
-```rust
-# #![allow(deprecated)]
+```rust,ignore
 use axum::body::Bytes;
 use axum::response::{IntoResponse, Response};
 use id_effect::schema::{self, Schema};
@@ -588,7 +614,6 @@ async fn create(body: Bytes) -> Response {
     Err(e) => e.into_response(),
   }
 }
-# let _ = axum::Router::<()>::new().route("/people", axum::routing::post(create));
 ```
 
 There are three replacements, from the smallest change to the most complete:
@@ -635,7 +660,7 @@ fn create_v3(_: &mut (), input: Input<(), (), (), (String, i64)>) -> Effect<Stri
 }
 
 let app: axum::Router = Router::new()
-  .route(Route::post("/v3/people").body::<Person>().handler(create_v3))
+  .route(Route::post("/v3/people").public().body::<Person>().handler(create_v3))
   .into_axum()
   .route("/v1/people", axum::routing::post(create_v1))
   .route("/v2/people", axum::routing::post(create_v2));

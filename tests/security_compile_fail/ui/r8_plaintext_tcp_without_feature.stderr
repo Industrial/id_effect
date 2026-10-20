@@ -1,0 +1,16 @@
+error[E0599]: no associated function or constant named `dangerous_plaintext` found for struct `TcpTransport` in the current scope
+ --> ui/r8_plaintext_tcp_without_feature.rs:6:25
+  |
+6 |   let _ = TcpTransport::dangerous_plaintext();
+  |                         ^^^^^^^^^^^^^^^^^^^ associated function or constant not found in `TcpTransport`
+  |
+note: if you're trying to build a new `TcpTransport` consider using one of the following associated functions:
+      TcpTransport::tls
+      TcpTransport::try_tls
+ --> $WORKSPACE/crates/id_effect_node/src/transport/tcp.rs
+  |
+  |   pub fn tls(config: TlsTcpConfig) -> Self {
+  |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+  |   pub fn try_tls(config: TlsTcpConfig) -> Result<Self, TlsTcpConfigError> {
+  |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -6,7 +6,7 @@ use id_effect_mail::{
   Address, Attachment, InlinePart, MailError, Mailbox, MailerEnv, Message, SendGridConfig,
   SendGridMailer, Sent, deliver,
 };
-use id_effect_platform::http::ReqwestHttpClientProvider;
+use id_effect_platform::http::{HttpClientConfig, ReqwestHttpClientProvider};
 use id_effect_tokio::TokioRuntime;
 use serde_json::json;
 use wiremock::matchers::{body_partial_json, header, method, path};
@@ -35,11 +35,17 @@ fn message() -> Message {
     .unwrap()
 }
 
+/// The default client config, the local fake on 127.0.0.1 exempt from the SSRF guard.
+fn local() -> HttpClientConfig {
+  HttpClientConfig::default().allow_hosts(["127.0.0.1"])
+}
+
 /// Sends `message()` through the reqwest-backed client (default timeouts and retry policy).
 fn send(server: &MockServer) -> Effect<Sent, MailError> {
   let config = SendGridConfig::new(KEY).base_url(server.uri());
-  deliver::<MailerEnv, _>(message())
-    .provide_layer(ReqwestHttpClientProvider::layer().provide_to(SendGridMailer::layer(config)))
+  deliver::<MailerEnv, _>(message()).provide_layer(
+    ReqwestHttpClientProvider::layer_with(local()).provide_to(SendGridMailer::layer(config)),
+  )
 }
 
 async fn run<A: Send + 'static>(eff: Effect<A, MailError>) -> Result<A, MailError> {
@@ -152,7 +158,43 @@ async fn rate_limiting_is_temporary() {
 #[tokio::test]
 async fn an_unreachable_api_is_a_transport_error() {
   let config = SendGridConfig::new(KEY).base_url("http://127.0.0.1:1");
-  let program = deliver::<MailerEnv, _>(message())
-    .provide_layer(ReqwestHttpClientProvider::layer().provide_to(SendGridMailer::layer(config)));
+  let program = deliver::<MailerEnv, _>(message()).provide_layer(
+    ReqwestHttpClientProvider::layer_with(local()).provide_to(SendGridMailer::layer(config)),
+  );
   assert!(matches!(run(program).await, Err(MailError::Transport(_))));
+}
+
+#[tokio::test]
+async fn an_api_host_the_ssrf_guard_blocks_is_a_config_error() {
+  // A link-local address (cloud metadata) is refused before any connection is made.
+  let config = SendGridConfig::new(KEY).base_url("http://169.254.169.254");
+  let program = deliver::<MailerEnv, _>(message()).provide_layer(
+    ReqwestHttpClientProvider::layer_with(local()).provide_to(SendGridMailer::layer(config)),
+  );
+  let result = run(program).await;
+  assert!(matches!(result, Err(MailError::Config(_))), "{result:?}");
+}
+
+#[tokio::test]
+async fn a_long_plain_error_body_is_cut_on_a_char_boundary() {
+  let server = MockServer::start().await;
+  // 1 + 2 * 400 bytes: byte 512 falls inside a two-byte `é`.
+  let body = format!("x{}", "é".repeat(400));
+  Mock::given(method("POST"))
+    .respond_with(ResponseTemplate::new(400).set_body_string(body))
+    .mount(&server)
+    .await;
+  let config = SendGridConfig::new(KEY)
+    .base_url(server.uri())
+    .timeout(std::time::Duration::from_secs(10));
+  let program = deliver::<MailerEnv, _>(message()).provide_layer(
+    ReqwestHttpClientProvider::layer_with(local()).provide_to(SendGridMailer::layer(config)),
+  );
+  match run(program).await {
+    Err(MailError::Rejected { code: 400, message }) => {
+      assert_eq!(message.len(), 511, "{message}");
+      assert!(message.starts_with("xé"));
+    }
+    other => panic!("expected a 400 rejection, got {other:?}"),
+  }
 }

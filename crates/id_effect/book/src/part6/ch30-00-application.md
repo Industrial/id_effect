@@ -71,7 +71,7 @@ let app = Router::new()
 
 [`SecurityLayer::recommended(key)`](https://docs.rs/id_effect_axum/latest/id_effect_axum/server/security/struct.SecurityLayer.html) bundles:
 
-- **CSRF** — each client session gets a random 32-byte token in a signed `__Host-csrf` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`). Every request that is not `GET`/`HEAD`/`OPTIONS`/`TRACE` must echo it in `X-CSRF-Token` or a `csrf_token` form field. The two are compared in constant time. A cookie the server did not sign never matches. This is a synchronizer token kept in a signed cookie, not a double-submit check. Handlers read the token with the `CsrfToken` extractor. Opt out per path prefix with `csrf_exempt(prefix)` or entirely with `without_csrf()`.
+- **CSRF** — each client session gets a random 32-byte token in a signed `__Host-csrf` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`). Every request that is not `GET`/`HEAD`/`OPTIONS`/`TRACE` must echo it in `X-CSRF-Token` or a `csrf_token` form field. The two are compared in constant time. A cookie the server did not sign never matches. This is a synchronizer token kept in a signed cookie, not a double-submit check. Handlers read the token with the `CsrfToken` extractor. Opt out per path prefix with `csrf_exempt(prefix)` or entirely with `dangerous_without_csrf()`, which records the opt-out for the prod posture check; `csrf_enabled()` tells whether the layer checks tokens.
 - **CSP** — `ContentSecurityPolicy::recommended()` (`default-src 'self'`, scripts from `'self'` or with this request's nonce, `object-src 'none'`, `frame-ancestors 'none'`, ...). The nonce is fresh per request and available through the `CspNonce` extractor. `script_hash(content)` allows one exact inline script. Replace the policy with `.csp(policy)?` (validated, typed error) or drop it with `without_csp()`.
 - **Security headers** — HSTS, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`. Each is set only when the handler did not set it, so a handler can override any of them.
 - **Cookies** — the `Cookies` extractor applies `CookieDefaults` (`HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`) to cookies a handler adds, and offers signed and private (encrypted) jars.
@@ -80,7 +80,7 @@ The `CookieKey` that signs and encrypts cookies is a capability. `CookieKey::lay
 
 `CorsConfig` builds a `tower_http` CORS layer. Allowing credentials with a wildcard origin is a build error, not a runtime panic.
 
-The 0.7 `CsrfConfig`, `csrf_middleware`, `csp_middleware` and `set_csrf_header` still compile in 0.8. They are deprecated and will be removed in 0.9. The static token compare now runs in constant time.
+`CsrfConfig` tunes the CSRF check of the layer (`SecurityLayer::csrf_config`: `form_limit`, `read_timeout`). The 0.7 static-token API (`CsrfConfig::new(token)`, `csrf_middleware`, `csp_middleware` and `set_csrf_header`) is deprecated since 0.8 and still compiles; its token compare runs in constant time.
 
 ## See also
 

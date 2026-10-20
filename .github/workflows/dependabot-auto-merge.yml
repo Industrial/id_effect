@@ -1,35 +1,35 @@
-# Enables squash auto-merge for Dependabot PRs after required checks pass.
-# Requires: Settings → General → Allow auto-merge; branch protection + required checks;
-# Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests"
-# (or optional repo secret PR_APPROVE_TOKEN: fine-grained PAT with PR write, if org forbids the above).
+# Enables squash auto-merge for Dependabot patch and minor updates (0.11.0.md S2). It never
+# approves: GitHub merges the PR only once branch protection on the base branch is satisfied, i.e.
+# the required `CI Pass` check is green and a code owner (.github/CODEOWNERS) has approved it.
+# Major updates are left for a person to merge.
+# Requires: Settings → General → Allow auto-merge; branch protection on main with the required
+# status check `CI Pass` and "Require review from Code Owners" (0.11.0.md D15). Without required
+# checks or reviews GitHub refuses to enable auto-merge, so nothing merges unreviewed.
 name: dependabot-auto-merge
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-permissions:
-  contents: write
-  pull-requests: write
+# Least privilege (S2): nothing by default; the job below gets only what `gh pr merge --auto` needs.
+permissions: {}
 concurrency:
   group: dependabot-auto-merge-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 jobs:
   dependabot:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    # Dependabot opened the PR and pushed this revision (a person's push to its branch skips it).
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         with:
           github-token: ${{ github.token }}
-          skip-commit-verification: true
-      - name: Approve PR
-        run: gh pr review --approve "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          # Optional PR_APPROVE_TOKEN if the repo/org blocks GITHUB_TOKEN from approving (see workflow header).
-          GH_TOKEN: ${{ secrets.PR_APPROVE_TOKEN != '' && secrets.PR_APPROVE_TOKEN || github.token }}
-      - name: Enable auto-merge (squash)
+      - name: Enable auto-merge (squash) for patch and minor updates
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

@@ -1,0 +1,21 @@
+error[E0277]: capability `RawSqlCapability` is not in this effect's environment
+ --> ui/m16_query_raw_without_capability.rs:8:23
+  |
+8 |   let _ = query_raw::<SqlClientEnv, _, _>(raw, vec![]);
+  |                       ^^^^^^^^^^^^ `RawSqlCapability` is required here
+  |
+  = help: the trait `Selector<RawSqlCapability, There<_>>` is not implemented for `HCons<SqlClientService, HNil>`
+  = note: add `RawSqlCapability` to the effect's `caps!(..)`, or remove it with `.provide(..)` / `.provide_env(..)` before running
+help: the trait `Selector<T, Here>` is implemented for `HCons<T, Tl>`
+ --> $WORKSPACE/crates/id_effect/src/capability/hlist.rs
+  |
+  | impl<T, Tl> Selector<T, Here> for HCons<T, Tl> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `query_raw`
+ --> $WORKSPACE/crates/id_effect_sql/src/raw.rs
+  |
+  | pub fn query_raw<R, I, J>(sql: RawSql, params: Vec<SqlValue>) -> Effect<Vec<SqlRow>, SqlError, R>
+  |        --------- required by a bound in this function
+  | where
+  |   R: Selector<SqlClientService, I> + Selector<RawSqlCapability, J> + HList,
+  |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `query_raw`

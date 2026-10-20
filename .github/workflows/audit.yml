@@ -16,14 +16,17 @@ on:
     # Run every day at 06:00 UTC
     - cron: "0 6 * * *"
   workflow_dispatch:
+# Least privilege (S2): the audit reads the repository (and its committed Cargo.lock) only.
+permissions:
+  contents: read
 jobs:
   audit:
     name: cargo audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install cargo-audit
-        uses: taiki-e/install-action@v2.87.27
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-audit
       - name: Run cargo audit

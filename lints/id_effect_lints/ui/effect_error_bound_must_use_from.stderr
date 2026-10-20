@@ -1,0 +1,17 @@
+warning: `E` parameter in Effect-returning function has no `E: From<_>` bound
+  --> $DIR/effect_error_bound_must_use_from.rs:7:1
+   |
+LL | / fn no_from<A, E>() -> Effect<A, E, ()>
+LL | | where
+LL | |   A: Send,
+LL | |   E: Send,
+LL | | {
+LL | |   Effect(PhantomData)
+LL | | }
+   | |_^
+   |
+   = help: add `E: From<SpecificError> + 'static` to the `where` clause for each service used
+   = note: `#[warn(effect_error_bound_must_use_from)]` on by default
+
+warning: 1 warning emitted
+

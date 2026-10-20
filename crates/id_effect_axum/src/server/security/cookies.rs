@@ -1,6 +1,7 @@
 //! Cookie defaults (`HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`) and signed/private jars
 //! ([`cookie`] 0.18), keyed by a [`CookieKey`] provided as an effect [`Layer`].
 
+use std::borrow::Cow;
 use std::convert::Infallible;
 use std::fmt;
 
@@ -107,7 +108,8 @@ pub struct CookieDefaults {
   http_only: bool,
   secure: bool,
   same_site: SameSite,
-  path: String,
+  /// Borrowed for the recommended `/`, so the per-request copy the layer installs allocates nothing.
+  path: Cow<'static, str>,
 }
 
 impl Default for CookieDefaults {
@@ -123,7 +125,7 @@ impl CookieDefaults {
       http_only: true,
       secure: true,
       same_site: SameSite::Lax,
-      path: "/".into(),
+      path: Cow::Borrowed("/"),
     }
   }
 
@@ -147,7 +149,7 @@ impl CookieDefaults {
 
   /// Default `Path` attribute.
   pub fn path(mut self, path: impl Into<String>) -> Self {
-    self.path = path.into();
+    self.path = Cow::Owned(path.into());
     self
   }
 

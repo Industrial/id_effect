@@ -5,7 +5,14 @@
 
 use id_effect::Effect;
 use id_effect::{Cause, Exit};
+use id_effect_platform::http::HttpClientConfig;
 use id_effect_tokio::TokioRuntime;
+
+/// The default client config with the local test servers (wiremock, raw listeners on
+/// 127.0.0.1) exempt from the SSRF guard.
+pub fn local_config() -> HttpClientConfig {
+  HttpClientConfig::default().allow_hosts(["127.0.0.1"])
+}
 
 /// Runs `eff` on the current tokio runtime; a typed failure is `Err`, a defect or interrupt panics.
 pub async fn run<A, E>(eff: Effect<A, E>) -> Result<A, E>

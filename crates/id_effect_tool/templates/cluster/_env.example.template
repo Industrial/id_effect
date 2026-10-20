@@ -1,5 +1,14 @@
 # Copy to .env and adjust.
 # This node's name (`name@host`); peers address its processes by it.
 NODE_NAME=a@localhost
+# The profile: dev (the default), test or prod. prod refuses to start without the mesh
+# certificates below or on a failed security posture probe.
+ID_EFFECT_PROFILE=dev
+# The mesh's mutual-TLS material (PEM files): the cluster CA bundle, this node's chain (leaf
+# first, valid for the TLS name `cluster`) and its key. Unset in dev and test: throwaway dev
+# certificates in the system temp dir.
+# MESH_CA_PEM=/etc/{{name}}/ca.pem
+# MESH_CERT_PEM=/etc/{{name}}/node.pem
+# MESH_KEY_PEM=/etc/{{name}}/node.key
 # `run_main` installs tracing; RUST_LOG filters it.
 RUST_LOG=info

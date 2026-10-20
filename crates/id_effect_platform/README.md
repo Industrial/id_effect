@@ -54,7 +54,7 @@ let exit = TokioRuntime::current()?.run(program.provide_layer(platform)).await;
 |--------|-------------|
 | [`error`](src/error.rs) | `HttpError`, `FsError`, `ProcessError`, `PlatformError` |
 | [`http`](src/http/mod.rs) | `HttpClient`, `ReqwestHttpClient`, `HttpBody`, `execute`, `execute_stream`; layers `ReqwestHttpClientProvider::layer` / `provide_reqwest_http_client`, `provide_http_client` |
-| [`http::reqwest`](src/http/reqwest.rs) | `send`, `text`, `json`, `json_schema`, `send_pooled`; layers `ReqwestClientLive::layer`, `provide_reqwest_client`, `provide_reqwest_pool` |
+| [`http::reqwest`](src/http/reqwest.rs) | `send`, `text`, `json`, `json_schema`, `send_pooled`; layers `ReqwestClientLive::layer` / `layer_with`, `provide_reqwest_pool` / `provide_reqwest_pool_with`, `dangerous_provide_reqwest_client` |
 | [`fs`](src/fs.rs) | `FileSystem`, `LiveFileSystem`, `TestFileSystem`, `read`, `exists`; layers `LiveFileSystemProvider::layer`, `provide_file_system` |
 | [`command`](src/command.rs) (was `process`) | `ProcessRuntime`, `TokioProcessRuntime`, `spawn`, `spawn_wait`, `child_wait`, `child_kill`; layers `TokioProcessRuntimeProvider::layer`, `provide_process_runtime` |
 | [`uri`](src/uri.rs) | `http::Uri` parse / build helpers |

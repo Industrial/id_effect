@@ -200,7 +200,12 @@ mod typed {
   }
 
   pub fn router() -> Router {
-    Router::new().route(Route::get("/twice/{n}").path::<Small>().handler(twice))
+    Router::new().route(
+      Route::get("/twice/{n}")
+        .public()
+        .path::<Small>()
+        .handler(twice),
+    )
   }
 }
 

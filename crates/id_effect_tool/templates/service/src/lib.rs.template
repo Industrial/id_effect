@@ -10,6 +10,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
+use axum::http::request::Parts;
+use axum::http::{Method, StatusCode, header};
+use axum::response::IntoResponse;
 use id_effect::schema::{self, HasSchema, Schema};
 {{#if !otel}}
 use id_effect::{Counter, Effect, succeed};
@@ -17,15 +20,18 @@ use id_effect::{Counter, Effect, succeed};
 {{#if otel}}
 use id_effect::{Counter, Effect, SpanHook, succeed};
 {{/if}}
-use id_effect_kit::axum::metrics::{http_metrics_layer, metrics_router};
+use id_effect_kit::axum::metrics::{guarded_metrics_router, http_metrics_layer};
 use id_effect_kit::axum::middleware::{
     BodyLimitLayer, CompressionLayer, RequestIdLayer, TimeoutLayer,
 };
-use id_effect_kit::axum::route::{self, Input, Route};
+use id_effect_kit::axum::route::{
+    self, AccessLayer, GuardFuture, Input, Route, RouteAccess, RouteGuard, RouteInfo,
+};
 use id_effect_kit::axum::server::security::{CookieKey, SecurityLayer};
 use id_effect_kit::axum::{
-    HealthRegistry, Host, HostError, routing, serve_router, track_in_flight,
+    HealthRegistry, Host, HostError, Problem, serve_router, track_in_flight,
 };
+use id_effect_kit::posture::{Posture, Surface};
 
 {{#if console}}
 pub mod console;
@@ -60,7 +66,7 @@ impl Default for AppState {
 }
 
 /// `GET /`: counts the greeting (`greetings_total` on `/metrics`) and answers it.
-fn index(state: &mut AppState) -> Effect<String, Infallible, AppState> {
+fn index(state: &mut AppState, _: Input) -> Effect<String, Infallible, AppState> {
     let greeting = format!("hello from {}", env!("CARGO_PKG_NAME"));
     state.greetings.increment().map(move |()| greeting)
 }
@@ -91,12 +97,106 @@ pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// The largest request body accepted; a larger one is answered `413`.
 pub const BODY_LIMIT: usize = 2 * 1024 * 1024;
 
+/// The variable holding the bearer token `/metrics` requires; unset or empty, every scrape is
+/// answered `401`.
+pub const METRICS_TOKEN_ENV: &str = "METRICS_TOKEN";
+
+/// The guard of `/metrics`: a scrape sends `Authorization: Bearer <token>` (Prometheus:
+/// `authorization: { credentials: <token> }`). The metrics name every route and show the
+/// traffic, so they are not served to anyone who asks.
+#[derive(Clone)]
+pub struct MetricsToken(Option<Vec<u8>>);
+
+impl MetricsToken {
+    /// Admits scrapes carrying `token`; an empty token admits none.
+    pub fn new(token: impl Into<String>) -> Self {
+        let token = token.into().trim().to_owned();
+        Self((!token.is_empty()).then(|| token.into_bytes()))
+    }
+
+    /// The token in [`METRICS_TOKEN_ENV`]; without one, every scrape is refused.
+    pub fn from_env() -> Self {
+        Self::new(std::env::var(METRICS_TOKEN_ENV).unwrap_or_default())
+    }
+
+    fn admits(&self, parts: &Parts) -> bool {
+        let Some(token) = &self.0 else {
+            return false;
+        };
+        let sent = parts
+            .headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.as_bytes().strip_prefix(b"Bearer "))
+            .unwrap_or_default();
+        // Compares every byte, so the time taken does not reveal how much of the token matched.
+        sent.len() == token.len()
+            && sent.iter().zip(token).fold(0, |acc, (a, b)| acc | (a ^ b)) == 0
+    }
+}
+
+impl RouteGuard for MetricsToken {
+    fn policy(&self) -> &str {
+        "metrics"
+    }
+
+    fn check<'a>(&'a self, parts: &'a Parts) -> GuardFuture<'a> {
+        let admitted = self.admits(parts);
+        Box::pin(async move {
+            if admitted {
+                Ok(())
+            } else {
+                Err(Problem::new(StatusCode::UNAUTHORIZED).into_response())
+            }
+        })
+    }
+}
+
+/// The plain Axum routes [`app`] merges next to its typed routes, with the access each one
+/// declares: `/metrics` behind [`MetricsToken`], `/health` and `/ready` public. The
+/// deny-by-default layer serves these and the typed routes, and answers `404` for any other.
+pub fn plain_routes() -> [RouteInfo; 3] {
+    let declare = |path: &str, access: RouteAccess| {
+        let mut info = RouteInfo::new(Method::GET, path);
+        info.access = access;
+        info
+    };
+    let mut metrics = declare("/metrics", RouteAccess::Guarded);
+    metrics.policies.push("metrics".to_owned());
+    [
+        metrics,
+        declare("/health", RouteAccess::Public),
+        declare("/ready", RouteAccess::Public),
+    ]
+}
+
+/// What [`app`] states about itself for the startup posture check (ADR 0013 R10): CSRF on
+/// ([`SecurityLayer::recommended`]), no `/docs`, no mesh,
+{{#if console}}
+/// the console behind its operator guard (`src/console.rs`).
+{{/if}}
+{{#if !console}}
+/// no console.
+{{/if}}
+/// `main.rs` passes the profile, its accepted risks and the server's in-flight cap, then
+/// refuses to start the `prod` profile on a failed probe.
+pub fn posture(posture: Posture) -> Posture {
+    let posture = posture.csrf(true).docs(Surface::Absent).no_mesh();
+{{#if console}}
+    posture.console(Surface::Guarded)
+{{/if}}
+{{#if !console}}
+    posture.console(Surface::Absent)
+{{/if}}
+}
+
 /// The application: `/` and `/hello/{name}`, plus `/health` and `/ready` (running the checks in
-/// `health`) and `/metrics`. Every request gets an `x-request-id` (and a span), passes through
-/// [`SecurityLayer::recommended`] (CSRF protection, a nonce-based CSP, security headers,
-/// cookies signed with `cookie_key`), is counted by [`http_metrics_layer`] and limited by
-/// [`REQUEST_TIMEOUT`] and [`BODY_LIMIT`]; responses are compressed when the client accepts it.
-/// Rejections are Problem+JSON.
+/// `health`) and `/metrics` behind [`MetricsToken::from_env`]. Deny by default: a route that is
+/// neither typed nor in [`plain_routes`] answers `404`. Every request gets an
+/// `x-request-id` (and a span), is counted by [`http_metrics_layer`] and limited by
+/// [`REQUEST_TIMEOUT`] and [`BODY_LIMIT`], then passes through [`SecurityLayer::recommended`]
+/// (CSRF protection, a nonce-based CSP, security headers, cookies signed with `cookie_key`), so
+/// the CSRF check reads a form body within both limits; responses are compressed when the client
+/// accepts it. Rejections are Problem+JSON.
 {{#if !otel}}
 pub fn app(health: &HealthRegistry, cookie_key: CookieKey) -> Router {
 {{/if}}
@@ -122,19 +222,30 @@ fn with_request_ids(
     request_ids: RequestIdLayer,
 ) -> Router {
 {{/if}}
-    // Typed routes are registered (method, path, schemas) for OpenAPI and route listings.
-    let typed =
-        route::Router::new().route(Route::get("/hello/{name}").path::<Name>().handler(hello));
+    // Typed routes are registered (method, path, access, schemas) for OpenAPI and route
+    // listings. Each declares who may call it: `.public()` here, `.guard(..)` for the rest.
+    let typed = route::Router::new()
+        .route(Route::get("/").public().handler(index))
+        .route(
+            Route::get("/hello/{name}")
+                .public()
+                .path::<Name>()
+                .handler(hello),
+        );
+    // Serves the typed routes and `plain_routes()` only. A plain route merged without an entry
+    // there answers 404, so keep the `route_layer` after the last route.
+    let access = AccessLayer::new(typed.routes().chain(&plain_routes()));
     Router::new()
-        .route("/", routing::get(index))
         .merge(typed.into_axum())
-        .merge(metrics_router())
+        .merge(guarded_metrics_router(MetricsToken::from_env()))
         .with_state(AppState::default())
         .merge(health.routes())
+        .route_layer(access)
+        // Innermost first: the limits wrap the security layer, whose CSRF check reads forms.
+        .layer(SecurityLayer::recommended(cookie_key))
         .layer(BodyLimitLayer::new(BODY_LIMIT))
         .layer(TimeoutLayer::new(REQUEST_TIMEOUT))
         .layer(http_metrics_layer())
-        .layer(SecurityLayer::recommended(cookie_key))
         .layer(CompressionLayer::new())
 {{#if !otel}}
         .layer(RequestIdLayer::new())

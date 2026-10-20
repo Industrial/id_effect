@@ -1,5 +1,9 @@
 # Production. No secret lives in this file: the database password and the JWT signing secret
 # are read from Vault (KV v2) when the service starts, with the token in `VAULT_TOKEN`.
+#
+# The security posture check (ADR 0013 R10) refuses to start this profile on a failed probe, and
+# the Ledger accepts no risk: there is no `[security.accepted_risks]` table
+# (tests/posture.rs, `ledger_prod_posture_is_clean`).
 
 [http]
 host = "0.0.0.0"
@@ -19,6 +23,16 @@ secure_cookies = true
 transport = "sendgrid"
 verify_url = "https://ledger.example/verify"
 reset_url = "https://ledger.example/reset"
+
+[outbound]
+# The SSRF policy's allowlist names the one host outbound HTTP calls, the SendGrid v3 API (exempt
+# from the address-range check); every other host keeps the refusal of private, loopback and
+# link-local addresses.
+allow_hosts = ["api.sendgrid.com"]
+
+[console]
+# Off in prod, as in `base.toml`: the console is an operator surface (ADR 0013 R7).
+enabled = false
 
 [storage]
 # AWS S3 with the instance's credentials.

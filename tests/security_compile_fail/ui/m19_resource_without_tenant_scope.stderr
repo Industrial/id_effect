@@ -1,0 +1,30 @@
+error[E0277]: the trait bound `Report: TenantScope` is not satisfied
+ --> ui/m19_resource_without_tenant_scope.rs:8:40
+  |
+8 |   let _ = Policies::builder().define::<Report>("report.view", require_role("auditor"));
+  |                               ------   ^^^^^^ unsatisfied trait bound
+  |                               |
+  |                               required by a bound introduced by this call
+  |
+help: the trait `Tenanted` is not implemented for `Report`
+ --> ui/m19_resource_without_tenant_scope.rs:5:1
+  |
+5 | struct Report;
+  | ^^^^^^^^^^^^^
+help: the following other types implement trait `TenantScope`
+ --> $WORKSPACE/crates/id_effect_authz/src/resource.rs
+  |
+  | impl TenantScope for () {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^ `()`
+  | impl TenantScope for str {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^ `str`
+  | impl TenantScope for String {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::string::String`
+  | impl TenantScope for Acl {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^ `Acl`
+  = note: required for `Report` to implement `TenantScope`
+note: required by a bound in `PoliciesBuilder::define`
+ --> $WORKSPACE/crates/id_effect_authz/src/registry.rs
+  |
+  |   pub fn define<Res: TenantScope + ?Sized + 'static>(
+  |                      ^^^^^^^^^^^ required by this bound in `PoliciesBuilder::define`

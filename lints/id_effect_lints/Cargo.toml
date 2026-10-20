@@ -1,0 +1,34 @@
+[package]
+name = "id_effect_lints"
+version = "0.11.0"
+description = "Dylint lints for idiomatic id_effect code: Effect signatures, services, fibers, time, raw SQL"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/Industrial/id_effect"
+documentation = "https://github.com/Industrial/id_effect/tree/main/lints/id_effect_lints"
+readme = "README.md"
+keywords = ["effect", "lint", "dylint", "clippy"]
+categories = ["development-tools"]
+# The UI tests, the demo crate and the ast-grep rules stay in the repository; the tarball is the
+# library.
+exclude = ["ui", "ui_test", "examples", "rules", "utils", "sgconfig.yml"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+dylint_linting = "6.2"
+
+[dev-dependencies]
+dylint_testing = "6.2"
+
+# Not a member of the main workspace: a Dylint library builds with its own pinned nightly
+# (rust-toolchain.toml) and the dylint-link linker (.cargo/config.toml).
+[workspace]
+
+[package.metadata.rust-analyzer]
+rustc_private = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "integration"

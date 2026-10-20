@@ -307,4 +307,4 @@ assert_eq!(test.recorded_queries(), [(OPEN.to_owned(), vec![SqlValue::Bool(false
 
 ## Coming from 0.8
 
-`SqlParam` (now `SqlValue::from(param)`), `SqlRow::new(cells)` (now `SqlRow::from_pairs`) and `SqlRow::text_cells()` still compile with a deprecation warning and are removed in 0.11; `row.cells` is gone. The full list of changes is in [`docs/MIGRATION-0.9.md`](https://github.com/Industrial/id_effect/blob/main/docs/MIGRATION-0.9.md) ("Data: SQL values and rows").
+`SqlParam` (now `SqlValue`; `SqlParam::Int` is `SqlValue::I64`), `SqlRow::new(cells)` (now `SqlRow::from_pairs`) and `SqlRow::text_cells()` (now `row.get::<T>(idx)`) were deprecated in 0.9 and removed in 0.11; `row.cells` is gone. The full list of changes is in [`docs/MIGRATION-0.9.md`](https://github.com/Industrial/id_effect/blob/main/docs/MIGRATION-0.9.md) ("Data: SQL values and rows").

@@ -130,7 +130,8 @@ pub use health::{
 };
 
 pub use middleware::{
-  BodyLimitLayer, CompressionLayer, RateLimitLayer, RequestId, RequestIdLayer, TimeoutLayer,
+  BodyLimitLayer, CompressionLayer, LoadShedLayer, RateLimitLayer, RequestId, RequestIdLayer,
+  TimeoutLayer,
 };
 pub use middleware::{CacheControl, HttpCacheLayer};
 pub use server::{

@@ -1,0 +1,19 @@
+warning: `std::thread::sleep` used in Effect code
+  --> $DIR/test_must_not_use_thread_sleep.rs:7:3
+   |
+LL |   std::thread::sleep(Duration::from_millis(1));
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: run the effect on a `TestExecutor` and `advance(d)` its virtual clock
+   = note: `#[warn(test_must_not_use_thread_sleep)]` on by default
+
+warning: `std::thread::sleep` used in Effect code
+  --> $DIR/test_must_not_use_thread_sleep.rs:14:5
+   |
+LL |     std::thread::sleep(std::time::Duration::from_millis(1));
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: run the effect on a `TestExecutor` and `advance(d)` its virtual clock
+
+warning: 2 warnings emitted
+
