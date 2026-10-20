@@ -15,7 +15,8 @@
 //   server-sent events (`GET {url}/{tag}`, server streams and subscriptions only).
 // - A dropped connection reconnects with exponential backoff and jitter; server streams and
 //   two-way streams resume from their last cursor (`resume` frame), subscriptions reopen after
-//   their last event cursor. Every server frame is validated before it is acted on.
+//   their last event cursor; the cursor is the last item the caller read, so items received
+//   but unread come again. Every server frame is validated before it is acted on.
 
 /** The JSON frame codec's WebSocket subprotocol. */
 export const JSON_SUBPROTOCOL = "idrpc.json.v1";
@@ -202,7 +203,9 @@ export interface RpcClientOptions {
 export interface RpcStream<O, E> extends AsyncIterable<O> {
   /** How the stream ended (rejects on a transport error or an abort). */
   readonly exit: Promise<RpcResult<null, E>>;
-  /** The cursor of the last item received (subscriptions: pass it as `cursor` to resume). */
+  /** The cursor of the last item the caller has taken from the iterator, never of an item
+   * received but not yet read (subscriptions: pass it as `cursor` to resume; nothing after it
+   * is skipped). */
   readonly cursor: string | undefined;
   /** Cancel the call. */
   cancel(): void;
@@ -216,16 +219,37 @@ export interface RpcDuplex<I, O, E> extends RpcStream<O, E> {
 
 type Settled = { exit: RpcExit<unknown, unknown> } | { error: unknown };
 
+/** One received item: its connection epoch and its cursor, if it carried one. */
+interface QueuedItem {
+  readonly value: unknown;
+  readonly epoch: number;
+  readonly cursor: string | undefined;
+}
+
 class ItemQueue {
-  private readonly items: { value: unknown; epoch: number }[] = [];
+  private items: QueuedItem[] = [];
   private waiter: (() => void) | undefined;
   private settled: Settled | undefined;
-  constructor(private readonly onTake: (epoch: number) => void) {}
+  constructor(private readonly onTake: (item: QueuedItem) => void) {}
 
-  push(value: unknown, epoch: number): void {
+  push(value: unknown, epoch: number, cursor?: string): void {
     if (this.settled) return;
-    this.items.push({ value, epoch });
+    this.items.push({ value, epoch, cursor });
     this.wake();
+  }
+
+  /** Take every received item the caller has not read (a resume from the last item read
+   * delivers them again). */
+  drain(): QueuedItem[] {
+    const items = this.items;
+    this.items = [];
+    return items;
+  }
+
+  /** Put back items `drain` took, ahead of anything received since. */
+  restore(items: readonly QueuedItem[]): void {
+    this.items.unshift(...items);
+    if (items.length > 0) this.wake();
   }
 
   settle(settled: Settled): void {
@@ -242,7 +266,7 @@ class ItemQueue {
     for (;;) {
       const item = this.items.shift();
       if (item) {
-        this.onTake(item.epoch);
+        this.onTake(item);
         return { value: item.value, done: false };
       }
       const settled = this.settled;
@@ -292,10 +316,14 @@ class Deferred<T> {
 class StreamHandle {
   readonly exit = new Deferred<RpcExit<unknown, unknown>>();
   readonly queue: ItemQueue;
+  /** The cursor of the last item the caller took (what every resume starts after). */
   cursor: string | undefined;
   cancelCall: () => void;
   constructor(onTake: (epoch: number) => void, cancelCall: () => void) {
-    this.queue = new ItemQueue(onTake);
+    this.queue = new ItemQueue((item) => {
+      if (item.cursor !== undefined) this.cursor = item.cursor;
+      onTake(item.epoch);
+    });
     this.cancelCall = cancelCall;
   }
 
@@ -937,6 +965,8 @@ class FrameConnection {
     const names = this.transport ? [this.transport] : this.candidates();
     let lastError: unknown = new RpcTransportError("no frame transport (WebTransport, WebSocket) is available");
     for (const name of names) {
+      // Items received but not yet read when a resume goes out: the server sends them again.
+      let unread: Map<FrameCall, QueuedItem[]> | undefined;
       try {
         const hello = this.nextHello();
         this.channel = await this.open(name);
@@ -947,13 +977,21 @@ class FrameConnection {
         const resumable = [...this.calls.values()].filter((c) => c.opened && (c.kind === "server_stream" || c.kind === "bidi"));
         if (resuming && this.session !== undefined && resumable.length > 0) {
           const answer = this.nextHello();
+          // Resume after the last item the caller read; what it has not read yet is dropped
+          // here (and delivered again), so nothing is skipped and nothing arrives twice.
+          const drained = new Map<FrameCall, QueuedItem[]>();
+          for (const c of resumable) drained.set(c, c.handle.queue.drain());
+          unread = drained;
           const calls = resumable.map((c) => ({ id: c.id, cursor: c.handle.cursor ?? SEQUENCE_ZERO }));
           this.write({ id: 0, kind: "resume", flags: 0, payload: { session: this.session, calls } });
           const second = await answer;
           const accepted = second.session === this.session;
           this.session = second.session;
+          unread = undefined;
           for (const call of resumable) {
             if (!accepted) {
+              // Refused: the caller still reads what it had received, then `ResumeExpired`.
+              call.handle.queue.restore(drained.get(call) ?? []);
               this.calls.delete(call.id);
               call.handle.finish({ _tag: "Failure", error: { _tag: "ResumeExpired" } });
               this.wakeSenders(call);
@@ -975,6 +1013,7 @@ class FrameConnection {
         }
         return;
       } catch (error) {
+        for (const [call, items] of unread ?? []) call.handle.queue.restore(items);
         const waiter = this.helloWaiter;
         this.helloWaiter = undefined;
         waiter?.reject(error);
@@ -1068,8 +1107,7 @@ class FrameConnection {
           this.violation();
           return;
         }
-        if (frame.cursor !== undefined) call.handle.cursor = frame.cursor;
-        call.handle.queue.push(frame.payload ?? null, this.epoch);
+        call.handle.queue.push(frame.payload ?? null, this.epoch, frame.cursor);
         return;
       case "credit": {
         const credits = frame.credits ?? 0;
@@ -1137,6 +1175,9 @@ class FrameConnection {
   }
 
   private openCall(call: FrameCall): void {
+    // A subscription (re)opens after the last event the caller read; events it received but
+    // has not read come again on the new call.
+    if (call.kind === "subscription") call.handle.queue.drain();
     const cursor = call.kind === "subscription" ? call.handle.cursor : undefined;
     call.unacked = 0;
     call.sendCredits = this.window;
@@ -1297,7 +1338,11 @@ function sseStream(conn: RpcConnection, kind: "server_stream" | "subscription", 
         headers.accept = "text/event-stream";
         headers["x-rpc"] = "1";
         headers["x-rpc-version"] = String(v);
-        if (kind === "subscription" && handle.cursor !== undefined) headers["last-event-id"] = handle.cursor;
+        if (kind === "subscription") {
+          // Reconnect after the last event the caller read; unread ones come again.
+          handle.queue.drain();
+          if (handle.cursor !== undefined) headers["last-event-id"] = handle.cursor;
+        }
         const response = await conn.fetch(url, {
           method: "GET",
           headers,
@@ -1370,11 +1415,8 @@ async function readEvents(response: Response, handle: StreamHandle): Promise<Rpc
       return bad("data is not JSON");
     }
     if (name === "item") {
-      if (cursor !== undefined) {
-        if (!isCursor(cursor)) return bad("malformed id");
-        handle.cursor = cursor;
-      }
-      handle.queue.push(value, 0);
+      if (cursor !== undefined && !isCursor(cursor)) return bad("malformed id");
+      handle.queue.push(value, 0, cursor);
       return undefined;
     }
     if (name === "exit") {

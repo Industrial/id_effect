@@ -296,6 +296,66 @@ fakeTest("a refused resume ends the stream with ResumeExpired", async () => {
 });
 
 fakeTest(
+	"a refused resume still delivers the items received but unread, then ResumeExpired",
+	async () => {
+		let n = 0;
+		const resumes: unknown[] = [];
+		const connection = new RpcConnection({
+			url: "http://127.0.0.1:1/rpc",
+			transports: ["websocket"],
+			reconnect: { initialDelayMs: 1 },
+			webSocket: () => {
+				n += 1;
+				return new FakeSocket(
+					(frame, s) => {
+						if (frame.kind === "call") {
+							s.receive({
+								id: frame.id,
+								kind: "item",
+								cursor: "c1.AgAAAAAAAAAB",
+								payload: 5,
+							});
+							s.receive({
+								id: frame.id,
+								kind: "item",
+								cursor: "c1.AgAAAAAAAAAC",
+								payload: 4,
+							});
+							s.close();
+						}
+						if (frame.kind === "resume") {
+							resumes.push(frame.payload);
+							s.hello("CCCCCCCCCCCCCCCCCCCCCC");
+						}
+					},
+					n === 1 ? SESSION : "CCCCCCCCCCCCCCCCCCCCCC",
+				);
+			},
+		});
+		const stream = new ShopV1Client(connection).countdown(5);
+		await stream.exit;
+		// Nothing was read: the resume asked for everything after sequence 0.
+		assertEquals(resumes, [
+			{ session: SESSION, calls: [{ id: 1, cursor: "c1.AgAAAAAAAAAA" }] },
+		]);
+		assertEquals(stream.cursor, undefined);
+		const seen: unknown[] = [];
+		const error = await assertRejects(
+			(async () => {
+				for await (const item of stream) seen.push(item);
+			})(),
+			(e) => e instanceof Error && e.name === "RpcFailureError",
+		);
+		assertEquals(seen, [5, 4]);
+		assertEquals((error as { error: unknown }).error, {
+			_tag: "ResumeExpired",
+		});
+		assertEquals(stream.cursor, "c1.AgAAAAAAAAAC");
+		connection.close();
+	},
+);
+
+fakeTest(
 	"no WebSocket and no SSE: streams fail; client streams need a frame transport",
 	async () => {
 		const connection = new RpcConnection({

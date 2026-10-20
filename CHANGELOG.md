@@ -297,6 +297,13 @@
 
 ### Changed
 
+- The generated TypeScript client resumes from the last item the caller read (r12-f-ts-cursor,
+  F58): `RpcStream.cursor` and every resume the runtime sends (the WebSocket and WebTransport
+  `resume`, SSE `Last-Event-ID`, the subscription's new `call`) are the cursor of the last item
+  taken from the iterator, no longer of the last item received. Items received but not read when
+  the connection drops are delivered again after the resume, once and in order; a refused resume
+  still yields them before `ResumeExpired`. Credits are unchanged (one per item read). The
+  checked-in Ledger and Relay clients are regenerated.
 - `id_effect_rpc::openapi` emits OpenAPI 3.1 from a `Contract` instead of 3.0 from route
   metadata: `OpenApiSpec`, `OpenApiInfo`, `RpcServiceDef`, `RpcMethodDef`, `RpcHttpMethod`,
   `emit_openapi_json` and `emit_openapi_yaml` are removed (see the migration guide).
