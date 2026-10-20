@@ -1349,7 +1349,10 @@ mod tests {
     assert!(acme.issue().await.is_err());
 
     let text = logs.text();
-    assert!(text.contains("setting mode 0600"));
+    // Tightening a loose key file is Unix permissions; Windows has no mode to log.
+    if cfg!(unix) {
+      assert!(text.contains("setting mode 0600"));
+    }
     assert!(text.contains("cached ACME certificate unusable"));
     assert!(text.contains("certificate installed"));
     assert!(text.contains("keeping the current certificate"));
