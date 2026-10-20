@@ -842,6 +842,7 @@ mod tests {
     (cert.pem(), Secret::new(key.serialize_pem()))
   }
 
+  #[cfg(unix)]
   fn mode(path: &Path) -> u32 {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(path).expect("meta").permissions().mode() & 0o777
@@ -1079,6 +1080,7 @@ mod tests {
     );
   }
 
+  #[cfg(unix)]
   #[test]
   fn acme_account_key_mode_0600() {
     let dir = tempfile::tempdir().expect("dir");
@@ -1146,6 +1148,8 @@ mod tests {
     assert_eq!(acme.stats().issued, 0);
   }
 
+  // Unix: the cached key is left group-readable (0640) to check it is tightened on load.
+  #[cfg(unix)]
   #[tokio::test]
   async fn a_cached_certificate_is_presented_and_not_renewed_early() {
     let dir = tempfile::tempdir().expect("dir");
@@ -1226,8 +1230,11 @@ mod tests {
     let (fingerprint, validity) = acme.install(chain.as_bytes(), &key).expect("install");
     assert_eq!(acme.identity().cert_sha256(), fingerprint);
     assert_eq!(acme.stats().not_after, Some(validity.not_after));
-    assert_eq!(mode(&dir.path().join("key.pem")), 0o600);
-    assert_eq!(mode(&dir.path().join("cert.pem")), 0o600);
+    #[cfg(unix)]
+    {
+      assert_eq!(mode(&dir.path().join("key.pem")), 0o600);
+      assert_eq!(mode(&dir.path().join("cert.pem")), 0o600);
+    }
     // A restart presents what was installed.
     let restarted = Acme::new(config(dir.path())).expect("acme");
     assert_eq!(restarted.identity().cert_sha256(), fingerprint);

@@ -165,15 +165,28 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   matrix:
     name: ${{ matrix.toolchain }} / ${{ matrix.os }}
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # main pushes, and a manual dispatch to check a branch before it reaches main.
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     needs: [moon-ci]
+    env:
+      # Full debuginfo for every --all-features test binary filled the ubuntu runner at 0.12.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     strategy:
       fail-fast: false
       matrix:
         toolchain: [stable, beta]
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
+      - name: Free runner disk (preinstalled SDKs the build never uses)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          df -h /
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Rust (${{ matrix.toolchain }})
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
@@ -183,11 +196,21 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.toolchain }}-${{ matrix.os }}
-      - name: cargo test (workspace)
-        # RUSTUP_TOOLCHAIN overrides rust-toolchain.toml: this job tests the matrix toolchain.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-nextest
+      # nextest runs each test in its own process, as every other job does: under plain
+      # `cargo test` tests share process-wide state (tracing callsite interest, the umask, env).
+      # RUSTUP_TOOLCHAIN overrides rust-toolchain.toml: this job tests the matrix toolchain.
+      - name: cargo nextest (workspace)
         env:
           RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
-        run: cargo test --workspace --all-features --locked
+        run: cargo nextest run --workspace --all-features --locked
+      - name: cargo test --doc (workspace)
+        env:
+          RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
+        run: cargo test --workspace --all-features --locked --doc
   # ──────────────────────────────────────────────────────────────────────────
   # MSRV: build the workspace on [workspace.package] rust-version (single source)
   # ──────────────────────────────────────────────────────────────────────────
