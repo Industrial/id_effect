@@ -147,8 +147,22 @@ async fn relay_browser_chat_round_trip() {
     let tab = browser.new_tab().unwrap();
     let url = page.url.clone();
     let tab = tokio::task::spawn_blocking(move || {
-      tab.navigate_to(&url).unwrap();
-      tab.wait_until_navigated().unwrap();
+      // Chromium aborts a load with ERR_NETWORK_CHANGED when the host's interfaces change
+      // (the CI runner starts containers beside this test); load again, a bounded number of times.
+      let mut attempt = 0;
+      loop {
+        attempt += 1;
+        match tab
+          .navigate_to(&url)
+          .and_then(|tab| tab.wait_until_navigated())
+        {
+          Ok(_) => break,
+          Err(e) if attempt < 3 && e.to_string().contains("ERR_NETWORK_CHANGED") => {
+            std::thread::sleep(Duration::from_millis(500));
+          }
+          Err(e) => panic!("navigating to {url}: {e}"),
+        }
+      }
       let joined = wait_for(&tab, "joined");
       assert_eq!(joined["state"], "joined", "{joined}");
       tab
