@@ -569,8 +569,10 @@ jobs:
           # - thiserror 1.0.20 (openidconnect 4, id_effect_auth) is too old for its error derives
           # - yoke 0.6 sits next to zerovec from url / idna's ICU crates (no Yokeable impls)
           # - crc < 3.3: crc-fast 1.6 (object_store, id_effect_storage) needs CRC_64_REDIS
+          # - ref-cast: fluent-uri 0.4.1 (jsonschema) needs `ref_cast_custom` / `RefCastCustom`
           for pin in crc32fast@1.1.0=1.4.2 semver@1.0.0=1.0.20 async-trait=0.1.89 \
-            serde_repr=0.1.20 thiserror@1.0.20=1.0.69 yoke@0.6.0=0.7.5 crc=3.3.0; do
+            serde_repr=0.1.20 thiserror@1.0.20=1.0.69 yoke@0.6.0=0.7.5 crc=3.3.0 \
+            ref-cast=1.0.27; do
             if cargo pkgid "${pin%%=*}" >/dev/null 2>&1; then
               cargo update -p "${pin%%=*}" --precise "${pin#*=}"
             else
