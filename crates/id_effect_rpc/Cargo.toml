@@ -54,7 +54,7 @@ webtransport = ["http3", "ws", "postcard", "id_effect_axum/webtransport"]
 test-util = []
 
 [dependencies]
-axum = { version = "0.8", features = ["json", "query"] }
+axum = { version = "0.8.9", features = ["json", "query"] }
 # Base64url (no padding) for cursors and resume session ids (`wire`); already in axum's tree.
 base64 = "0.22.1"
 # Streams: NDJSON bodies, the frame sinks of the WebSocket transport. Same pin as id_effect_axum.

@@ -60,7 +60,7 @@ id_effect_kit = { path = "../id_effect_kit" }
 x509-parser = "=0.18.1"
 # tests/rpc_gen_ts.rs: the test service the generated TypeScript client calls over HTTP,
 # WebSocket and SSE on loopback (path-only: cargo publish resolves path+version dev-deps).
-axum = "0.8"
+axum = "0.8.9"
 id_effect_axum = { path = "../id_effect_axum" }
 # `postcard` too: `ws` alone leaves an unused import in transport/ws.rs (reported to the
 # coordinator, not this leaf's file).

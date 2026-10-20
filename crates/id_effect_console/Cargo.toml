@@ -32,7 +32,7 @@ id_effect_jobs = { path = "../id_effect_jobs", version = "0.12.0", optional = tr
 id_effect_logger = { path = "../id_effect_logger", version = "0.12.0" }
 id_effect_node = { path = "../id_effect_node", version = "0.12.0" }
 id_effect_process = { path = "../id_effect_process", version = "0.12.0" }
-axum = "0.8"
+axum = "0.8.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing-subscriber = { version = "0.3", default-features = false, features = [

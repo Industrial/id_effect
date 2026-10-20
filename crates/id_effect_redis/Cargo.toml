@@ -57,7 +57,7 @@ id_effect_tokio = { path = "../id_effect_tokio" }
 # A Redis 8 container (JSON module included) for the integration tests; same version as
 # id_effect_config and id_effect_auth.
 testcontainers = { version = "0.28", default-features = false }
-axum = "0.8"
+axum = "0.8.9"
 tower = { version = "0.5.3", features = ["util"] }
 
 [[example]]
