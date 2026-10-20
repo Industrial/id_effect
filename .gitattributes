@@ -1,3 +1,5 @@
 # LF in every checkout, Windows included: golden files, templates and snapshots are compared
 # byte for byte, and core.autocrlf would turn them into CRLF.
 * text=auto eol=lf
+# Fuzz seeds are bytes (some hold CRLF on purpose: multipart bodies, SSE line ends).
+fuzz/corpus/** -text
