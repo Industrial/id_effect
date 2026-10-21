@@ -134,6 +134,7 @@ pub(crate) type Handoff = crate::server::webtransport::Handoff;
 pub(crate) type Handoff = std::convert::Infallible;
 
 /// The next hand-off, or never (no WebTransport on this connection).
+#[cfg(feature = "webtransport")]
 async fn next_handoff(handoffs: &mut Option<mpsc::Receiver<Handoff>>) -> Handoff {
   match handoffs {
     Some(rx) => match rx.recv().await {
@@ -142,6 +143,54 @@ async fn next_handoff(handoffs: &mut Option<mpsc::Receiver<Handoff>>) -> Handoff
     },
     None => std::future::pending().await,
   }
+}
+
+/// Never: without the feature no connection serves WebTransport.
+#[cfg(not(feature = "webtransport"))]
+async fn next_handoff(_: &mut Option<mpsc::Receiver<Handoff>>) -> Handoff {
+  std::future::pending().await
+}
+
+/// The h3 server builder of a connection: the header-section cap, and the WebTransport
+/// settings (extended CONNECT, datagrams, one session) when it serves WebTransport.
+fn h3_builder(webtransport: bool) -> ::h3::server::Builder {
+  let mut builder = ::h3::server::builder();
+  builder.max_field_section_size(MAX_FIELD_SECTION_SIZE);
+  #[cfg(feature = "webtransport")]
+  if webtransport {
+    builder
+      .enable_webtransport(true)
+      .enable_extended_connect(true)
+      .enable_datagram(true)
+      .max_webtransport_sessions(1);
+  }
+  #[cfg(not(feature = "webtransport"))]
+  let _ = webtransport;
+  builder
+}
+
+/// Where a request task hands a WebTransport CONNECT back to its connection (a channel of one
+/// when the connection serves WebTransport, nothing otherwise).
+type Handoffs = (
+  Option<mpsc::Sender<Handoff>>,
+  Option<mpsc::Receiver<Handoff>>,
+);
+
+/// [`Handoffs`] for a connection that serves WebTransport when `webtransport`.
+#[cfg(feature = "webtransport")]
+fn handoffs(webtransport: bool) -> Handoffs {
+  if webtransport {
+    let (tx, rx) = mpsc::channel::<Handoff>(1);
+    (Some(tx), Some(rx))
+  } else {
+    (None, None)
+  }
+}
+
+/// No hand-offs without the feature.
+#[cfg(not(feature = "webtransport"))]
+fn handoffs(_: bool) -> Handoffs {
+  (None, None)
 }
 
 /// The config key of [`Http3Options::config`]: the `h3` route's congestion control, `bbr`
@@ -423,26 +472,12 @@ impl ConnectionTask {
     // Released when the connection is done, whichever way.
     let _held = held;
     let peer = conn.remote_address();
-    let mut builder = ::h3::server::builder();
-    builder.max_field_section_size(MAX_FIELD_SECTION_SIZE);
-    if webtransport {
-      builder
-        .enable_webtransport(true)
-        .enable_extended_connect(true)
-        .enable_datagram(true)
-        .max_webtransport_sessions(1);
-    }
-    let built = builder
+    let built = h3_builder(webtransport)
       .build::<_, Bytes>(h3_quinn::Connection::new(conn.clone()))
       .await;
     // A request task whose CONNECT a WebTransport route accepted hands the stream back here:
     // the session takes the connection over (one per connection).
-    let (handoff_tx, mut handoffs) = if webtransport {
-      let (tx, rx) = mpsc::channel::<Handoff>(1);
-      (Some(tx), Some(rx))
-    } else {
-      (None, None)
-    };
+    let (handoff_tx, mut handoffs) = handoffs(webtransport);
     let Ok(mut h3) = built else {
       return;
     };
