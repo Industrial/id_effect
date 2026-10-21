@@ -84,3 +84,13 @@ pub use cursor::{
   CursorAgentsClientService, CursorAgentsError, CursorModel, CursorRepo, CursorRun,
   CursorRunStatus, HttpCursorAgentsClient, provide_cursor_agents_client,
 };
+
+#[cfg(feature = "embeddings")]
+pub use embeddings::{
+  EmbedRequest, EmbedResponse, Embedder, EmbedderService, Embedding, EmbeddingError,
+  EmbeddingLimits, cosine_similarity, dot_product, embed, provide_embedder, top_k_similar,
+};
+#[cfg(all(feature = "embeddings", feature = "ollama"))]
+pub use vendors::ollama::embed::{OllamaEmbedder, provide_ollama_embedder};
+#[cfg(all(feature = "embeddings", feature = "openai"))]
+pub use vendors::openai::embed::{OpenAiEmbedder, provide_openai_embedder};

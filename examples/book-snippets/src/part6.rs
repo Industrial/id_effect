@@ -187,3 +187,7 @@ struct Ch3401DoctorGraph;
 #[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch35-00-ai.md")]
 struct Ch3500Ai;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch35-02-embeddings.md")]
+struct Ch3502Embeddings;

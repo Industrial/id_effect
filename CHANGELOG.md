@@ -49,6 +49,21 @@
   16 MiB, 65 536 events and 1 MiB per event (`AiError::LimitExceeded`, the stream is closed). The
   Cursor agents client stays behind the non-default `cursor` feature. API changes from the labs
   crate in [MIGRATION-0.13.md](docs/MIGRATION-0.13.md); book chapter 35 rewritten.
+- Embeddings in `id_effect_ai` (r13-e9-1-embeddings, ai.llm #5; feature `embeddings`): the
+  `Embedder` capability (`EmbedderService`, `provide_embedder`, `embed`) with
+  `EmbedRequest` / `EmbedResponse` / `Embedding`, and two adapters returning the same shape:
+  `OpenAiEmbedder` (`/v1/embeddings`, base64 vectors, with `openai`) and `OllamaEmbedder`
+  (`/api/embed`, with `ollama`). `Embedder::embed` refuses more than `EmbeddingLimits::max_inputs`
+  (4096) and splits the rest into vendor calls of `max_batch_size` (64; OpenAI never above 2048),
+  concatenated in input order with usage summed; every vector must have one length
+  (`EmbedRequest::with_dimensions`), else `EmbeddingError::DimensionMismatch` (a short answer is
+  `CountMismatch`). `cosine_similarity`, `dot_product` and `top_k_similar` for in-app similarity
+  over a bounded set (no vector database). Retries, the `ai.request` span (`ai.operation =
+  "embed"`, input count, dimensions, `ai.usage.input_tokens`) and the platform client's SSRF
+  policy and caps as for chat; input text is never recorded, not even under
+  `dangerous_log_prompts`, and `EmbedRequest`'s `Debug` redacts it. `testing::ScriptedModel`
+  implements `Embedder` with deterministic hashed embeddings (`ScriptedModel::embedding_of`).
+  Book: chapter 35.2.
 - Relations and eager loading in `id_effect_sql` (r13-e3-3-relations, data.orm #3):
   `#[entity(belongs_to(..))]`, `has_many(..)` and `many_to_many(.., through = "..")` generate
   `Relation<P, C>` constructors (`Order::lines()`); `Repository::with(rel)` returns an

@@ -208,6 +208,7 @@
   - [Doctor and the layer graph](./part6/ch34-01-doctor-graph.md)
   - [The dev loop](./part6/ch34-02-dev.md)
 - [AI and MCP (`id_effect_ai`)](./part6/ch35-00-ai.md)
+  - [Embeddings and in-app similarity](./part6/ch35-02-embeddings.md)
 
 # Part VII: Process Mesh
 
