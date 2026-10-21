@@ -17,6 +17,8 @@ excludes = [
   ".maestro/**",
   # Vendored, checksummed test fixtures: keep byte-for-byte (sha256 in the fixture README).
   "crates/id_effect_axum/tests/fixtures/openapi/*.json",
+  # Vendored htmx, kept byte-for-byte (sha384 in crates/id_effect_axum/assets/README.md).
+  "crates/id_effect_axum/assets/htmx-*.min.js",
   # RPC contract snapshots are compared byte-for-byte with Contract::to_json_pretty output.
   "crates/id_effect_rpc/*.contract.json",
   "**/rpc.contract.json",

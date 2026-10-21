@@ -29,6 +29,10 @@ struct Ch2907Http3Deployment;
 struct Ch2909CertificatesAcme;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-10-server-rendered-ui.md")]
+struct Ch2910ServerRenderedUi;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-00-one-call-surface.md")]
 struct Ch3300OneCallSurface;
 

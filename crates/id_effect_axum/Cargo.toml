@@ -52,6 +52,10 @@ http3 = [
 ]
 # WebTransport sessions over HTTP/3 (r12-e12-3-webtransport).
 webtransport = ["http3", "dep:h3-webtransport", "h3-quinn/datagram"]
+# Server-rendered UI (`ui` module; r13-e9-5-views, ADR 0015 D3): maud `Markup` responses,
+# components, layouts and partials, htmx helpers with the vendored htmx 2.0.11
+# (`assets/README.md`) and HTML forms bound to `Schema` decode errors.
+ui = ["dep:maud"]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.12.0", features = [
@@ -147,6 +151,10 @@ h3-webtransport = { version = "=0.1.2", optional = true }
 # Feature `http3` (r12-e12-3-h3-server): `Buf` for the h3 request body chunks; the version
 # already in the tree (axum, h3, quinn).
 bytes = { version = "=1.12.1", optional = true }
+# Feature `ui` (r13-e9-5-views; exact pin, pre-1.0): compile-time templates that escape every
+# interpolation. `axum`: `Markup` answers `text/html; charset=utf-8` through axum-core 0.5, the
+# version axum 0.8.9 already brings.
+maud = { version = "=0.27.0", optional = true, features = ["axum"] }
 
 [[bench]]
 name = "gate_request"
@@ -217,6 +225,10 @@ required-features = ["sse"]
 [[example]]
 name = "092_http3"
 required-features = ["http3"]
+
+[[example]]
+name = "095_htmx_todo"
+required-features = ["ui"]
 
 [[test]]
 name = "ws"
