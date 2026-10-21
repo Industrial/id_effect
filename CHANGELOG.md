@@ -4,6 +4,19 @@
 
 ### Added
 
+- Tenant resolution and one database per tenant (r13-e5-5-tenancy, D10; eco.tenancy #8):
+  `id_effect_authz::TenantResolver` resolves a request's `TenantId` from the authenticated
+  principal's claim by default, from the Host through `with_host_allowlist` (a host outside it
+  yields no tenant), and from a header only through `dangerous_tenant_from_header` (recorded in
+  the posture registry); sources must agree, else there is no tenant. Feature `axum`:
+  `TenantResolver::layer()` puts the `TenantId` in the request extensions and `RequestCaps`, and
+  `TenantId` / `Option<TenantId>` extract it (401/403 without one). `id_effect_sql::TenantRouter`
+  is a `SqlClient` mapping each tenant to its own client (`from_map` with `tenant_database`,
+  `from_pg_configs`, `from_resolver`), routing by `TenantRouter::with_tenant` or a bound
+  `for_tenant` client; it fails closed (no tenant, or an unknown one, is `SqlError::NotConnected`),
+  keeps at most 64 tenant clients open (LRU, `with_max_pools`) and composes with
+  `RoutingSqlClient` replicas. Book: chapter 30.7 "Resolving the tenant" and "One database per
+  tenant".
 - Relations and eager loading in `id_effect_sql` (r13-e3-3-relations, data.orm #3):
   `#[entity(belongs_to(..))]`, `has_many(..)` and `many_to_many(.., through = "..")` generate
   `Relation<P, C>` constructors (`Order::lines()`); `Repository::with(rel)` returns an

@@ -398,10 +398,146 @@ Every tenant gets the same rate. `RedisRateLimitStore` (feature `rate-limit` of 
 holds the per-tenant buckets across instances; tenants on different plans need a
 `RateLimitStore` that sizes a bucket by its key, or one layer per plan.
 
+## Resolving the tenant
+
+The request path above reads the tenant straight from the principal. `id_effect_authz::TenantResolver` (0.13, ADR 0015 D10) makes that rule a value the whole service shares, and adds the two other places a tenant can come from, each behind a rule that keeps it safe:
+
+| Source | How | When it yields a tenant |
+|---|---|---|
+| The principal (default) | `TenantResolver::new()` | the authenticated principal has a tenant claim (`Principal::tenant()`) |
+| The Host | `.with_host_allowlist([("acme.example.com", "acme")])` | the host (case-insensitive, without port and trailing dot) is in the map; any other host yields nothing, and a host is never used as a tenant id itself |
+| A header | `.dangerous_tenant_from_header("x-tenant")` | the header holds a valid id (1–128 bytes of `[A-Za-z0-9._-]`); a recorded opt-out |
+
+When more than one source yields a tenant they must agree: `ada` of `acme` on `globex.example.com` has **no** tenant, not either of them. No tenant means no tenant-scoped work. Any client can send any header, so reading the tenant from one is only safe behind a gateway that authenticates the caller, sets the header and strips the client's; `dangerous_tenant_from_header` records `id_effect_authz::TenantResolver::dangerous_tenant_from_header` in the posture registry and the prod profile refuses to start until the operator accepts it (ADR 0013 R10).
+
+With the authz feature `axum`, `resolver.layer()` resolves every request and records the `TenantId` as a request extension and in the request's `RequestCaps`. It reads the principal, so it goes **inside** the authentication layer. Handlers take `TenantId` (401 for an anonymous caller, 403 for a principal without a tenant) or `Option<TenantId>`; `.require_tenant()` answers those requests in the layer instead. A `TenantId` is `Tenanted`, so `check_with(policy, tenant)` first requires the principal to belong to it.
+
+```rust
+use axum::Router;
+use axum::body::Body;
+use axum::extract::Request;
+use axum::http::StatusCode;
+use axum::middleware::{self, Next};
+use axum::response::Response;
+use axum::routing::get;
+use id_effect::observability::posture::dangerous_opt_outs;
+use id_effect_authz::{BasicPrincipal, CurrentPrincipal, TenantId, TenantResolver};
+use tower::ServiceExt;
+
+/// A stand-in authentication layer: `x-user: <id>@<tenant>`.
+async fn authenticate(mut req: Request, next: Next) -> Response {
+    let user = req.headers().get("x-user").and_then(|v| v.to_str().ok()).map(str::to_owned);
+    if let Some((id, tenant)) = user.as_deref().and_then(|u| u.split_once('@')) {
+        req.extensions_mut()
+            .insert(CurrentPrincipal::new(BasicPrincipal::new(id).with_tenant(tenant)));
+    }
+    next.run(req).await
+}
+
+let resolver = TenantResolver::new().with_host_allowlist([("acme.example.com", "acme")]);
+let app = Router::new()
+    .route("/whoami", get(|tenant: TenantId| async move { tenant.to_string() }))
+    .layer(resolver.layer()) // inside authentication
+    .layer(middleware::from_fn(authenticate));
+
+let call = |host: &str, user: Option<&str>| {
+    let mut req = Request::get("/whoami").header("host", host);
+    if let Some(user) = user {
+        req = req.header("x-user", user);
+    }
+    app.clone().oneshot(req.body(Body::empty()).unwrap())
+};
+let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+rt.block_on(async {
+    // The principal's claim; an anonymous visitor on an allowlisted host.
+    assert_eq!(call("api.example.com", Some("ada@acme")).await.unwrap().status(), StatusCode::OK);
+    assert_eq!(call("acme.example.com", None).await.unwrap().status(), StatusCode::OK);
+    // A host outside the allowlist, or a principal of another tenant on acme's host: no tenant.
+    assert_eq!(call("evil.example.com", None).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        call("acme.example.com", Some("eve@globex")).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+});
+
+// Reading the tenant from a header is a recorded opt-out.
+let gateway = TenantResolver::new().dangerous_tenant_from_header("x-tenant");
+assert_eq!(gateway.tenant_header(), Some("x-tenant"));
+assert!(dangerous_opt_outs().iter().any(|(id, _)| id.ends_with("dangerous_tenant_from_header")));
+```
+
+The resolved tenant feeds both halves of this chapter: `TenantScope` checks in authorization, and `CurrentTenant` in the repository. `id_effect_sql` and `id_effect_authz` do not depend on each other, so the bridge is one `CapOverrideLayer` in your router, or the kit feature `tenancy`, which installs it (and the database routing below) for you:
+
+```rust
+use axum::http::request::Parts;
+use id_effect_authz::TenantId;
+use id_effect_axum::{CapOverrideLayer, RequestCaps};
+use id_effect_sql::CurrentTenant;
+
+// Inside the tenant layer: the request's `TenantId` becomes its `CurrentTenant`.
+let bridge = CapOverrideLayer::new(|parts: &Parts| {
+    let tenant = parts.extensions.get::<TenantId>()?;
+    Some(CurrentTenant::new(tenant.as_str().to_owned()))
+});
+# let _ = (bridge, RequestCaps::new());
+```
+
+## One database per tenant
+
+Row-level tenancy keeps every tenant in shared tables. When a tenant needs its own database (a contract, a data-residency rule, a noisy neighbour), `id_effect_sql::TenantRouter` maps each tenant to its own client. It is itself a `SqlClient`, so repositories, transactions and the audit log run on it unchanged; each statement goes to the database of the tenant the fiber acts for (`TenantRouter::with_tenant(tenant, effect)`), or of a fixed tenant (`router.for_tenant(tenant)`, for jobs).
+
+- **From configuration or a resolver.** `TenantRouter::from_map([(tenant, tenant_database(client))])`, `TenantRouter::from_pg_configs([(tenant, PgPoolConfig)])` (feature `pg`), or `TenantRouter::from_resolver(|tenant| …)` returning a new client for the tenant, or `None`.
+- **Fails closed.** No tenant, or a tenant the map or resolver does not know, has no connection: every statement fails with `SqlError::NotConnected` and nothing reaches any database. There is no default database.
+- **Bounded.** At most 64 tenant clients are open (`with_max_pools(n)`); opening another closes the least recently used one, and that tenant reconnects on its next statement (ADR 0013 R4).
+- **Replicas compose.** A tenant's client can be a `RoutingSqlClient`: its reads go to that tenant's replicas, its writes and transactions to that tenant's primary.
+
+```rust
+use std::sync::Arc;
+use id_effect::{Cause, Exit};
+use id_effect_sql::{
+    RoutingSqlClient, SqlClient, SqlError, TenantRouter, TestSqlClient, tenant_database,
+};
+
+// acme shares the main database; globex has its own primary and read replica.
+let main = TestSqlClient::new();
+let (globex_primary, globex_replica) = (TestSqlClient::new(), TestSqlClient::new());
+let globex = RoutingSqlClient::new(
+    Arc::new(globex_primary.clone()),
+    vec![Arc::new(globex_replica.clone()) as Arc<dyn SqlClient>],
+);
+let db = TenantRouter::from_map([
+    ("acme", tenant_database(main.clone())),
+    ("globex", tenant_database(globex)),
+])
+.with_max_pools(32);
+
+let work = |tenant: &str| {
+    TenantRouter::with_tenant(
+        tenant,
+        db.query("SELECT * FROM documents", &[])
+            .then(db.execute("UPDATE documents SET seen = TRUE", &[])),
+    )
+};
+assert!(matches!(work("acme").block_on(), Exit::Success(0)));
+assert!(matches!(work("globex").block_on(), Exit::Success(0)));
+assert_eq!((main.recorded_queries().len(), main.recorded_executes().len()), (1, 1));
+assert_eq!(globex_replica.recorded_queries().len(), 1); // globex's reads: its replica
+assert_eq!(globex_primary.recorded_executes().len(), 1); // globex's writes: its primary
+
+// An unknown tenant, or no tenant at all, has no connection.
+let unknown = work("initech").block_on();
+assert!(matches!(unknown, Exit::Failure(Cause::Fail(SqlError::NotConnected))));
+let no_tenant = db.query("SELECT 1", &[]).block_on();
+assert!(matches!(no_tenant, Exit::Failure(Cause::Fail(SqlError::NotConnected))));
+assert_eq!(db.open_tenants(), ["acme", "globex"]);
+```
+
+A tenant routed to its own database still keeps its `tenant` column and `CurrentTenant` filter: the router chooses the database, the repository filter chooses the rows, and a misrouted statement still finds nothing of another tenant's. Use tenant ids from the resolver above (authenticated, validated) as router keys, and never build a database name or URL from an id that was not validated.
+
 ## What this pattern does not cover
 
 - **Database-enforced isolation.** The filter lives in the repository, so raw SQL (`query`, `execute`) and statements you build with the query builder are not filtered: add the tenant condition yourself, and keep such code close to the repository. For a second line of defence, PostgreSQL row-level security (`CREATE POLICY … USING (org_id = current_setting('app.tenant'))`, with `SET LOCAL app.tenant` at the start of each transaction) enforces the same rule in the database; `id_effect_sql` does not set it up for you.
-- **Schema or database per tenant.** Stronger isolation (one schema per tenant selected with `search_path`, or one database per tenant with its own pool) is an alternative to row-level tenancy. Per-tenant connection routing is not part of 0.9; `RoutingSqlClient` routes reads to replicas, not tenants.
+- **Schema per tenant.** One database per tenant is `TenantRouter` (above); one schema per tenant in a shared database, selected with `search_path`, is not provided. Use a database per tenant, or row-level tenancy.
 - **Per-tenant configuration and quotas** other than a request rate (storage, seats, a different
   rate per plan out of the box) are not provided; per-tenant request rate limits are (above).
 - **Audit on other databases.** The audit log's SQL is PostgreSQL's. The repository and its tenant filter work on PostgreSQL, MySQL and SQLite.
@@ -411,6 +547,8 @@ holds the per-tenant buckets across instances; tenants on different plans need a
 - `crates/id_effect_sql/tests/repository.rs`: `tenant_filter_scopes_every_query` runs on SQLite and PostgreSQL (two tenants, every operation, `CurrentTenant` from the environment, fail-closed without a tenant).
 - `crates/id_effect_sql/tests/audit.rs` (PostgreSQL): `tampered_row_breaks_chain`, `audit_rolls_back_with_tx`, removed records, concurrent writers that never fork a chain, and the `REPEATABLE READ` race.
 - `crates/id_effect_authz/tests/guards.rs`: principals installed by `CapOverrideLayer` reach the guards.
+- `crates/id_effect_authz/tests/tenant_resolver.rs`: `tenant_resolved_from_principal_by_default`, `host_outside_allowlist_has_no_tenant`, `dangerous_tenant_from_header_is_recorded`, and the layer and extractors.
+- `crates/id_effect_sql/tests/tenant_routing.rs`: `unknown_tenant_has_no_connection`, `r4_tenant_pool_count_bounded`, `tenant_router_composes_with_replicas`, and on PostgreSQL (one container, two databases) `tenant_router_routes_two_tenants_to_two_databases`.
 - `crates/id_effect_axum/src/middleware/rate_limit.rs`: `each_tenant_has_its_own_bucket` (per-tenant buckets behind a `CapOverrideLayer`) and `tenant_keys_read_request_caps_then_extensions`.
 - `crates/id_effect_sql/examples/050_tenancy_audit.rs` runs the request path for two tenants: by default on SQLite in memory (tenant filter, transaction, fail-closed), with `--live` and `DATABASE_URL` on PostgreSQL including the audit chain, a rolled-back request, `verify_chain` and a detected edit:
   `cargo run -p id_effect_sql --example 050_tenancy_audit --features repository,sqlite,audit,migrate,pg -- --live`.
