@@ -41,6 +41,23 @@ Owner: r13-f-h3-settings.
 
 Owner: r13-f-client-batching.
 
+## Tool: `rpc::check::CheckArgs::allow_retired`
+
+Owner: r13-f-rpc-retire. `id_effect_tool::rpc::check::CheckArgs` (the clap arguments of
+`id-effect rpc check`) gains the public field `allow_retired: Vec<RetiredVersion>` for the new
+`--allow-retired Service:N` flag. The command line is unchanged for existing invocations. Code
+that builds `CheckArgs` with a struct literal adds the field:
+
+```rust,ignore
+// before (0.12)
+let args = CheckArgs { contract, against: Some(spec), generated: None };
+// after (0.13)
+let args = CheckArgs { contract, against: Some(spec), generated: None, allow_retired: Vec::new() };
+```
+
+No shim: a struct literal cannot default a field. Parsing arguments with clap (`CheckArgs` derives
+`Args`) needs no change.
+
 ## TLS: rcgen 0.14
 
 Owner: r13-f-rcgen. Only a break if an rcgen type appears in a public signature.

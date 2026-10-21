@@ -9,6 +9,11 @@
   replacing the `Effect::from_ctx(|ctx| async move { ctx.bind(e).await })` workaround. A ready
   effect is returned as is; a program gets one `Provide` frame over the shared empty environment.
   Book: "Env-free effects under any environment" in part 2, chapter 4.3.
+- `id-effect rpc check --allow-retired Service:N` (r13-f-rpc-retire, 0.12 follow-up F46),
+  repeatable: the removal of that service version passes and is printed as `retired`; every other
+  breaking change still exits 1, and naming a version that was not removed exits 2 (typo guard).
+  Library: `id_effect_tool::rpc::RetiredVersion` and `rpc::check::retire`; `CheckArgs` gains
+  `allow_retired` ([MIGRATION-0.13.md](docs/MIGRATION-0.13.md)). Book: chapter 33.12.
 - Crate layout for 0.13 (r13-t0-skeletons, ADR 0010 Amendment 9): `id_effect_ai` moves from
   `labs/` to `crates/id_effect_ai` with its history and joins the root workspace (still
   `publish = false` until r13-e9-1-promote); new tier-`integration` crates `id_effect_i18n`
