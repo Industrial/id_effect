@@ -83,7 +83,7 @@ use bytes::Buf;
 use http_body::Frame;
 use http_body_util::BodyExt;
 use id_effect::observability::posture::record_dangerous;
-use id_effect_platform::quic::{QuicEndpoint, QuicEndpointConfig, QuicLimits, Route};
+use id_effect_platform::quic::{AlpnRoute, QuicEndpoint, QuicEndpointConfig, QuicLimits, Route};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use tower_service::Service;
 
@@ -226,8 +226,25 @@ fn io_error(e: impl std::fmt::Display) -> std::io::Error {
 /// # Errors
 ///
 /// When the endpoint already routes `h3` or cannot take the route.
-pub async fn serve_h3<F>(
+///
+/// The route is registered when `serve_h3` is called, before the returned future first runs,
+/// so a client may connect as soon as the call returns (also when the future is spawned).
+pub fn serve_h3<F>(
   endpoint: &QuicEndpoint,
+  app: Router,
+  limits: ConnectionLimits,
+  options: Http3Options,
+  shutdown: F,
+) -> impl Future<Output = std::io::Result<()>> + Send + 'static
+where
+  F: Future<Output = ()> + Send + 'static,
+{
+  let route = endpoint.register(Route::h3()).map_err(io_error);
+  serve_route(route, app, limits, options, shutdown)
+}
+
+async fn serve_route<F>(
+  route: std::io::Result<AlpnRoute>,
   app: Router,
   limits: ConnectionLimits,
   options: Http3Options,
@@ -236,7 +253,7 @@ pub async fn serve_h3<F>(
 where
   F: Future<Output = ()> + Send + 'static,
 {
-  let route = endpoint.register(Route::h3()).map_err(io_error)?;
+  let route = route?;
   // Dropping the receiver is the signal; connections watch the sender.
   let (signal_tx, signal_rx) = watch::channel(());
   tokio::spawn(async move {
