@@ -105,6 +105,10 @@ struct Ch3006Totp;
 struct Ch3007AuditTenancy;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-09-i18n.md")]
+struct Ch3009I18n;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch27-01-metrics.md")]
 struct Ch2701Metrics;
 

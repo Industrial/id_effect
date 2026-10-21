@@ -9,6 +9,16 @@
   replacing the `Effect::from_ctx(|ctx| async move { ctx.bind(e).await })` workaround. A ready
   effect is returned as is; a program gets one `Provide` frame over the shared empty environment.
   Book: "Env-free effects under any environment" in part 2, chapter 4.3.
+- `id_effect_i18n` core (r13-e9-4-i18n-core, D5; eco.i18n #1 #2 #7) over Project Fluent
+  (`fluent-bundle` =0.16.0, `fluent-syntax` =0.12.0, `fluent-langneg` =0.13.1, `unic-langid`
+  =0.9.6): `Catalog` of Fluent resources per locale, embedded (`include_str!`) or loaded from
+  allowlisted directories once at startup (paths resolved, `.ftl` only, ≤ 1 MiB; parse errors,
+  duplicate messages and a missing default locale fail `build`); fallback chain requested →
+  language → default; `Catalog::check` reports every key a locale lacks (`require_complete` makes
+  it fatal); CLDR plural categories through Fluent selectors; bidi isolation of arguments on by
+  default; `CurrentLocale` capability (fiber-local) with `with_locale`, `current_locale` and
+  `translate`. Features `axum`, `maud` and `schema` are declared (off) for the web step. Book:
+  chapter 30.9 "Internationalization".
 - `id-effect rpc check --allow-retired Service:N` (r13-f-rpc-retire, 0.12 follow-up F46),
   repeatable: the removal of that service version passes and is printed as `retired`; every other
   breaking change still exits 1, and naming a version that was not removed exits 2 (typo guard).
