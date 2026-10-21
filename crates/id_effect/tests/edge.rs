@@ -75,6 +75,7 @@ fn counting_runtime() -> (Runtime, Arc<Counting>) {
 }
 
 /// Process CPU time (user + system) from `/proc/self/stat`, in clock ticks of 10 ms.
+#[cfg(target_os = "linux")]
 fn process_cpu() -> Duration {
   let stat = std::fs::read_to_string("/proc/self/stat").expect("procfs");
   // Fields after the `(comm)` field: state is field 3; utime/stime are fields 14/15.
@@ -85,6 +86,7 @@ fn process_cpu() -> Duration {
 }
 
 /// CPU time of the calling thread (`/proc/thread-self/schedstat`, nanoseconds).
+#[cfg(target_os = "linux")]
 fn thread_cpu() -> Duration {
   let s = std::fs::read_to_string("/proc/thread-self/schedstat").expect("procfs");
   Duration::from_nanos(s.split_whitespace().next().unwrap().parse().unwrap())
@@ -261,6 +263,8 @@ fn pure_and_fused_effects_never_touch_the_executor() {
 
 // ---------------------------------------------------------------- AC4: parked, not spinning
 
+// CPU time comes from procfs, so the parking checks run on Linux only.
+#[cfg(target_os = "linux")]
 #[test]
 fn block_on_parks_the_calling_thread_while_sleeping() {
   let eff: Effect<()> = sleep(ms(300));
@@ -272,6 +276,7 @@ fn block_on_parks_the_calling_thread_while_sleeping() {
   assert!(cpu < ms(20), "calling thread spun: {cpu:?}");
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn sleeping_fibers_are_parked_not_spinning() {
   let tokio_rt = tokio::runtime::Builder::new_multi_thread()

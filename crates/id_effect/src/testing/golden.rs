@@ -209,7 +209,9 @@ mod tests {
   fn relative_paths_resolve_against_the_manifest_dir() {
     let p = golden_path(Path::new("tests/golden/x.txt"));
     assert!(p.ends_with("crates/id_effect/tests/golden/x.txt"), "{p:?}");
-    assert_eq!(golden_path(Path::new("/abs/x")), PathBuf::from("/abs/x"));
+    // An absolute path on this platform (`/abs/x` is relative to the drive on Windows).
+    let abs = std::env::temp_dir().join("x");
+    assert_eq!(golden_path(&abs), abs);
   }
 
   #[test]

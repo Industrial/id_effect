@@ -383,7 +383,13 @@ async fn r4_quic_retry_on_by_default() {
   .await
   .expect("validated");
   let stats = until(&endpoint, |s| s.accepted == 1).await;
-  assert_eq!(stats.retries_sent, 1, "one Retry before the handshake");
+  // At least one: a client that resends its Initial before the Retry lands gets a Retry for
+  // that packet too (seen on a loaded macOS runner: 2).
+  assert!(
+    stats.retries_sent >= 1,
+    "a Retry before the handshake: {}",
+    stats.retries_sent
+  );
 
   // The opt-out is recorded and skips the Retry.
   let config = QuicEndpointConfig::new(ca.identity("localhost")).dangerous_no_retry();

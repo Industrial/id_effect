@@ -2,6 +2,9 @@
 # timing side channel in RSA private-key operations; sqlx-mysql only encrypts a password with the
 # server's public key (caching_sha2_password over a non-TLS connection), and no workspace code
 # decrypts or signs with an rsa private key (ID tokens are verified by jsonwebtoken on aws-lc-rs).
+#
+# RUSTSEC-2026-0381: webpki-roots 0.26.11 (via sqlx-core 0.8.6) is the semver-trick shim that
+# re-exports webpki-roots 1, resolved to the fixed 1.0.10; its roots are the patched ones.
 # Keep in sync with deny.toml.
 [advisories]
-ignore = ["RUSTSEC-2023-0071"]
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0381"]

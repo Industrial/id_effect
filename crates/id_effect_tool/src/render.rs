@@ -327,6 +327,18 @@ pub fn render(options: &Options) -> Result<Vec<RenderedFile>, NewError> {
   Ok(out)
 }
 
+/// `path` as Cargo reads it in a TOML string: forward slashes (valid on every platform, no
+/// escaping) and no Windows verbatim prefix, which `canonicalize` adds (`\\?\D:\x`) and Cargo
+/// rejects as a path URL.
+pub(crate) fn toml_path(path: &Path) -> String {
+  let text = path.to_string_lossy();
+  let plain = match text.strip_prefix(r"\\?\UNC\") {
+    Some(share) => format!(r"\\{share}"),
+    None => text.strip_prefix(r"\\?\").unwrap_or(&text).to_owned(),
+  };
+  plain.replace('\\', "/")
+}
+
 /// The `[patch.crates-io]` section for a `--local-workspace` checkout at `workspace`.
 fn patch_section(workspace: &Path, crates: &[&str]) -> Result<String, NewError> {
   let not_a_workspace = || NewError::NotAWorkspace(workspace.to_path_buf());
@@ -334,8 +346,7 @@ fn patch_section(workspace: &Path, crates: &[&str]) -> Result<String, NewError> 
   if !root.join("crates/id_effect_kit/Cargo.toml").is_file() {
     return Err(not_a_workspace());
   }
-  // Forward slashes are valid on every platform and need no escaping in a TOML string.
-  let root = root.to_string_lossy().replace('\\', "/");
+  let root = toml_path(&root);
   let mut section = format!(
     "\n# --local-workspace: build against the id_effect checkout at {root}.\n[patch.crates-io]\n"
   );
@@ -713,16 +724,29 @@ mod tests {
     }
 
     #[test]
+    fn toml_paths_drop_the_windows_verbatim_prefix() {
+      use crate::render::toml_path;
+      assert_eq!(
+        toml_path(Path::new(r"\\?\D:\a\id_effect")),
+        "D:/a/id_effect"
+      );
+      assert_eq!(
+        toml_path(Path::new(r"\\?\UNC\srv\share\x")),
+        "//srv/share/x"
+      );
+      assert_eq!(
+        toml_path(Path::new("/home/me/id_effect")),
+        "/home/me/id_effect"
+      );
+    }
+
+    #[test]
     fn local_workspace_patches_every_used_crate() {
       let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
       let o = Options::new("svc", Template::Service).local_workspace(&root);
       let files = render(&o).expect("render");
       let cargo = file(&files, "Cargo.toml");
-      let root = root
-        .canonicalize()
-        .unwrap()
-        .to_string_lossy()
-        .replace('\\', "/");
+      let root = crate::render::toml_path(&root.canonicalize().unwrap());
       assert!(cargo.contains("[patch.crates-io]"), "{cargo}");
       for name in o.workspace_crates() {
         let line = format!("{name} = {{ path = \"{root}/crates/{name}\" }}");
