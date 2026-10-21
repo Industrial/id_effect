@@ -1248,11 +1248,13 @@ mod tests {
       let app = app(config);
       let options = Http3Options::default().webtransport();
       assert!(options.webtransport_enabled());
+      // Called before the spawn, so the route is registered by the time a test connects.
+      let served = serve_h3(&quic, app, limits, options, async {
+        let _ = stopped.await;
+      });
       let done = tokio::spawn(async move {
-        serve_h3(&quic, app, limits, options, async {
-          let _ = stopped.await;
-        })
-        .await
+        let _quic = quic;
+        served.await
       });
       let tls = client_tls_config(&identity, None, &[pin]).unwrap();
       Served {
