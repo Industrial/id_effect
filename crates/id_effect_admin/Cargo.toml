@@ -1,0 +1,35 @@
+[package]
+name = "id_effect_admin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Admin back office for id_effect services: entity registration, guarded list/detail/edit pages and per-action permissions"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["effect", "admin", "crud", "backoffice", "axum"]
+categories = ["web-programming", "database"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_admin"
+
+# r13-e9-3-admin-core declares the 0.13 features and dependencies (`i18n`, `audit`, `test-util`;
+# id_effect_axum `ui`, id_effect_sql `repository`, id_effect_authz); the skeleton
+# (r13-t0-skeletons) has none.
+[dependencies]
+
+[[example]]
+name = "010_permissions"
+path = "examples/010_permissions.rs"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier (Amendment 9) — checked by scripts/tier-conformance.sh. Moves to `platform`
+# when the Pipeline reference app depends on it (check P).
+tier = "integration"

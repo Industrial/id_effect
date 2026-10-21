@@ -291,6 +291,54 @@ amendment, this amendment wins.
   excluded from the semver job until their first 0.12 publish. No placeholder versions are
   published: each crate's first release carries its API.
 
+#### Amendment 9 (2026-10-21, for 0.13)
+
+Names the tiers of the three crates of 0.13 "Breadth" and of the Pipeline reference app (release
+spec 0.13.0 decisions D1, D2, D3, D5 and D6), as rule 5 requires. Where the table above disagrees
+with this amendment, this amendment wins.
+
+- **`id_effect_ai` leaves the `labs` row and enters tier `integration`.** Provider-neutral chat
+  (OpenAI, Anthropic) with streaming, typed tools and a bounded agent loop, structured output,
+  embeddings (OpenAI, Ollama) and an effect-native MCP server and client; all HTTP goes through
+  `id_effect_platform`'s client. The Cursor agents module stays behind the non-default `cursor`
+  feature. The crate moved with its history (`git mv labs/id_effect_ai crates/id_effect_ai`, leaf
+  `r13-t0-skeletons`; manifest paths only) and is a root-workspace member. Until leaf
+  `r13-e9-1-promote` brings it to the integration bar it stays `publish = false` in the
+  transitional `merge` tier (no bar; the `labs` tier is for crates under `labs/` only), listed in
+  `PENDING_PROMOTION` of `scripts/validate-crate-packaging.sh`; that leaf sets `integration`,
+  makes it publishable and removes the entry.
+- **`id_effect_i18n` is tier `integration`** (new). Project Fluent message catalogs with CLDR
+  plural rules, a per-request / per-fiber locale, `Accept-Language` negotiation and translated
+  `Schema` messages.
+- **`id_effect_admin` is tier `integration`** (new). The back office: `AdminSite` registration of
+  `id_effect_sql` entities, list/detail/edit pages rendered with `id_effect_axum`'s `ui` feature,
+  per-entity × action permissions through `id_effect_authz`, mounted only behind a guard. Generated
+  code alone could not be published and tested, and `id_effect_axum` must not depend on
+  `id_effect_sql`, so it is a crate of its own.
+- **Server-rendered UI adds no crate.** It is the `ui` feature of `id_effect_axum` (maud
+  components, htmx helpers, layouts, form helpers); no tier change.
+- **`examples/reference/pipeline` is tier `example`** and `publish = false`: the 0.13 reference app
+  (a multi-tenant document-intake pipeline and its back office). It depends on `id_effect_kit`
+  only, like the Ledger and the Relay. `examples/recipes/` (the Leptos SSR recipe) is outside the
+  root workspace, like `labs/`, with its own CI job.
+- They publish in dependency order (`scripts/validate-crate-packaging.sh --print-order`), all at
+  the last level after `id_effect_rpc` and before `id_effect_kit` and `id_effect_tool`:
+  `id_effect_i18n` after `id_effect` and `id_effect_axum`; `id_effect_ai` after
+  `id_effect_platform` and `id_effect_config`; `id_effect_admin` after `id_effect_sql`,
+  `id_effect_axum`, `id_effect_authz` and `id_effect_i18n`.
+- Each of the three moves to the `platform` tier of ADR 0012, with no other change, when the
+  Pipeline depends on it (check P of `scripts/tier-conformance.sh`).
+- `crates/id_effect_cli/templates/admin-stub/` is deleted: nothing generated, built or tested it,
+  and `id_effect_admin` replaces it. Its only references were scorecard evidence text, re-scored at
+  the 0.13 exit.
+- crates.io (checked 2026-10-21, generic User-Agent): `id_effect_ai` is ours, last published at
+  0.4.0 before it moved to labs, so its promoted release is its next one. `id_effect_admin` and
+  `id_effect_i18n` are free; like any never-published crate each needs its crates.io
+  trusted-publisher setup before `publish.yml` can release it (docs/RELEASING.md; owner step D17,
+  before the v0.13.0 tag). None has a 0.12.x baseline, so all three are excluded from the semver
+  job until their first 0.13 publish. No placeholder versions are published: each crate's first
+  release carries its API.
+
 The requirements for each tier are in [`docs/QUALITY_BAR.md`](../QUALITY_BAR.md).
 `scripts/tier-conformance.sh` checks them.
 

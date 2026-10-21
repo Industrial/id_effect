@@ -1,0 +1,34 @@
+[package]
+name = "id_effect_i18n"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Internationalization for id_effect services: locales, message catalogs and per-request locale selection"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["effect", "i18n", "l10n", "locale", "fluent"]
+categories = ["internationalization", "localization"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_i18n"
+
+# r13-e9-4-i18n-core declares the 0.13 features and dependencies (Project Fluent, `axum`, `maud`,
+# `schema`); the skeleton (r13-t0-skeletons) has none.
+[dependencies]
+
+[[example]]
+name = "010_locale"
+path = "examples/010_locale.rs"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier (Amendment 9) — checked by scripts/tier-conformance.sh. Moves to `platform`
+# when the Pipeline reference app depends on it (check P).
+tier = "integration"
