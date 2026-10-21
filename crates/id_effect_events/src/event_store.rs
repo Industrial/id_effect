@@ -258,6 +258,17 @@ impl<E: Clone + Send + Sync + 'static> EventLog<E> for MemoryEventStore<E> {
       )
     })
   }
+
+  /// The number of events appended (positions are gap-free from 1), in O(1).
+  fn head(&self) -> Effect<u64, EventStoreError> {
+    let streams = Arc::clone(&self.streams);
+    attempt(move || {
+      let guard = streams
+        .lock()
+        .map_err(|e| EventStoreError::Io(e.to_string()))?;
+      Ok(guard.log.len() as u64)
+    })
+  }
 }
 
 /// JSON-lines journal on disk (one [`StoredEvent`] per line). One writer process at a time:
@@ -541,6 +552,20 @@ mod tests {
   fn memory_default_store_is_empty() {
     let store = MemoryEventStore::<CounterEvt>::default();
     assert_eq!(run_sync(store.latest_version("any")).expect("latest"), 0);
+    assert_eq!(run_sync(store.head()).expect("head"), 0);
+  }
+
+  #[test]
+  fn file_journal_clones_share_the_file_and_an_empty_path_is_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = FileJournal::<CounterEvt>::open(dir.path().join("events.jsonl")).expect("open");
+    run_sync(store.clone().append("s", &[CounterEvt(1)])).expect("append through a clone");
+    assert_eq!(run_sync(store.latest_version("s")).expect("latest"), 1);
+    // No parent directory to create, and nothing to open.
+    assert!(matches!(
+      FileJournal::<CounterEvt>::open(""),
+      Err(EventStoreError::Io(_))
+    ));
   }
 
   #[test]

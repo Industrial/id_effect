@@ -345,6 +345,15 @@ impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EventLog<E
         )
       })
   }
+
+  /// `MAX(position)` in one query (the unique index on `position` answers it).
+  fn head(&self) -> Effect<u64, EventStoreError> {
+    self
+      .client
+      .query(HEAD_SQL, &[])
+      .map_err(EventStoreError::from)
+      .flat_map(|rows| ready(first_u64(&rows, "head")))
+  }
 }
 
 #[cfg(test)]
@@ -449,6 +458,27 @@ mod tests {
     );
     assert!(matches!(
       run_sync(journal.read_all(u64::MAX, 1)).expect_err("range"),
+      EventStoreError::Io(_)
+    ));
+  }
+
+  #[test]
+  fn head_is_one_query_for_the_greatest_position() {
+    let test = connected();
+    let journal = SqlEventJournal::<Ping>::new(Arc::new(test.clone()));
+    assert_eq!(run_sync(journal.head()).expect("empty head"), 0);
+    test.script_query(HEAD_SQL, vec![SqlRow::from_pairs([("head", 12i64)])]);
+    assert_eq!(run_sync(journal.head()).expect("head"), 12);
+    let queries = test.recorded_queries();
+    assert_eq!(queries.len(), 2);
+    assert!(
+      queries
+        .iter()
+        .all(|(sql, params)| sql == HEAD_SQL && params.is_empty())
+    );
+    test.script_query(HEAD_SQL, vec![SqlRow::from_pairs([("head", -1i64)])]);
+    assert!(matches!(
+      run_sync(journal.head()).expect_err("negative"),
       EventStoreError::Io(_)
     ));
   }

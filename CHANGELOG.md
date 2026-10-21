@@ -9,6 +9,12 @@
   replacing the `Effect::from_ctx(|ctx| async move { ctx.bind(e).await })` workaround. A ready
   effect is returned as is; a program gets one `Provide` frame over the shared empty environment.
   Book: "Env-free effects under any environment" in part 2, chapter 4.3.
+- `EventLog::head()` (r13-f-eventlog-head, 0.12 follow-up F21): the position of the last event
+  appended (`0` for an empty log). A provided method, so existing `EventLog` implementors compile
+  unchanged (the default reads the log to its end); `MemoryEventStore` and `SqlEventJournal`
+  answer in one step (`MAX(position)`). `id_effect_rpc`'s `EventSubscription::from_now()` starts a
+  call without a cursor after the head, read when the stream is first pulled; without it a call
+  still starts after `starting_after` (default `0`). Book: chapter 33.8.
 - `id_effect_i18n` core (r13-e9-4-i18n-core, D5; eco.i18n #1 #2 #7) over Project Fluent
   (`fluent-bundle` =0.16.0, `fluent-syntax` =0.12.0, `fluent-langneg` =0.13.1, `unic-langid`
   =0.9.6): `Catalog` of Fluent resources per locale, embedded (`include_str!`) or loaded from
