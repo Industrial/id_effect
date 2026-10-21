@@ -608,7 +608,7 @@ where
     B: Send + 'static,
     F: FnMut(A) -> Stream<B, E, R> + Send + 'static,
   {
-    flat_map_go(Some(self), VecDeque::new(), None, f)
+    flat_map_go(self, VecDeque::new(), None, f)
   }
 
   /// Maps each element with an effect, **sequentially** (ADR 0008 Amendment 2): one element's
@@ -1067,7 +1067,7 @@ where
 /// The state machine of [`Stream::flat_map`]: the current inner stream, the outer elements not
 /// expanded yet, and the rest of the outer stream.
 fn flat_map_go<A, B, E, R, F>(
-  outer: Option<Stream<A, E, R>>,
+  outer: Stream<A, E, R>,
   mut pending: VecDeque<A>,
   inner: Option<Stream<B, E, R>>,
   mut f: F,
@@ -1091,13 +1091,10 @@ where
       let inner = f(a);
       return flat_map_go(outer, pending, Some(inner), f).pull_raw(n);
     }
-    match outer {
+    outer.pull_raw(n).flat_map(move |step| match step {
       None => succeed(None),
-      Some(outer) => outer.pull_raw(n).flat_map(move |step| match step {
-        None => succeed(None),
-        Some((items, rest)) => flat_map_go(Some(rest), items.into(), None, f).pull_raw(n),
-      }),
-    }
+      Some((items, rest)) => flat_map_go(rest, items.into(), None, f).pull_raw(n),
+    })
   })
 }
 
