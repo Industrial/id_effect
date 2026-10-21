@@ -32,6 +32,22 @@
   Pipeline reference app (`examples/reference/pipeline`, tier `example`, its stage model); CI job
   `breadth`; `examples/recipes/` is outside the root workspace. The unused
   `crates/id_effect_cli/templates/admin-stub/` is removed ([MIGRATION-0.13.md](docs/MIGRATION-0.13.md)).
+- `id_effect_rpc` generated clients batch over HTTP (r13-f-client-batching, 0.12 follow-up F27):
+  the calls a `#[rpc::service]` client makes over `HttpTransport` in the same tick go out as one
+  batch, by the rules of `RpcClient::call` (at most 50 calls / 1 MiB per request; a call alone is
+  a plain envelope), each call carrying its service version `v`. They share `RpcClient::call`'s
+  batch window, joined from any caller environment through `Effect::any_env`.
+  `RpcTransport::unary_effect`, a defaulted hook the generated client runs from the caller's fiber
+  (the default awaits `unary`; `HttpTransport` overrides it); `HttpTransport`'s `unary` still
+  sends one call on its own.
+- `HttpTransport::with_header(name, value)` and `HttpTransport::with_bearer(secret)`
+  (r13-f-client-batching, 0.12 follow-up F56; ADR 0013 R2, R4, R9): headers on every request the
+  transport sends, batched or not. Names and values are validated (`HttpHeaderError`: no CR, LF
+  or other control bytes); `x-rpc`, `content-type` and the framing headers (`content-length`,
+  `transfer-encoding`, `host`, `connection`) are reserved, so the CSRF rule (`x-rpc: 1` on every
+  `POST`) cannot be overridden. The bearer token is an `id_effect_config::SecretString`, and
+  `Debug` of the transport shows header names only. Calls with different headers never share a
+  batch request.
 
 ### Changed
 

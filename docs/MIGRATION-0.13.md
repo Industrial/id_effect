@@ -39,7 +39,23 @@ Owner: r13-f-h3-settings.
 
 ## RPC: `HttpTransport::with_header` / `with_bearer`
 
-Owner: r13-f-client-batching.
+Owner: r13-f-client-batching. Additive: `HttpTransport::with_header`, `with_bearer`,
+`service::HttpHeaderError` and the provided method `RpcTransport::unary_effect` are new; code that
+implements `RpcTransport` or builds an `HttpTransport` compiles unchanged. A wrapper
+`HttpClient` that only added an `authorization` header can go:
+
+```rust,ignore
+// before (0.12): a custom HttpClient that pushed the header onto every HttpRequest
+// after (0.13)
+let transport = HttpTransport::new(RpcClient::new(url), http)
+  .with_bearer(id_effect_config::Secret::new(token))?;
+```
+
+Behavior: a generated client over `HttpTransport` now sends the calls it makes in the same tick
+(the children of one `all`, for example) as one batch request, like `RpcClient::call`. A server
+whose `BatchConfig` caps a batch below 50 calls or 1 MiB refuses a larger window with its
+Problem, given to each call of it; raise the server caps or call through
+`RpcTransport::unary`, which still sends one call per request.
 
 ## Tool: `rpc::check::CheckArgs::allow_retired`
 
