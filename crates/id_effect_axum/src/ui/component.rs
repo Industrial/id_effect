@@ -7,7 +7,7 @@
 //! another component's slot. Everything a component interpolates is escaped by maud.
 //!
 //! ```rust
-//! use id_effect_axum::ui::{Component, Markup, Slots, html, maud};
+//! use id_effect_axum::ui::{Component, Markup, Slots, html};
 //!
 //! struct Card<'a> {
 //!   title: &'a str,

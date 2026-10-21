@@ -9,6 +9,8 @@ itself.
 ```toml
 [dependencies]
 id_effect_axum = { version = "0.13", features = ["ui"] }
+# `html!` expands to `extern crate maud;`: templates need maud itself, at the pinned version.
+maud = "=0.27.0"
 ```
 
 | Need | API |
@@ -33,7 +35,7 @@ cargo run -p id_effect_axum --features ui --example 095_htmx_todo -- --self-test
 
 `html!` builds a `Markup` at compile time. Every `(expression)` it interpolates is escaped, in text
 and in attribute values. A `Markup` is an Axum response, so a typed route's handler returns it like
-any other value. `html!` expands to `maud::…` paths, so import the re-exported crate next to it:
+any other value:
 
 ```rust
 use std::convert::Infallible;
@@ -43,7 +45,7 @@ use axum::http::Request;
 use id_effect::schema::{self, HasSchema, Schema};
 use id_effect::{Effect, succeed};
 use id_effect_axum::route::{Input, Route, Router};
-use id_effect_axum::ui::{Markup, html, maud};
+use id_effect_axum::ui::{Markup, html};
 use tower::ServiceExt;
 
 struct Who;
@@ -83,7 +85,7 @@ default slot (`child`, in order) and named slots (`slot`). `with` pairs props an
 result renders inside any template, including another component's slot.
 
 ```rust
-use id_effect_axum::ui::{Component, Markup, Slots, html, maud};
+use id_effect_axum::ui::{Component, Markup, Slots, html};
 
 struct Card {
   title: String,
@@ -132,7 +134,7 @@ use axum::http::Request;
 use id_effect::{Effect, succeed};
 use id_effect_axum::route::{Input, Route, Router};
 use id_effect_axum::server::security::{CookieKey, SecurityLayer};
-use id_effect_axum::ui::{BasicLayout, LayoutLayer, Page, htmx, html, maud};
+use id_effect_axum::ui::{BasicLayout, LayoutLayer, Page, htmx, html};
 use tower::ServiceExt;
 
 fn inbox(_: &mut (), _: Input) -> Effect<Page, Infallible, ()> {
@@ -185,7 +187,7 @@ layout uses. The response helpers go in a tuple before the body:
 ```rust
 use axum::response::IntoResponse;
 use id_effect_axum::ui::htmx::{HxRedirect, HxReswap, HxTrigger};
-use id_effect_axum::ui::{html, maud};
+use id_effect_axum::ui::{html};
 
 let res = (
   HxTrigger::event("saved").after_settle(),
@@ -233,7 +235,7 @@ use axum::http::{Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use id_effect::schema::{self, HasSchema, Schema};
-use id_effect_axum::ui::{FormState, HtmlForm, InputKind, Markup, html, maud};
+use id_effect_axum::ui::{FormState, HtmlForm, InputKind, Markup, html};
 use tower::ServiceExt;
 
 struct SignUp;

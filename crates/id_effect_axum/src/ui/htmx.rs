@@ -12,18 +12,19 @@
 //!   requests only). There is no CDN: pages keep `script-src 'self'`.
 //!
 //! ```rust
-//! use axum::http::StatusCode;
+//! use axum::response::{IntoResponse, Response};
 //! use id_effect_axum::ui::htmx::{HxRedirect, HxRequest, HxTrigger};
-//! use id_effect_axum::ui::{Markup, html, maud};
+//! use id_effect_axum::ui::{html};
 //!
-//! async fn save(hx: HxRequest) -> Result<(HxTrigger, Markup), (StatusCode, HxRedirect)> {
-//!   if !hx.is_htmx() {
+//! async fn save(hx: HxRequest) -> Response {
+//!   if hx.target.as_deref() == Some("editor") {
+//!     // Saved from the full editor: send the browser back to the list.
 //!     let back = HxRedirect::to("/notes").expect("a same-origin path");
-//!     return Err((StatusCode::SEE_OTHER, back));
+//!     return (back, ()).into_response();
 //!   }
-//!   Ok((HxTrigger::event("note-saved"), html! { p { "saved" } }))
+//!   (HxTrigger::event("note-saved"), html! { p { "saved" } }).into_response()
 //! }
-//! # let _ = axum::routing::post(save);
+//! # let _: axum::routing::MethodRouter = axum::routing::post(save);
 //! assert!(HxRedirect::to("https://evil.example/").is_err());
 //! ```
 

@@ -22,11 +22,11 @@
 //! use axum::http::Request;
 //! use id_effect::{Effect, succeed};
 //! use id_effect_axum::routing;
-//! use id_effect_axum::ui::{BasicLayout, LayoutLayer, Page, html, maud};
+//! use id_effect_axum::ui::{BasicLayout, LayoutLayer, Page, html};
 //! use tower::ServiceExt;
 //!
 //! fn inbox(_: &mut ()) -> Effect<Page, std::convert::Infallible, ()> {
-//!   succeed(Page::new("Inbox", html! { ul#messages { li { "hello" } } }))
+//!   succeed(Page::new("Inbox", html! { ul #messages { li { "hello" } } }))
 //! }
 //!
 //! let app: Router = Router::new()
