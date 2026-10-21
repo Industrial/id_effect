@@ -60,6 +60,18 @@ path = "examples/010_locale.rs"
 name = "020_catalog"
 path = "examples/020_catalog.rs"
 
+[[example]]
+name = "i18n_web"
+path = "examples/i18n_web.rs"
+required-features = ["axum", "maud", "schema"]
+
+# tests/web.rs and example i18n_web (r13-e9-4-i18n-web): drive an axum router in-process and
+# serve it; the versions id_effect_axum already uses.
+[dev-dependencies]
+http-body-util = "0.1"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+tower = { version = "0.5.3", features = ["util"] }
+
 [package.metadata.docs.rs]
 all-features = true
 

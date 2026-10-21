@@ -57,7 +57,11 @@ id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.12.0", featu
   "audit",
 ] }
 id_effect_fsm = { path = "../../crates/id_effect_fsm", version = "0.12.0" }
-id_effect_i18n = { path = "../../crates/id_effect_i18n", version = "0.12.0" }
+id_effect_i18n = { path = "../../crates/id_effect_i18n", version = "0.12.0", features = [
+  "axum",
+  "maud",
+  "schema",
+] }
 id_effect_kit = { path = "../../crates/id_effect_kit", version = "0.12.0", features = [
   "full",
 ] }

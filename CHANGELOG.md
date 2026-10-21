@@ -84,6 +84,19 @@
   default; `CurrentLocale` capability (fiber-local) with `with_locale`, `current_locale` and
   `translate`. Features `axum`, `maud` and `schema` are declared (off) for the web step. Book:
   chapter 30.9 "Internationalization".
+- `id_effect_i18n` on the web (r13-e9-4-i18n-web; eco.i18n #3 #5, web.ui #8):
+  `negotiate::Negotiator` chooses a request's locale from an application preference, a cookie and
+  `Accept-Language` (fluent-langneg lookup), always inside the supported-locale allowlist;
+  `negotiate::parse_accept_language` is bounded (≤ 256 bytes, ≤ 32 ranges, otherwise the header is
+  ignored) and public for fuzzing; `Localizer` (catalog + negotiated locale). Feature `axum`:
+  `axum::LocaleLayer` puts a `Localizer` and the `LocaleSource` in the request extensions (both
+  extractors) and a `CurrentLocale` override in `RequestCaps`, and sets `Content-Language` and
+  `Vary`. Feature `maud`: `t(&localizer, "id", args)` returns a `Message` implementing
+  `maud::Render` (escaped text, bidi isolation kept). Feature `schema`: `SchemaErrorCode` maps
+  every built-in `Schema` decode/validator message to a Fluent message id; English and German
+  catalogs ship with the crate (`SchemaMessages::schema_messages`); `translate_parse_errors`,
+  `localize_parse_errors` and `Localizer::parse_errors` translate `ParseErrors`. Example
+  `i18n_web` (`--self-test`); book chapter 30.9 gains the web sections.
 - `id-effect rpc check --allow-retired Service:N` (r13-f-rpc-retire, 0.12 follow-up F46),
   repeatable: the removal of that service version passes and is printed as `retired`; every other
   breaking change still exits 1, and naming a version that was not removed exits 2 (typo guard).
