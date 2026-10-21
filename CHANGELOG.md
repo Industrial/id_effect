@@ -40,6 +40,14 @@
   0.14 (the version instant-acme already brought), so `cargo tree -d` lists rcgen once and the
   `yasna` 0.5 copy rcgen 0.13 pulled is gone from `Cargo.lock`. No public signature exposes rcgen
   types; certificates keep ECDSA P-256 and the `id-effect dev` leaf keeps its 13-day lifetime.
+- Live streams deliver partial chunks (r13-f-stream-chunking, 0.12 follow-up F57):
+  `Stream::unfold_effect` waits for the first element of a pull only, then keeps the steps that
+  complete without waiting (ready values, synchronous steps, futures ready on their first poll)
+  and stops at the first step that would wait, which the next pull resumes. `run_for_each` on a
+  live source (an RPC client or server stream, a subscription, a queue) now sees each element as
+  it arrives instead of stalling until 64 have; pure and bounded sources keep full chunks. No
+  signature changes; backpressure is unchanged (a pull starts no step beyond the one it stops
+  on, and the generator runs only while the consumer pulls).
 
 ### Documentation
 
