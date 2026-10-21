@@ -125,7 +125,23 @@ jobs:
     name: Pre-publish tests
     runs-on: ubuntu-latest
     needs: [verify-versions]
+    env:
+      # Line tables keep backtraces and shrink target/ several-fold, as in ci.yml.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     steps:
+      # A standard runner has ~14 GB free, most of it preinstalled toolchains this job never
+      # uses; the workspace build filled it at v0.12.0 ("No space left on device", ld bus error).
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -147,7 +163,23 @@ jobs:
     name: Validate crate packaging
     runs-on: ubuntu-latest
     needs: [test]
+    env:
+      # Line tables keep backtraces and shrink target/ several-fold, as in ci.yml.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     steps:
+      # A standard runner has ~14 GB free, most of it preinstalled toolchains this job never
+      # uses; the workspace build filled it at v0.12.0 ("No space left on device", ld bus error).
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
