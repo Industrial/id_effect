@@ -35,7 +35,22 @@ Owner: r13-f-ws-credit.
 
 ## Axum / platform: `Http3Options` early-data and congestion settings
 
-Owner: r13-f-h3-settings.
+Owner: r13-f-h3-settings. No signature breaks (new items only; `Refusal` and `EndpointStats`
+are `#[non_exhaustive]`); two behaviour changes:
+
+- `Http3Options::dangerous_allow_zero_rtt_for_queries` is no longer a recorded no-op: the `h3`
+  route now takes 0-RTT early data (`Route::dangerous_allow_early_data`, also recorded) and
+  serves early `GET` / `HEAD` requests before the handshake completes; every other early
+  request is answered `425 Too Early`. `Http3Options::admits_early` no longer admits `OPTIONS`.
+  If you set the opt-out "for later", remove it unless your safe-method handlers are idempotent
+  and reveal nothing a replay could exploit.
+- `AlpnRoute::accept` on a route with early data waits for each connection's handshake; use
+  `AlpnRoute::accept_early` to receive connections at once with their `Handshake`. Routes
+  without early data (the default, and always the mesh) are unchanged.
+
+New: `Http3Options::congestion(CongestionControl::Cubic)` (default stays BBR) and
+`Http3Options::config()` for the config key `server.http3.congestion`; `CongestionControl`
+implements `FromStr` (`bbr`, `cubic`).
 
 ## RPC: `HttpTransport::with_header` / `with_bearer`
 

@@ -9,7 +9,7 @@ use tokio::sync::Semaphore;
 
 use super::config::{QuicEndpointConfig, QuicLimits, SocketBuffers, idle_timeout, transport};
 use super::congestion::{CongestionControl, RouteCongestion, Selection};
-use super::router::{AlpnRoute, AlpnRouter, Counters, Refusal, Route};
+use super::router::{AlpnRoute, AlpnRouter, Counters, Route};
 use super::{QuicError, socket};
 use crate::tls::Identity;
 
@@ -34,6 +34,10 @@ pub struct EndpointStats {
   pub congestion_bbr: u64,
   /// Connections whose route runs CUBIC.
   pub congestion_cubic: u64,
+  /// Connections closed because they sent 0-RTT data on a route that takes none (F25).
+  pub refused_early_data: u64,
+  /// Connections handed to a route with early data before their handshake completed (F25).
+  pub early_handovers: u64,
 }
 
 /// One QUIC endpoint on one UDP port, routing connections by ALPN (see the
@@ -219,6 +223,8 @@ impl QuicEndpoint {
       handshakes_failed: get(&c.handshakes_failed),
       congestion_bbr: get(&c.congestion_bbr),
       congestion_cubic: get(&c.congestion_cubic),
+      refused_early_data: get(&c.refused_early_data),
+      early_handovers: get(&c.early_handovers),
     }
   }
 
@@ -280,17 +286,11 @@ async fn handshake(incoming: quinn::Incoming, shared: &Shared) {
     CongestionControl::Bbr => &shared.counters.congestion_bbr,
     CongestionControl::Cubic => &shared.counters.congestion_cubic,
   });
-  let reason = match tokio::time::timeout_at(deadline, connecting).await {
-    Ok(Ok(conn)) => return shared.router.dispatch(conn, &shared.counters),
-    Ok(Err(e)) => e.to_string(),
-    Err(_) => "handshake timed out".to_string(),
-  };
-  failed();
-  if let Some(alpn) = alpn {
-    shared
-      .router
-      .refuse(&alpn, Refusal::Handshake { remote, reason });
-  }
+  // The route takes it: after the handshake, or at once when it takes early data (F25).
+  shared
+    .router
+    .complete(connecting, alpn, remote, deadline, &shared.counters)
+    .await;
 }
 
 #[cfg(test)]
