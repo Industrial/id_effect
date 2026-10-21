@@ -16,7 +16,8 @@ use std::time::Duration;
 
 use id_effect::{
   Cause, Chunk, DEFAULT_CHUNK_SIZE, Effect, Exit, FiberHandle, HNil, Never, Queue, Stream,
-  TestExecutor, die, fail, from_async, sleep, succeed, suspend, sync, yield_fiber,
+  TestExecutor, die, end_stream, fail, from_async, sleep, stream_from_channel, succeed, suspend,
+  sync, yield_fiber,
 };
 
 // ── helpers ─────────────────────────────────────────────────────────────────────────────────
@@ -528,4 +529,81 @@ fn unfold_effect_polls_no_future_once_interrupted() {
     0,
     "no poll after the interrupt"
   );
+}
+
+// ── the rest of the pull path ──────────────────────────────────────────────────────────────
+
+/// A chunk larger than the pull is split, and the next pulls are served from what was kept:
+/// a producer channel (one sent chunk of five) and a `group_by` output (one inner chunk of five).
+#[test]
+fn oversized_chunks_are_split_across_pulls() {
+  let (s, tx) = stream_from_channel::<u32, Never, HNil>(4);
+  run(tx.send::<HNil>(Chunk::from_vec(vec![1, 2, 3, 4, 5]))).expect("sent");
+  ok(end_stream::<u32, Never, HNil>(tx));
+  assert_eq!(chunks(s, 2), vec![vec![1, 2], vec![3, 4], vec![5]]);
+
+  let grouped: Stream<u32> = Stream::from_vec(vec![1, 2, 3]).group_by(
+    1,
+    |_| 7_u32,
+    |k, _group| Stream::from_vec(vec![k; 5]),
+  );
+  assert_eq!(chunks(grouped, 2), vec![vec![7, 7], vec![7, 7], vec![7]]);
+}
+
+/// Stages emit empty chunks when they drop a whole upstream chunk; a fold and a pump skip them
+/// (yielding) instead of ending or surfacing them, and a zero debounce settles at once.
+#[test]
+fn empty_chunks_are_skipped_by_folds_and_pumps() {
+  let evens = || Stream::<u32>::from_vec((1..=6).collect()).filter_serial(|n| n % 2 == 0);
+
+  let none: Stream<u32> = Stream::from_vec(vec![1, 3, 5]).filter_serial(|n| n % 2 == 0);
+  assert_eq!(ok(none.run_fold_effect(0, |acc, n| succeed(acc + n))), 0);
+  // An empty chunk (from [1, 3]) before a non-empty one (from [2, 4]).
+  let later: Stream<u32> = Stream::from_vec(vec![1, 3])
+    .chain(Stream::from_vec(vec![2, 4]))
+    .filter_serial(|n| n % 2 == 0);
+  assert_eq!(ok(later.run_fold_effect(0, |acc, n| succeed(acc + n))), 6);
+
+  let dropped: Stream<u32> = Stream::from_vec(vec![1, 3]).filter_serial(|n| n % 2 == 0);
+  assert!(ok(dropped.debounce(Duration::ZERO).run_collect()).is_empty());
+  assert_eq!(ok(evens().debounce(Duration::ZERO).run_collect()), vec![6]);
+}
+
+/// The small stages at their edges: `take(0)`, `take_while` that never stops, `grouped` with no
+/// partial group left, `map_err` on an empty stream, and the `Debug` of a stream.
+#[test]
+fn stage_edges() {
+  let s = || Stream::<u32>::from_vec(vec![1, 2, 3, 4]);
+  assert!(ok(s().take(0).run_collect()).is_empty());
+  assert_eq!(ok(s().take_while(|_| true).run_collect()), vec![1, 2, 3, 4]);
+  assert_eq!(
+    ok(s().grouped(2).run_collect()),
+    vec![vec![1, 2], vec![3, 4]]
+  );
+  let empty: Stream<u32, &str> = Stream::empty();
+  assert_eq!(
+    run(empty.map_err(str::len).run_collect()),
+    Ok(Vec::<u32>::new())
+  );
+  assert_eq!(format!("{:?}", Stream::<u32>::empty()), "Stream::Done");
+  assert_eq!(format!("{:?}", s()), "Stream::Pull");
+}
+
+/// `map` and `filter` over a chunk past the Compute Fabric threshold run in parallel and keep
+/// the order.
+#[test]
+fn large_chunks_map_and_filter_in_order() {
+  const LEN: u32 = 4096;
+  let s: Stream<u32> = Stream::from_vec((0..LEN).collect())
+    .map(|n| n * 3)
+    .filter(|n| n % 2 == 0);
+  let (chunk, rest) = pull(s, LEN as usize).unwrap().expect("a chunk");
+  assert_eq!(
+    chunk,
+    (0..LEN)
+      .map(|n| n * 3)
+      .filter(|n| n % 2 == 0)
+      .collect::<Vec<_>>()
+  );
+  assert!(pull(rest, LEN as usize).unwrap().is_none());
 }
