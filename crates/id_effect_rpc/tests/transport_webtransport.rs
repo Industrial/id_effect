@@ -153,12 +153,19 @@ fn serve_app(app: axum::Router, config: RpcWebTransportConfig) -> Fixture {
   .unwrap();
   let addr = quic.local_addr();
   let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-  tokio::spawn(async move {
-    let options = Http3Options::default().webtransport();
-    serve_h3(&quic, app, limits, options, async {
+  // Called before the spawn, so the route is registered by the time a test connects.
+  let served = serve_h3(
+    &quic,
+    app,
+    limits,
+    Http3Options::default().webtransport(),
+    async {
       let _ = stopped.await;
-    })
-    .await
+    },
+  );
+  tokio::spawn(async move {
+    let _quic = quic;
+    served.await
   });
   Fixture {
     addr,

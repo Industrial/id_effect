@@ -233,9 +233,17 @@ async fn serve_rpc() -> (SocketAddr, SocketAddr, String) {
   )
   .unwrap();
   let udp = quic.local_addr();
+  // Called before the spawn, so the route is registered by the time the browser connects.
+  let served = serve_h3(
+    &quic,
+    app,
+    limits,
+    Http3Options::default().webtransport(),
+    std::future::pending(),
+  );
   tokio::spawn(async move {
-    let options = Http3Options::default().webtransport();
-    serve_h3(&quic, app, limits, options, std::future::pending()).await
+    let _quic = quic;
+    served.await
   });
   (tcp, udp, hash)
 }

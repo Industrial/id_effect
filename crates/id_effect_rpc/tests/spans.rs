@@ -341,12 +341,19 @@ async fn webtransport_call_emits_rpc_request_span() {
   .unwrap();
   let addr = quic.local_addr();
   let (_stop, stopped) = tokio::sync::oneshot::channel::<()>();
-  tokio::spawn(async move {
-    let options = Http3Options::default().webtransport();
-    serve_h3(&quic, app, limits, options, async {
+  // Called before the spawn, so the route is registered by the time the client connects.
+  let served = serve_h3(
+    &quic,
+    app,
+    limits,
+    Http3Options::default().webtransport(),
+    async {
       let _ = stopped.await;
-    })
-    .await
+    },
+  );
+  tokio::spawn(async move {
+    let _quic = quic;
+    served.await
   });
   let tls = client_tls_config(&identity, None, &[pin]).unwrap();
   let request = ConnectRequest {

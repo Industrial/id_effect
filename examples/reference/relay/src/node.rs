@@ -308,13 +308,13 @@ impl RelayNode {
     let addr = endpoint.local_addr();
 
     let (stop_h3, stopped) = oneshot::channel::<()>();
-    let served = endpoint.clone();
-    let h3_options = h3.clone();
+    // Called before the spawn: the h3 route is registered once `start` returns.
+    let shutdown = async move {
+      let _ = stopped.await;
+    };
+    let served = serve_h3(&endpoint, app, limits, h3.clone(), shutdown);
     tokio::spawn(async move {
-      let shutdown = async move {
-        let _ = stopped.await;
-      };
-      if let Err(e) = serve_h3(&served, app, limits, h3_options, shutdown).await {
+      if let Err(e) = served.await {
         eprintln!("relay: http/3 stopped: {e}");
       }
     });

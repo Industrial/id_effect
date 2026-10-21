@@ -639,6 +639,8 @@ impl http_body::Body for H3Body {
 #[derive(Debug)]
 pub(crate) struct HostHttp3 {
   endpoint: QuicEndpoint,
+  /// Registered at bind, so the host accepts HTTP/3 as soon as it has started.
+  route: AlpnRoute,
 }
 
 impl HostHttp3 {
@@ -665,7 +667,8 @@ impl HostHttp3 {
     };
     let config = QuicEndpointConfig::new(identity.clone()).with_limits(quic_limits(limits));
     let endpoint = QuicEndpoint::bind(tcp, config).map_err(io_error)?;
-    Ok(Some(Self { endpoint }))
+    let route = endpoint.register(Route::h3()).map_err(io_error)?;
+    Ok(Some(Self { endpoint, route }))
   }
 
   /// The UDP port (the TCP one).
@@ -673,7 +676,8 @@ impl HostHttp3 {
     self.endpoint.local_addr().port()
   }
 
-  /// [`serve_h3`] with the default [`Http3Options`], then closes the endpoint.
+  /// [`serve_h3`] on the bound route with the default [`Http3Options`], then closes the
+  /// endpoint.
   pub(crate) async fn serve<F>(
     self,
     app: Router,
@@ -683,8 +687,8 @@ impl HostHttp3 {
   where
     F: Future<Output = ()> + Send + 'static,
   {
-    let served = serve_h3(
-      &self.endpoint,
+    let served = serve_route(
+      Ok(self.route),
       app,
       limits,
       Http3Options::default(),

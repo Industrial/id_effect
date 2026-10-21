@@ -43,35 +43,48 @@ async fn api(client: &reqwest::Client, mailpit: &MailpitContainer, path: &str) -
 async fn checks(mailpit: MailpitContainer) {
   let templates =
     Templates::from_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/templates")).unwrap();
-  let message = templates
-    .message(
-      "welcome",
-      &json!({
-        "user": { "name": "Carol & Co" },
-        "confirm_url": "https://ledger.example/confirm",
-        "company": "Ledger GmbH",
-      }),
-    )
-    .unwrap()
-    .from(Mailbox::named(
-      "Ledger",
-      Address::parse("hello@ledger.example").unwrap(),
-    ))
-    .to(Address::parse("carol@ledger.example").unwrap())
-    .build()
-    .unwrap();
+  let message = || {
+    templates
+      .message(
+        "welcome",
+        &json!({
+          "user": { "name": "Carol & Co" },
+          "confirm_url": "https://ledger.example/confirm",
+          "company": "Ledger GmbH",
+        }),
+      )
+      .unwrap()
+      .from(Mailbox::named(
+        "Ledger",
+        Address::parse("hello@ledger.example").unwrap(),
+      ))
+      .to(Address::parse("carol@ledger.example").unwrap())
+      .build()
+      .unwrap()
+  };
   let config = SmtpConfig::plaintext(mailpit.host(), mailpit.smtp_port());
-  let sent =
-    run(deliver::<MailerEnv, _>(message).provide_layer(SmtpMailer::layer::<MailError>(config)))
-      .await
-      .expect("Mailpit accepts the message");
+  // Mailpit logs readiness before its SMTP listener accepts, and Docker's port proxy accepts
+  // for it meanwhile ("incomplete response", seen on CI): retry transport failures briefly.
+  let deadline = Instant::now() + Duration::from_secs(10);
+  let sent = loop {
+    let mailer = SmtpMailer::layer::<MailError>(config.clone());
+    match run(deliver::<MailerEnv, _>(message()).provide_layer(mailer)).await {
+      Ok(sent) => break sent,
+      Err(MailError::Transport(e)) if Instant::now() < deadline => {
+        eprintln!("Mailpit not accepting yet: {e}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+      }
+      Err(e) => panic!("Mailpit accepts the message: {e:?}"),
+    }
+  };
   let message_id = sent.id.expect("a Message-ID");
 
   let client = reqwest::Client::new();
   let deadline = Instant::now() + Duration::from_secs(10);
   let listed = loop {
     let list = api(&client, &mailpit, "/api/v1/messages").await;
-    if list["total"].as_u64() == Some(1) {
+    // A retried send may have landed twice; Mailpit lists the newest (the one `sent` names) first.
+    if list["total"].as_u64().is_some_and(|n| n >= 1) {
       break list;
     }
     assert!(Instant::now() < deadline, "no message in Mailpit: {list}");
