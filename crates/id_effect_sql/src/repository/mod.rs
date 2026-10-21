@@ -89,9 +89,10 @@ use crate::value::{SqlValue, ToSqlValue};
 
 // Keyset pagination (r13-e3-3-pagination) and lifecycle hooks (r13-e3-3-hooks) land here.
 mod hooks;
-mod page;
+pub mod page;
 pub mod relations;
 
+pub use page::{Keyset, PageCursor, PageCursorError, PageLimits, Paged, SortOrder};
 pub use relations::{
   BoundEagerRepository, EagerRepository, FieldMeta, Loaded, MAX_EAGER_DEPTH, Relation,
   RelationKind, RelationMeta,
