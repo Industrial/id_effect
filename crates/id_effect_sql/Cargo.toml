@@ -89,6 +89,9 @@ trybuild = "1"
 # MySQL 8 container for tests/conformance/mysql.rs (feature `mysql`), and the TLS servers of
 # tests/tls.rs.
 testcontainers = { version = "0.28", default-features = false }
+# tests/repository_relations_pg.rs: its own PostgreSQL container. Path-only and without the `sql`
+# feature, so it does not depend back on this crate.
+id_effect_test = { path = "../id_effect_test" }
 # tests/tls.rs: a throwaway CA and server certificate (aws-lc-rs, as rustls uses).
 rcgen = { version = "0.14", default-features = false, features = [
   "aws_lc_rs",

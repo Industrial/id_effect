@@ -23,6 +23,17 @@
 //!   Into<Condition>`, repeatable). A tenant-scoped entity without a tenant fails closed
 //!   ([`SqlError::Unsupported`]). [`Repository::with_deleted`] lifts the soft-delete filter only;
 //!   [`Repository::unscoped`] lifts every filter (the explicit escape hatch).
+//! - **Relations and eager loading** (data.orm #3). `#[entity(belongs_to(..))]`,
+//!   `#[entity(has_many(..))]` and `#[entity(many_to_many(.., through = ".."))]` declare
+//!   [`Relation`]s; [`Repository::with`] loads them with the rows, one `IN (…)` query per relation
+//!   per level (no N+1), nested at most [`MAX_EAGER_DEPTH`] levels, into [`Loaded`] values. The
+//!   children are read the way the parent repository reads: with the child entity's tenant,
+//!   soft-delete and custom filters, so a relation never returns another tenant's row. See
+//!   [`Relation`].
+//! - **Field metadata**. [`Entity::FIELDS`] ([`FieldMeta`]: column, type, nullability,
+//!   `#[entity(editable)]`, `#[entity(label = "..")]`, relation) and [`Entity::RELATIONS`]
+//!   ([`RelationMeta`]) describe the entity to generic tools such as an admin; both default to
+//!   empty, so a hand-written `impl Entity` needs neither.
 //!
 //! Dialects: PostgreSQL and SQLite insert with `RETURNING`; MySQL inserts and then reads the row
 //! back by id, so a `generated` id is [`SqlError::Unsupported`] there.
@@ -76,6 +87,16 @@ use crate::row::SqlRow;
 use crate::transaction::{SqlTransaction, SqlTransactionService};
 use crate::value::{SqlValue, ToSqlValue};
 
+// Keyset pagination (r13-e3-3-pagination) and lifecycle hooks (r13-e3-3-hooks) land here.
+mod hooks;
+mod page;
+pub mod relations;
+
+pub use relations::{
+  BoundEagerRepository, EagerRepository, FieldMeta, Loaded, MAX_EAGER_DEPTH, Relation,
+  RelationKind, RelationMeta,
+};
+
 /// A struct mapped to a table: what `#[derive(Entity)]` generates (see the [module docs](self)).
 ///
 /// The constants are the mapping; [`values`](Self::values) are the column values to write.
@@ -100,6 +121,14 @@ pub trait Entity: FromRow + Send + 'static {
   const SOFT_DELETE: Option<&'static str> = None;
   /// The tenant (or owner) column every statement is scoped to, if any. It need not be a field.
   const TENANT: Option<&'static str> = None;
+  /// The entity's label key (`#[entity(label = "..")]`; the derive defaults to the type name
+  /// in snake case), e.g. a translation key for an admin. Defaults to [`NAME`](Self::NAME).
+  const LABEL: &'static str = Self::NAME;
+  /// What each field is ([`FieldMeta`]), in field order. The derive fills it; the default is
+  /// empty (no metadata), so a hand-written impl compiles without it.
+  const FIELDS: &'static [FieldMeta] = &[];
+  /// The declared relations ([`RelationMeta`]). The derive fills it; the default is empty.
+  const RELATIONS: &'static [RelationMeta] = &[];
 
   /// The primary key.
   fn id(&self) -> Self::Id;
@@ -381,18 +410,42 @@ impl<T: Entity> Repository<T> {
 
   /// The global filters, without the soft-delete one when `soft_delete` is false.
   fn scope(&self, soft_delete: bool) -> Result<Condition, SqlError> {
+    self.scope_in(None, soft_delete)
+  }
+
+  /// [`scope`](Self::scope) with the tenant and soft-delete columns qualified by `table` (for a
+  /// join). Custom scopes are added as they are.
+  fn scope_in(
+    &self,
+    table: Option<&'static str>,
+    soft_delete: bool,
+  ) -> Result<Condition, SqlError> {
     let tenant = self.tenant_value()?;
     let mut cond = Condition::all();
     if self.filters == Filters::None {
       return Ok(cond);
     }
+    let column = |col: &'static str| match table {
+      Some(table) => Expr::col((table, col)),
+      None => Expr::col(col),
+    };
     if let (Some(col), Some(v)) = (T::TENANT, tenant) {
-      cond = cond.add(Expr::col(col).eq(Value::from(v)));
+      cond = cond.add(column(col).eq(Value::from(v)));
     }
     if let (Some(col), true, Filters::All) = (T::SOFT_DELETE, soft_delete, self.filters) {
-      cond = cond.add(Expr::col(col).is_null());
+      cond = cond.add(column(col).is_null());
     }
     Ok(and(cond, T::scope()))
+  }
+
+  /// The same dialect, tenant and filters for the entity `C` (how relations read children).
+  fn cast<C: Entity>(&self) -> Repository<C> {
+    Repository {
+      dialect: self.dialect,
+      tenant: self.tenant.clone(),
+      filters: self.filters,
+      entity: PhantomData,
+    }
   }
 
   fn id_is(id: &T::Id) -> Condition {

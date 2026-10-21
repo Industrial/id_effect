@@ -365,6 +365,10 @@ assert_eq!(
 
 [Tenancy and the audit log](ch30-07-audit-tenancy.md) shows the whole request path: from the authenticated principal to `CurrentTenant`, the filtered repository and an audit record in the same transaction.
 
+## Relations
+
+`#[entity(belongs_to(..))]`, `has_many(..)` and `many_to_many(.., through = "..")` declare relations between entities, and `repo.with(Order::lines())` loads them with the rows in one query per relation (no N+1), each child re-scoped by its own tenant and soft-delete filters. [Relations and eager loading](ch28-06-relations.md) covers them, with the field metadata (`Entity::FIELDS`) generic tools read.
+
 ## Dialects
 
 The repository renders each statement for its `Dialect`. PostgreSQL and SQLite insert with `RETURNING`. MySQL has no `RETURNING`, so an insert is followed by a read of the row by id, and a `generated` id is `SqlError::Unsupported` there (assign ids in the application, e.g. UUIDs).

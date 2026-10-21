@@ -3220,6 +3220,7 @@ version = "0.12.0"
 dependencies = [
  "id_effect",
  "id_effect_proc_macro",
+ "id_effect_test",
  "id_effect_tokio",
  "jiff",
  "proptest",
