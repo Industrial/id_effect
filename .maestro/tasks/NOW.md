@@ -1,11 +1,32 @@
 # NOW
-Updated: 2026-10-20T05:21:34.609Z
+Updated: 2026-10-21T01:13:47.887Z
 
 ## In flight (0)
 None.
 
-## Ready to pick up (0)
-None.
+## Ready to pick up (39)
+### tsk-mvhf59ri-gcmaue . W0: ADR 0015 Breadth batteries + PLAN-OF-PLANS restatement
+Mission: pln-mvhf4op9-yl99n0
+Spec: .maestro/specs/releases/0.13/r13-t0-adr0015.md
+
+### tsk-mvhf59ri-8vwj0w . W0: Amendment 9, ai move, admin/i18n/pipeline skeletons
+Mission: pln-mvhf4op9-yl99n0
+Spec: .maestro/specs/releases/0.13/r13-t0-skeletons.md
+
+### tsk-mvhf59ri-2mysjl . W0: F5 one rcgen 0.14 across the workspace
+Mission: pln-mvhf4op9-yl99n0
+Spec: .maestro/specs/releases/0.13/r13-f-rcgen.md
+
+### tsk-mvhf59ri-0jkcwz . W0: F52 Effect::any_env
+Mission: pln-mvhf4op9-yl99n0
+Spec: .maestro/specs/releases/0.13/r13-f-any-env.md
+
+### tsk-mvhf59ri-2uwyi9 . W1: axum ui feature (maud views, htmx)
+Mission: pln-mvhf4op9-yl99n0
+Spec: .maestro/specs/releases/0.13/r13-e9-5-views.md
+
+(and 34 more)
+
 
 ## Ready to ship (0)
 None.
