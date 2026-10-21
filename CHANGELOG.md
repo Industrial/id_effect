@@ -2,6 +2,14 @@
 
 ## 0.13.0 — Unreleased — Breadth
 
+### Added
+
+- `Effect::any_env` and `LocalEffect::any_env` (r13-f-any-env, F52 / D14): run an env-free
+  effect (`R = HNil`) under any environment `R`, HList or not (a bare `DynEnv`, a generic `R`),
+  replacing the `Effect::from_ctx(|ctx| async move { ctx.bind(e).await })` workaround. A ready
+  effect is returned as is; a program gets one `Provide` frame over the shared empty environment.
+  Book: "Env-free effects under any environment" in part 2, chapter 4.3.
+
 ### Changed
 
 - One rcgen (r13-f-rcgen, 0.12 follow-up F5): `id_effect_platform`, `id_effect_node`,
