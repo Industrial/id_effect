@@ -1,16 +1,50 @@
-//! Internationalization for id_effect services.
+//! Internationalization for id_effect services, over [Project Fluent](https://projectfluent.org)
+//! (ADR 0010 Amendment 9, release spec 0.13.0 decision D5).
 //!
-//! 0.13 builds this crate in steps (ADR 0010 Amendment 9, release spec 0.13.0 decision D5): Project
-//! Fluent message catalogs with CLDR plural rules, a `CurrentLocale` capability switched per
-//! request or fiber, `Accept-Language` negotiation and translated `Schema` errors. This first
-//! release step provides [`Locale`], a validated language identifier.
+//! - [`Locale`]: a validated, case-normalized language identifier (`de-AT`, `sr-Latn-RS`).
+//! - [`Catalog`]: Fluent resources per locale, embedded with `include_str!` or loaded from
+//!   allowlisted directories, parsed once at startup; lookups fall back from the requested locale
+//!   to its language and then to the default locale; [`Catalog::check`] reports every key a
+//!   locale lacks.
+//! - CLDR plural categories through Fluent selectors (`{ $n -> [one] … [few] … *[other] … }`),
+//!   with the rules of the locale a message comes from.
+//! - [`CurrentLocale`]: the locale capability in the environment, switched per request or per
+//!   fiber with [`with_locale`]; [`translate`] formats a message in it.
 //!
-//! ## Secure by default
+//! ```
+//! use id_effect::{Effect, Exit, HCons, HNil, Never, hlist, run_test};
+//! use id_effect_i18n::{Args, Catalog, CurrentLocale, Locale, translate, with_locale};
+//!
+//! let en = Locale::parse("en").unwrap();
+//! let pl = Locale::parse("pl").unwrap();
+//! let catalog = Catalog::builder(en.clone())
+//!   .embedded(en.clone(), "app.ftl", "files = { $n ->\n  [one] one file\n *[other] { $n } files\n}")
+//!   .embedded(pl.clone(), "app.ftl", "files = { $n ->
+//!     [one] jeden plik
+//!     [few] { $n } pliki
+//!    *[many] { $n } plików
+//!   }")
+//!   .use_isolating(false)
+//!   .build()
+//!   .unwrap();
+//! assert!(catalog.check().is_complete());
+//!
+//! type Env = HCons<Catalog, HCons<CurrentLocale, HNil>>;
+//! let eff: Effect<String, Never, Env> = with_locale(pl, translate("files", Args::new().with("n", 3)));
+//! let exit = run_test(eff.provide_all(hlist![catalog, CurrentLocale::new(en)]));
+//! assert!(matches!(exit, Exit::Success(text) if text == "3 pliki"));
+//! ```
+//!
+//! ## Secure by default (ADR 0013 R4)
 //!
 //! A locale usually comes from untrusted input (an `Accept-Language` header, a query parameter, a
-//! user setting). [`Locale::parse`] reads at most [`Locale::MAX_LEN`] bytes, accepts only ASCII
-//! subtags of the documented shapes and normalizes their case, so a parsed locale can never carry a
-//! path separator, a control character or an unbounded string into a catalog lookup.
+//! user setting). [`Locale::parse`] reads at most [`Locale::MAX_LEN`] bytes and accepts only ASCII
+//! subtags of the documented shapes, and catalogs are keyed by parsed locales: no locale string
+//! from input ever reaches a file path. Resource files are read once, at startup, only below
+//! directories the application allowlists ([`CatalogBuilder::allow_dir`]; `..` and symbolic
+//! links are resolved first), only `.ftl` files of at most [`MAX_RESOURCE_BYTES`]; a parse error
+//! fails [`CatalogBuilder::build`]. Message arguments are wrapped in Unicode bidi isolation marks
+//! by default.
 //!
 //! ```
 //! use id_effect_i18n::Locale;
@@ -25,199 +59,22 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-use std::fmt;
+mod args;
+mod catalog;
+mod current;
+mod locale;
+
+pub use args::{ArgValue, Args};
+pub use catalog::{
+  Catalog, CatalogBuilder, CatalogError, CatalogReport, MAX_RESOURCE_BYTES, MissingKey, Translation,
+};
+pub use current::{CurrentLocale, current_locale, translate, with_locale};
+pub use locale::{Locale, LocaleError};
+/// The Unicode language identifier of `unic-langid` (what Fluent and `fluent-langneg` use);
+/// convert with `LanguageIdentifier::from(&locale)` and `Locale::try_from(&id)`.
+pub use unic_langid::LanguageIdentifier;
 
 /// Compiles and runs the README quick start as a doctest.
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
-
-/// A validated language identifier: `language[-Script][-REGION]`.
-///
-/// The language subtag is 2–3 ASCII letters (stored lowercase), the optional script subtag 4 ASCII
-/// letters (stored titlecase) and the optional region subtag 2 ASCII letters (stored uppercase) or
-/// 3 ASCII digits. Subtags are separated by `-` or `_`; the canonical form uses `-`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Locale {
-  tag: String,
-  language_len: usize,
-  script: Option<(usize, usize)>,
-  region: Option<(usize, usize)>,
-}
-
-/// Why [`Locale::parse`] rejected its input.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LocaleError {
-  /// The input was empty.
-  Empty,
-  /// The input was longer than [`Locale::MAX_LEN`] bytes.
-  TooLong,
-  /// The language subtag is not 2–3 ASCII letters.
-  InvalidLanguage,
-  /// A subtag after the language is neither a script (4 letters) nor a region (2 letters or 3
-  /// digits), or appears out of order.
-  InvalidSubtag,
-}
-
-impl fmt::Display for LocaleError {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(match self {
-      Self::Empty => "locale is empty",
-      Self::TooLong => "locale is longer than the limit",
-      Self::InvalidLanguage => "locale language subtag must be 2-3 ASCII letters",
-      Self::InvalidSubtag => "locale subtag is not a script or region",
-    })
-  }
-}
-
-impl std::error::Error for LocaleError {}
-
-impl Locale {
-  /// The longest input [`Locale::parse`] reads, in bytes.
-  pub const MAX_LEN: usize = 16;
-
-  /// Parses and normalizes a language identifier such as `en`, `de-AT`, `sr_Latn_RS` or `es-419`.
-  ///
-  /// # Errors
-  ///
-  /// Returns a [`LocaleError`] when the input is empty, longer than [`Locale::MAX_LEN`] bytes, or
-  /// not of the shape `language[-Script][-REGION]`.
-  pub fn parse(input: &str) -> Result<Self, LocaleError> {
-    if input.is_empty() {
-      return Err(LocaleError::Empty);
-    }
-    if input.len() > Self::MAX_LEN {
-      return Err(LocaleError::TooLong);
-    }
-    let mut parts = input.split(['-', '_']);
-    let language = parts.next().unwrap_or_default();
-    if !(2..=3).contains(&language.len()) || !language.bytes().all(|b| b.is_ascii_alphabetic()) {
-      return Err(LocaleError::InvalidLanguage);
-    }
-    let mut tag = language.to_ascii_lowercase();
-    let language_len = tag.len();
-    let mut script = None;
-    let mut region = None;
-    for part in parts {
-      let start = tag.len() + 1;
-      if script.is_none() && region.is_none() && is_script(part) {
-        tag.push('-');
-        tag.push_str(&part[..1].to_ascii_uppercase());
-        tag.push_str(&part[1..].to_ascii_lowercase());
-        script = Some((start, tag.len()));
-      } else if region.is_none() && is_region(part) {
-        tag.push('-');
-        tag.push_str(&part.to_ascii_uppercase());
-        region = Some((start, tag.len()));
-      } else {
-        return Err(LocaleError::InvalidSubtag);
-      }
-    }
-    Ok(Self {
-      tag,
-      language_len,
-      script,
-      region,
-    })
-  }
-
-  /// The canonical form, for example `de-AT`.
-  pub fn as_str(&self) -> &str {
-    &self.tag
-  }
-
-  /// The language subtag, lowercase (`de` for `de-AT`).
-  pub fn language(&self) -> &str {
-    &self.tag[..self.language_len]
-  }
-
-  /// The script subtag, titlecase (`Latn` for `sr-Latn-RS`), if present.
-  pub fn script(&self) -> Option<&str> {
-    self.script.map(|(start, end)| &self.tag[start..end])
-  }
-
-  /// The region subtag, uppercase or digits (`AT` for `de-AT`, `419` for `es-419`), if present.
-  pub fn region(&self) -> Option<&str> {
-    self.region.map(|(start, end)| &self.tag[start..end])
-  }
-
-  /// The locale with only its language subtag (`de` for `de-AT`): the next step of a fallback
-  /// chain.
-  pub fn language_only(&self) -> Self {
-    Self {
-      tag: self.language().to_owned(),
-      language_len: self.language_len,
-      script: None,
-      region: None,
-    }
-  }
-}
-
-impl fmt::Display for Locale {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&self.tag)
-  }
-}
-
-impl std::str::FromStr for Locale {
-  type Err = LocaleError;
-
-  fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Self::parse(s)
-  }
-}
-
-fn is_script(part: &str) -> bool {
-  part.len() == 4 && part.bytes().all(|b| b.is_ascii_alphabetic())
-}
-
-fn is_region(part: &str) -> bool {
-  (part.len() == 2 && part.bytes().all(|b| b.is_ascii_alphabetic()))
-    || (part.len() == 3 && part.bytes().all(|b| b.is_ascii_digit()))
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn locale_parse_normalizes_case_and_separator() {
-    let locale = Locale::parse("SR_latn_rs").unwrap();
-    assert_eq!(locale.as_str(), "sr-Latn-RS");
-    assert_eq!(locale.language(), "sr");
-    assert_eq!(locale.script(), Some("Latn"));
-    assert_eq!(locale.region(), Some("RS"));
-    assert_eq!(locale.to_string(), "sr-Latn-RS");
-    assert_eq!(locale.language_only().as_str(), "sr");
-  }
-
-  #[test]
-  fn locale_parse_accepts_numeric_region_and_language_only() {
-    let es = "es-419".parse::<Locale>().unwrap();
-    assert_eq!(es.region(), Some("419"));
-    assert_eq!(es.script(), None);
-    let en = Locale::parse("en").unwrap();
-    assert_eq!((en.script(), en.region()), (None, None));
-    assert_eq!(en.language_only(), en);
-  }
-
-  #[test]
-  fn r4_locale_parse_rejects_malformed_and_oversize_input() {
-    assert_eq!(Locale::parse(""), Err(LocaleError::Empty));
-    assert_eq!(Locale::parse(&"a".repeat(17)), Err(LocaleError::TooLong));
-    assert_eq!(Locale::parse("e"), Err(LocaleError::InvalidLanguage));
-    assert_eq!(Locale::parse("e1"), Err(LocaleError::InvalidLanguage));
-    assert_eq!(Locale::parse("../etc"), Err(LocaleError::InvalidLanguage));
-    assert_eq!(Locale::parse("de-AT-Latn"), Err(LocaleError::InvalidSubtag));
-    assert_eq!(Locale::parse("de-"), Err(LocaleError::InvalidSubtag));
-    assert_eq!(Locale::parse("de-AT-DE"), Err(LocaleError::InvalidSubtag));
-    for err in [
-      LocaleError::Empty,
-      LocaleError::TooLong,
-      LocaleError::InvalidLanguage,
-      LocaleError::InvalidSubtag,
-    ] {
-      assert!(!err.to_string().is_empty());
-    }
-  }
-}
