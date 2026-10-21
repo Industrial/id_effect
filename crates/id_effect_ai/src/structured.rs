@@ -11,9 +11,9 @@
 //!
 //! ```
 //! use id_effect::{HCons, HNil, Schema};
-//! use id_effect_ai::structured::complete_structured;
+//! use id_effect_ai::structured::{StructuredError, complete_structured};
 //! use id_effect_ai::testing::ScriptedModel;
-//! use id_effect_ai::{AiError, ChatRequest, LanguageModelService};
+//! use id_effect_ai::{ChatRequest, LanguageModelService};
 //!
 //! #[derive(Clone, Debug, Schema)]
 //! struct Invoice { number: String, total_cents: i64 }
@@ -22,7 +22,7 @@
 //! let invoice = complete_structured::<Invoice, HCons<LanguageModelService, HNil>, _>(
 //!   ChatRequest::user("m", "Extract the invoice"),
 //! )
-//! .provide_layer(model.layer::<AiError>())
+//! .provide_layer(model.layer::<StructuredError>())
 //! .block_on()
 //! .into_result()
 //! .expect("decoded");
