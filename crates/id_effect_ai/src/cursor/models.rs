@@ -7,6 +7,7 @@ use id_effect_platform::http::{HttpClient, HttpMethod, HttpRequest, HttpResponse
 use serde::Deserialize;
 
 use crate::config::AiConfig;
+use crate::cursor::agents::cursor_http_error;
 use crate::cursor::types::CursorModel;
 use crate::error::AiError;
 use crate::http_util::{check_status, cursor_basic_auth_header, from_result, join_url};
@@ -30,13 +31,13 @@ pub fn list_models(
     url: join_url(&config.cursor_base_url, "v1/models"),
     headers: vec![cursor_basic_auth_header(&key)],
     body: None,
-    timeout: None,
-    max_body_bytes: None,
+    timeout: Some(config.limits.request_timeout),
+    max_body_bytes: Some(config.limits.max_response_bytes),
   };
   suspend(move || {
     client
       .execute(req)
-      .map_err(|e| AiError::CursorAgents(format!("http: {e}")))
+      .map_err(cursor_http_error)
       .flat_map(|resp| from_result(parse_models(resp)))
   })
 }

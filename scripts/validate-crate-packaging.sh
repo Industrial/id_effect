@@ -74,8 +74,8 @@ declare -A LEVEL=(
     [id_effect_rpc]=5
     # 0.13 (ADR 0010 Amendment 9), all at the last level and before id_effect_kit and
     # id_effect_tool. i18n follows id_effect and id_effect_axum (its `axum` feature); ai follows
-    # id_effect_platform and id_effect_config (HTTP client, `Secret` keys) and stays in
-    # PENDING_PROMOTION until r13-e9-1-promote; admin follows id_effect_sql, id_effect_axum,
+    # id_effect_platform and id_effect_config (HTTP client, `Secret` keys), and its optional
+    # `mcp-http` feature id_effect_axum and id_effect_authz; admin follows id_effect_sql, id_effect_axum,
     # id_effect_authz and id_effect_i18n (repository, `ui` views, guards, labels).
     [id_effect_i18n]=5
     [id_effect_ai]=5
@@ -100,10 +100,8 @@ declare -a ORDER=(
 # Crates in ORDER that still await promotion (ADR 0010 rule 2): either still under labs/, or
 # already moved into crates/ but `publish = false` until the promoting leaf. Remove the entry in
 # that leaf (id_effect_rpc: moved in r12-t0-skeletons, publishable since r12-e12-1-promote).
-declare -A PENDING_PROMOTION=(
-    # Moved out of labs/ by r13-t0-skeletons; r13-e9-1-promote makes it publishable.
-    [id_effect_ai]=r13-e9-1-promote
-)
+# (id_effect_ai: moved in r13-t0-skeletons, publishable since r13-e9-1-promote.)
+declare -A PENDING_PROMOTION=()
 
 if [[ "${1:-}" == "--print-order" ]]; then
     printf '%s\n' "${ORDER[@]}"

@@ -5,7 +5,7 @@
 //! Send one line: `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
 
 use id_effect::{Effect, succeed};
-use id_effect_ai::{ChatMessage, ChatRequest, ChatRole, LanguageModel, MockLanguageModel};
+use id_effect_ai::{ChatRequest, LanguageModel, MockLanguageModel};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{self, BufRead, Write};
@@ -34,16 +34,8 @@ fn handle_line(line: &str) -> Result<String, String> {
       serde_json::json!({"tools": [{"name": "echo", "description": "Echo user text via MockLanguageModel"}]})
     }
     "tools/call" => {
-      let model = MockLanguageModel::echo();
-      let chat = ChatRequest {
-        model: "mock".into(),
-        messages: vec![ChatMessage {
-          role: ChatRole::User,
-          content: "mcp".into(),
-        }],
-      };
-      let resp = model
-        .complete(chat)
+      let resp = MockLanguageModel::echo()
+        .complete(ChatRequest::user("mock", "mcp"))
         .block_on()
         .into_result()
         .map_err(|cause| cause.pretty())?;

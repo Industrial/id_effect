@@ -4,6 +4,51 @@
 
 ### Added
 
+- `id_effect_ai` promoted to tier `integration` and published (r13-e9-1-promote, D6; ai.llm #1
+  #2 #7): provider-neutral chat (`chat`: `LanguageModel`, `ChatRequest::new` / `user` with a
+  per-request `max_tokens`, `ChatResponse` with `Usage`, `stop_reason` and `ToolCall`s) and
+  streaming (`stream`: SSE decoded incrementally from the platform client's body, one chunk per
+  pull; `stream::decode_sse_event` for the `ai_sse_event` fuzz target), OpenAI and Anthropic
+  adapters under `vendors/{openai,anthropic}/chat.rs`, retries (now also Anthropic's 529), and an
+  `ai.request` span with vendor, operation, model and token usage. `testing::ScriptedModel`
+  (feature `test-util`, D8) replays replies, tool calls, streams and failures in order and records
+  every request. Every 0.13 feature is declared once (`openai`, `anthropic`, `ollama`, `cursor`,
+  `tools`, `embeddings`, `mcp`, `mcp-http`, `test-util`), with `tools/`, `embeddings/`, `mcp/`
+  and the `vendors/*/embed.rs` modules in place for the wave 2–3 leaves. Secure by default (ADR
+  0013, ADR 0015 B13 B14): every call goes through id_effect_platform's client, so the SSRF policy
+  applies to provider base URLs (`AiError::Blocked`); API keys are `Secret` and redacted in
+  `Debug`; prompts and completions are never logged or put on spans unless
+  `AiConfig::dangerous_log_prompts()` is taken (recorded as `DANGEROUS_LOG_PROMPTS`); `AiLimits`
+  gives every request `max_tokens` 1024, a 60 s timeout and a 4 MiB response cap, and a stream
+  16 MiB, 65 536 events and 1 MiB per event (`AiError::LimitExceeded`, the stream is closed). The
+  Cursor agents client stays behind the non-default `cursor` feature. API changes from the labs
+  crate in [MIGRATION-0.13.md](docs/MIGRATION-0.13.md); book chapter 35 rewritten.
+- Relations and eager loading in `id_effect_sql` (r13-e3-3-relations, data.orm #3):
+  `#[entity(belongs_to(..))]`, `has_many(..)` and `many_to_many(.., through = "..")` generate
+  `Relation<P, C>` constructors (`Order::lines()`); `Repository::with(rel)` returns an
+  `EagerRepository` whose `find` / `find_all` / `find_by` / `find_page` / `load` return `Loaded<T>`
+  values, loading each relation in one `IN (…)` query per relation per level (no N+1; keys
+  deduplicated, chunked at 1 000), nested with `Relation::with` at most `MAX_EAGER_DEPTH` (3)
+  levels, on PostgreSQL, MySQL and SQLite. Secure by default (ADR 0013 R1): children are read
+  with the child entity's tenant, soft-delete and custom filters (inside the join for N:M), so a
+  relation never returns another tenant's row, and a tenant-scoped child without a tenant fails
+  closed before any query. `Entity::FIELDS` (`FieldMeta`: column, type, nullable,
+  `#[entity(editable)]`, `#[entity(label = "..")]`, relation), `Entity::RELATIONS`
+  (`RelationMeta`) and `Entity::LABEL`, all defaulted so hand-written impls compile unchanged.
+  `repository.rs` becomes `repository/{mod,relations}.rs`; every public path is kept. Book:
+  chapter 28.6.
+- Server-rendered UI in `id_effect_axum`, feature `ui` (r13-e9-5-views, D3; web.ui #1 #2 #6, margin
+  #5): maud (`=0.27.0`) `Markup` as a response on typed routes; `ui::Component` with `Slots`
+  (default and named slots, composable); `ui::Page` + `ui::LayoutLayer` / `ui::BasicLayout` answer
+  the full page to browsers and the fragment to htmx (`HX-Request`, `Vary: HX-Request`); htmx
+  helpers `HxRequest`, `HxTarget`, `HxTrigger`, `HxRedirect` (same-origin paths only),
+  `HxReswap`, `HxRetarget`; htmx 2.0.11 vendored (0BSD, sha384 in
+  `crates/id_effect_axum/assets/README.md`) and served by `ui::htmx::asset_route()`, loaded with
+  `integrity` and `htmx-config` `allowEval: false`, `selfRequestsOnly: true` (pages keep
+  `script-src 'self'`); the layout sends the masked CSRF token on every htmx request
+  (`hx-headers`); `ui::HtmlForm<T>` / `ui::FormState` re-render forms with `Schema` decode errors
+  bound to their fields and translatable message keys; raw HTML only through `ui::trusted_html`
+  (grep test over the axum and admin sources). Example `095_htmx_todo`; book chapter 29.10.
 - `Effect::any_env` and `LocalEffect::any_env` (r13-f-any-env, F52 / D14): run an env-free
   effect (`R = HNil`) under any environment `R`, HList or not (a bare `DynEnv`, a generic `R`),
   replacing the `Effect::from_ctx(|ctx| async move { ctx.bind(e).await })` workaround. A ready

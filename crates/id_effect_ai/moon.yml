@@ -21,7 +21,7 @@ tasks:
       outputStyle: buffer-only-failure
   test:
     deps: ['effect:ci-format', '^:test', '~:clippy']
-    command: ['cargo', 'nextest', 'run', '-p', 'id_effect_ai']
+    command: ['cargo', 'nextest', 'run', '-p', 'id_effect_ai', '--all-features']
     inputs: ['Cargo.toml', 'src/**/*.rs', 'tests/**/*.rs']
     options: {cache: true, outputStyle: buffer-only-failure}
   build:

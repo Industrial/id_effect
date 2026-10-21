@@ -1,31 +1,25 @@
-//! One-shot Anthropic chat completion (requires `ANTHROPIC_API_KEY`).
+//! One-shot Anthropic Messages completion, streamed (requires `ANTHROPIC_API_KEY`).
 
 use id_effect::{HCons, HNil};
 use id_effect_ai::{
-  AiConfig, AiError, ChatMessage, ChatRequest, ChatRole, LanguageModelService, complete,
+  AiConfig, AiError, ChatRequest, LanguageModelService, complete_stream,
   provide_anthropic_language_model,
 };
-use id_effect_platform::http::ReqwestHttpClient;
-use std::sync::Arc;
 
 fn main() {
   let cfg = AiConfig::from_env();
-  let client = Arc::new(ReqwestHttpClient::default_client());
-  let layer = provide_anthropic_language_model::<AiError>(client, cfg).expect("anthropic provider");
-  let req = ChatRequest {
-    model: std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-sonnet-4-20250514".into()),
-    messages: vec![ChatMessage {
-      role: ChatRole::User,
-      content: std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "Say hello in one word.".into()),
-    }],
-  };
-  // The program edge: run on the default runtime (its tokio drivers serve reqwest).
-  let resp = complete::<HCons<LanguageModelService, HNil>, _>(req)
-    .provide_layer(layer)
-    .block_on()
-    .into_result()
-    .expect("complete");
-  println!("{}", resp.content);
+  let layer = provide_anthropic_language_model::<AiError>(cfg.http_client(), cfg)
+    .expect("anthropic provider");
+  let model =
+    std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
+  let prompt = std::env::args()
+    .nth(1)
+    .unwrap_or_else(|| "Say hello in one word.".into());
+  let program =
+    complete_stream::<HCons<LanguageModelService, HNil>, _>(ChatRequest::user(model, prompt))
+      .provide_layer(layer)
+      .flat_map(|stream| stream.run_collect());
+  let chunks = program.block_on().into_result().expect("stream");
+  let text: String = chunks.iter().map(|c| c.delta.as_str()).collect();
+  println!("{text}");
 }

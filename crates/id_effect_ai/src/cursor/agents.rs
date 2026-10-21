@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use id_effect::{Effect, HCons, HNil, Layer, fail, hlist, sleep, succeed, suspend};
+use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{HttpClient, HttpMethod, HttpRequest};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -72,7 +73,7 @@ impl HttpCursorAgentsClient {
     self
       .client
       .execute(req)
-      .map_err(|e| AiError::CursorAgents(format!("http: {e}")))
+      .map_err(cursor_http_error)
       .flat_map(|resp| {
         from_result(Self::check_status(&resp.status, &resp.body).map(|()| resp.body))
       })
@@ -89,8 +90,8 @@ impl HttpCursorAgentsClient {
           url: join_url(&this.config.cursor_base_url, &path),
           headers: vec![cursor_basic_auth_header(&key)],
           body: None,
-          timeout: None,
-          max_body_bytes: None,
+          timeout: Some(this.config.limits.request_timeout),
+          max_body_bytes: Some(this.config.limits.max_response_bytes),
         })
       })
     })
@@ -115,8 +116,8 @@ impl HttpCursorAgentsClient {
               ("Content-Type".to_string(), "application/json".to_string()),
             ],
             body: Some(bytes),
-            timeout: None,
-            max_body_bytes: None,
+            timeout: Some(this.config.limits.request_timeout),
+            max_body_bytes: Some(this.config.limits.max_response_bytes),
           })
         })
       })
@@ -145,6 +146,15 @@ impl HttpCursorAgentsClient {
         self.poll_until_idle(agent_id, run_id, deadline)
       }))
     })
+  }
+}
+
+/// A transport failure of a Cursor call: SSRF refusals, timeouts and caps keep their typed
+/// variants, anything else is [`AiError::CursorAgents`].
+pub(crate) fn cursor_http_error(e: HttpError) -> AiError {
+  match AiError::from(e) {
+    AiError::Upstream(detail) => AiError::CursorAgents(detail),
+    other => other,
   }
 }
 
