@@ -144,6 +144,8 @@ pub use id_effect_proc_macro::Entity;
 pub use repository::{BoundRepository, CurrentTenant, Entity, Page, Repository, SqlExecutor};
 #[cfg(feature = "repository")]
 pub use repository::{EagerRepository, FieldMeta, Loaded, Relation, RelationMeta};
+#[cfg(feature = "repository")]
+pub use repository::{Keyset, PageCursor, Paged, SortOrder};
 
 // MySQL driver (E3.1b, feature `mysql`).
 #[cfg(feature = "mysql")]

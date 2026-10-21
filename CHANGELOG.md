@@ -18,6 +18,18 @@
   (`RelationMeta`) and `Entity::LABEL`, all defaulted so hand-written impls compile unchanged.
   `repository.rs` becomes `repository/{mod,relations}.rs`; every public path is kept. Book:
   chapter 28.6.
+- Keyset (cursor) pagination in `id_effect_sql` (r13-e3-3-pagination, E3.3 "pagination", D11):
+  `Repository::find_after(&Keyset, Option<PageCursor>)` / `find_before` (also on
+  `BoundRepository` and, with the relations loaded, `EagerRepository`) return
+  `Paged<T> { items, next, prev }` in a `Keyset` order — declared sort columns
+  (`order_by(column, SortOrder)`, mapped columns only), then the primary key — so pages stay
+  stable while rows are inserted. The offset `Page` / `find_page` is kept. `PageCursor` is opaque:
+  base64url of the sort-key tuple and a fingerprint of the request's filter, sort and filter
+  mode, at most 1 KiB, read by `PageCursor::decode` through a bounded `Schema` (public for the
+  `sql_page_cursor` fuzz target); it is not signed because every page re-applies the tenant,
+  soft-delete and custom filters. Secure by default (ADR 0013 R4, R1): oversize cursors are
+  refused, a cursor whose fingerprint differs from the request is refused, and page sizes default
+  to 50 and are capped at 500 (`PageLimits`, configurable and finite). Book: chapter 28.7.
 - `id_effect_ai` promoted to tier `integration` and published (r13-e9-1-promote, D6; ai.llm #1
   #2 #7): provider-neutral chat (`chat`: `LanguageModel`, `ChatRequest::new` / `user` with a
   per-request `max_tokens`, `ChatResponse` with `Usage`, `stop_reason` and `ToolCall`s) and
