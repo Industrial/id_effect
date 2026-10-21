@@ -4,6 +4,20 @@
 
 ### Added
 
+- Relations and eager loading in `id_effect_sql` (r13-e3-3-relations, data.orm #3):
+  `#[entity(belongs_to(..))]`, `has_many(..)` and `many_to_many(.., through = "..")` generate
+  `Relation<P, C>` constructors (`Order::lines()`); `Repository::with(rel)` returns an
+  `EagerRepository` whose `find` / `find_all` / `find_by` / `find_page` / `load` return `Loaded<T>`
+  values, loading each relation in one `IN (…)` query per relation per level (no N+1; keys
+  deduplicated, chunked at 1 000), nested with `Relation::with` at most `MAX_EAGER_DEPTH` (3)
+  levels, on PostgreSQL, MySQL and SQLite. Secure by default (ADR 0013 R1): children are read
+  with the child entity's tenant, soft-delete and custom filters (inside the join for N:M), so a
+  relation never returns another tenant's row, and a tenant-scoped child without a tenant fails
+  closed before any query. `Entity::FIELDS` (`FieldMeta`: column, type, nullable,
+  `#[entity(editable)]`, `#[entity(label = "..")]`, relation), `Entity::RELATIONS`
+  (`RelationMeta`) and `Entity::LABEL`, all defaulted so hand-written impls compile unchanged.
+  `repository.rs` becomes `repository/{mod,relations}.rs`; every public path is kept. Book:
+  chapter 28.6.
 - `id_effect_ai` promoted to tier `integration` and published (r13-e9-1-promote, D6; ai.llm #1
   #2 #7): provider-neutral chat (`chat`: `LanguageModel`, `ChatRequest::new` / `user` with a
   per-request `max_tokens`, `ChatResponse` with `Usage`, `stop_reason` and `ToolCall`s) and
