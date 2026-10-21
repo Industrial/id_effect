@@ -9,6 +9,14 @@
   replacing the `Effect::from_ctx(|ctx| async move { ctx.bind(e).await })` workaround. A ready
   effect is returned as is; a program gets one `Provide` frame over the shared empty environment.
   Book: "Env-free effects under any environment" in part 2, chapter 4.3.
+- Crate layout for 0.13 (r13-t0-skeletons, ADR 0010 Amendment 9): `id_effect_ai` moves from
+  `labs/` to `crates/id_effect_ai` with its history and joins the root workspace (still
+  `publish = false` until r13-e9-1-promote); new tier-`integration` crates `id_effect_i18n`
+  (`Locale`, a bounded, case-normalized language identifier) and `id_effect_admin`
+  (`AdminPermission` / `AdminAction`, the `admin.<entity>.<action>` permission model); the
+  Pipeline reference app (`examples/reference/pipeline`, tier `example`, its stage model); CI job
+  `breadth`; `examples/recipes/` is outside the root workspace. The unused
+  `crates/id_effect_cli/templates/admin-stub/` is removed ([MIGRATION-0.13.md](docs/MIGRATION-0.13.md)).
 
 ### Changed
 

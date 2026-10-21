@@ -1,0 +1,31 @@
+[package]
+name = "pipeline"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "id_effect reference app: a multi-tenant document-intake pipeline and its back office, built through id_effect_kit"
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# Every id_effect battery comes through the kit, one feature each (like the Ledger and the Relay);
+# r13-w6-pipeline and r13-w7-pipeline-backoffice add the features the app uses.
+id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0" }
+
+[[example]]
+name = "010_stages"
+path = "examples/010_stages.rs"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier (Amendment 9) — checked by scripts/tier-conformance.sh. The Pipeline is the
+# CI-tested consumer that moves id_effect_ai, id_effect_admin and id_effect_i18n to tier `platform`
+# (check P) once it depends on them.
+tier = "example"
