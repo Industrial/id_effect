@@ -701,6 +701,7 @@ dependencies = [
  "id_effect_storage",
  "id_effect_test",
  "id_effect_tokio",
+ "maud",
  "opentelemetry",
  "opentelemetry_sdk",
  "proptest",

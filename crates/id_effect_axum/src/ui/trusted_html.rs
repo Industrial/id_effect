@@ -16,7 +16,7 @@
 //! built with [`html!`](super::html), which escapes it.
 //!
 //! ```rust
-//! use id_effect_axum::ui::{html, maud, trusted_html};
+//! use id_effect_axum::ui::{html, trusted_html};
 //!
 //! const ICON: &str = r#"<svg viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="3"/></svg>"#;
 //! let markup = html! { span.icon { (trusted_html::from_static(ICON)) } };

@@ -26,15 +26,15 @@
 //!
 //! ## Using `html!`
 //!
-//! [`html!`] expands to paths starting with `maud::`, so bring the re-exported crate into scope
-//! next to it: `use id_effect_axum::ui::{html, maud};` (or depend on `maud` directly, same
-//! version).
+//! [`html!`] expands to `extern crate maud;`, so a crate that writes templates depends on maud
+//! itself, at the version this crate pins (`maud = "=0.27.0"`); the types ([`Markup`],
+//! [`Render`]) are the same either way. `ui::maud` re-exports the crate for everything else.
 //!
 //! ```rust
 //! use id_effect::schema::{self, HasSchema, Schema};
 //! use id_effect::{Effect, succeed};
 //! use id_effect_axum::route::{Input, Route, Router};
-//! use id_effect_axum::ui::{Markup, html, maud};
+//! use id_effect_axum::ui::{Markup, html};
 //!
 //! struct Name;
 //!

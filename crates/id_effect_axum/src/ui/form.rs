@@ -19,7 +19,7 @@
 //! use axum::response::{IntoResponse, Response};
 //! use id_effect::schema::{self, HasSchema, Schema};
 //! use id_effect_axum::ui::form::{FormState, HtmlForm, InputKind};
-//! use id_effect_axum::ui::{Markup, html, maud};
+//! use id_effect_axum::ui::{Markup, html};
 //!
 //! struct SignUp;
 //!
@@ -48,13 +48,13 @@
 //!   }
 //! }
 //!
-//! async fn sign_up(form: HtmlForm<SignUp>) -> Response {
-//!   match form.into_result() {
+//! async fn sign_up(submitted: HtmlForm<SignUp>) -> Response {
+//!   match submitted.into_result() {
 //!     Ok(((name, _email), _)) => html! { p { "Welcome, " (name) } }.into_response(),
 //!     Err(state) => (StatusCode::UNPROCESSABLE_ENTITY, form(&state)).into_response(),
 //!   }
 //! }
-//! # let _ = axum::routing::post(sign_up);
+//! # let _: axum::routing::MethodRouter = axum::routing::post(sign_up);
 //! let state = FormState::new()
 //!   .with_value("name", "<b>")
 //!   .with_error("name", "must not be empty");
