@@ -376,8 +376,10 @@ jobs:
         # A dry run publishes nothing, so it checks the built files the same way.
         run: |
           set -euo pipefail
-          # The subjects the signed provenance attests (DSSE payload -> in-toto statement).
-          jq -r '.payload' "$PROVENANCE" | base64 -d | jq -r '.subject[] | "\(.digest.sha256)  \(.name)"' > attested.sha256
+          # The subjects the signed provenance attests (DSSE payload -> in-toto statement). The
+          # generator writes a Sigstore bundle (payload under .dsseEnvelope); a bare DSSE envelope
+          # has it at the top level.
+          jq -r '.dsseEnvelope.payload // .payload' "$PROVENANCE" | base64 -d | jq -r '.subject[] | "\(.digest.sha256)  \(.name)"' > attested.sha256
           cat attested.sha256
           source_args=(--source-uri "github.com/$GITHUB_REPOSITORY")
           if [ -n "$TAG" ]; then
