@@ -880,7 +880,23 @@ async fn serve_h3_ends_when_its_endpoint_closes() {
       .await
     })
   };
-  let mut h3 = h3_connect(endpoint.local_addr(), ca.roots()).await.unwrap();
+  // `serve_h3` registers the `h3` route when the spawned task first runs; a handshake that
+  // lands before that finds no route ("peer doesn't support any known protocol", seen on a
+  // loaded CI runner), so connect until the route is there.
+  let deadline = tokio::time::Instant::now() + WAIT;
+  let mut h3 = loop {
+    match h3_connect(endpoint.local_addr(), ca.roots()).await {
+      Ok(h3) => break h3,
+      Err(e) if e.contains("no application protocol") || e.contains("known protocol") => {
+        assert!(
+          tokio::time::Instant::now() < deadline,
+          "h3 route never registered: {e}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+      }
+      Err(e) => panic!("{e}"),
+    }
+  };
   assert_eq!(h3.get("/hello").await.unwrap().body, "hello");
   endpoint.close();
   tokio::time::timeout(WAIT, server)
