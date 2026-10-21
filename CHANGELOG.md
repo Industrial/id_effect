@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.0 — Unreleased — Breadth
+
+### Documentation
+
+- [ADR 0015 "Breadth batteries"](docs/adrs/0015-breadth-batteries.md) (Proposed; r13-t0-adr0015):
+  the Pipeline reference app definition, crate placement for admin, the axum `ui` feature, i18n
+  and AI, MCP pinned to specification revision 2026-07-28, deterministic AI in CI, the tool-safety
+  budgets, tenant resolution, the keyset cursor format, lifecycle hooks inside the transaction,
+  and the ADR 0013 rules (B1–B23) every breadth surface follows. PLAN-OF-PLANS §6 restates 0.13.0
+  on the measured 0.12.0 baseline: target E 85.2 (#1), RT 87.8, red ≤ 3; `sec.supply` carried over.
+
 ## 0.12.0 — 2026-10-20 — One call surface
 
 RPC becomes the first-party call surface (ADR 0014): `id_effect_rpc` leaves `labs/` with six
