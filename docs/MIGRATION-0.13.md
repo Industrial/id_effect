@@ -97,4 +97,19 @@ id_effect_ai = { path = "../id_effect/labs/id_effect_ai" }
 id_effect_ai = { path = "../id_effect/crates/id_effect_ai" }   # or: id_effect_ai = "0.13"
 ```
 
-The API changes of the promotion are listed here by r13-e9-1-promote.
+The API changes of the promotion (the labs crate had no semver promise; each has its
+replacement):
+
+| 0.12 (labs) | 0.13 |
+|---|---|
+| `ChatRequest { model, messages }` literal | `ChatRequest::new(model, messages)` or `ChatRequest::user(model, text)`; the struct is `#[non_exhaustive]` and gains `max_tokens: Option<u32>` (`with_max_tokens`) |
+| `ChatMessage { role, content }` | still valid; also `ChatMessage::system` / `user` / `assistant` |
+| `ChatResponse { content, tokens_used }`, `resp.tokens_used` | `ChatResponse::text(..)` (`#[non_exhaustive]`); `resp.usage.total()` (`Usage { input_tokens, output_tokens }`), plus `stop_reason` and `tool_calls` |
+| `AiConfig { openai_api_key: Some(..), .. }` literal | `AiConfig::default().with_openai_api_key(..).with_openai_base_url(..)` (and the Anthropic, Ollama and Cursor twins); fields stay public for reading and assignment |
+| `AiConfig::anthropic_max_tokens`, `ANTHROPIC_MAX_TOKENS` | `AiConfig::limits.max_tokens` (`AiLimits`), now sent by both vendors; `AI_MAX_TOKENS` (the old variable is still read) |
+| `provide_*_language_model(client, config)` with any platform `HttpClient` | unchanged; `config.http_client()` builds the guarded client from `AiConfig::http` (keep a local mock or Ollama reachable with `HttpClientConfig::allow_hosts`, never by turning the SSRF guard off). Each request now carries `AiLimits::request_timeout` and a body cap |
+| `id_effect_ai::model::*`, `id_effect_ai::streaming::*`, `id_effect_ai::sse::*` (private modules, root re-exports) | `id_effect_ai::chat::*` and `id_effect_ai::stream::*`; the root re-exports are unchanged |
+| `id_effect_ai::vendors::openai::*`, `vendors::anthropic::*` | `vendors::openai::chat::*`, `vendors::anthropic::chat::*` (re-exported from `vendors::openai` / `vendors::anthropic` and the crate root as before) |
+| `AiError` (exhaustive) | `#[non_exhaustive]`, with `InvalidRequest`, `Blocked`, `LimitExceeded` and `Timeout`; HTTP 529 is `Transient` |
+| `SseParser::feed` trimmed every leading space of a value | one leading space is removed (the SSE rule); `feed_bytes` takes raw bytes |
+| streamed chunks parsed after the whole body was read | decoded incrementally, under `AiLimits::max_stream_bytes` / `max_stream_events` |

@@ -19,6 +19,11 @@ id_effect = { path = "../../crates/id_effect", version = "0.12.0", features = [
   "schema-regex",
   "proptest",
 ] }
+id_effect_ai = { path = "../../crates/id_effect_ai", version = "0.12.0", features = [
+  "openai",
+  "anthropic",
+  "test-util",
+] }
 id_effect_auth = { path = "../../crates/id_effect_auth", version = "0.12.0", features = [
   "axum",
   "jwt",

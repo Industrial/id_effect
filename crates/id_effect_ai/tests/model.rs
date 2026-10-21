@@ -1,30 +1,34 @@
+//! The `LanguageModel` capability with the echo mock.
+
 use id_effect::{HCons, HNil};
 use id_effect_ai::{
-  AiError, ChatMessage, ChatRequest, ChatRole, LanguageModel, LanguageModelService,
-  MockLanguageModel, complete, provide_mock_language_model,
+  AiError, ChatMessage, ChatRequest, LanguageModel, LanguageModelService, MockLanguageModel,
+  complete, provide_mock_language_model,
 };
 use id_effect_tokio::TokioRuntime;
 
 #[test]
 fn chat_request_validate_empty_fails() {
-  let req = ChatRequest {
-    model: "mock".into(),
-    messages: vec![],
-  };
+  let req = ChatRequest::new("mock", Vec::<ChatMessage>::new());
   assert!(req.validate().is_err());
+}
+
+#[test]
+fn mock_complete_echoes_user() {
+  let resp = MockLanguageModel::echo()
+    .complete(ChatRequest::user("mock", "hello"))
+    .block_on()
+    .into_result()
+    .expect("run");
+  assert_eq!(resp.content, "echo:hello");
+  assert_eq!(resp.usage.output_tokens, 10);
 }
 
 #[tokio::test]
 async fn mock_complete_echoes_user_message() {
-  let req = ChatRequest {
-    model: "mock".into(),
-    messages: vec![ChatMessage {
-      role: ChatRole::User,
-      content: "hello".into(),
-    }],
-  };
-  let program = complete::<HCons<LanguageModelService, HNil>, _>(req)
-    .provide_layer(provide_mock_language_model::<AiError>());
+  let program =
+    complete::<HCons<LanguageModelService, HNil>, _>(ChatRequest::user("mock", "hello"))
+      .provide_layer(provide_mock_language_model::<AiError>());
   let resp = TokioRuntime::current()
     .expect("tokio")
     .run(program)
@@ -36,17 +40,9 @@ async fn mock_complete_echoes_user_message() {
 
 #[tokio::test]
 async fn mock_stream_yields_chunks() {
-  let model = MockLanguageModel::echo();
-  let req = ChatRequest {
-    model: "mock".into(),
-    messages: vec![ChatMessage {
-      role: ChatRole::User,
-      content: "ab".into(),
-    }],
-  };
   let rt = TokioRuntime::current().expect("tokio");
   let stream = rt
-    .run(model.complete_stream(req))
+    .run(MockLanguageModel::echo().complete_stream(ChatRequest::user("mock", "ab")))
     .await
     .into_result()
     .expect("stream");
