@@ -2,6 +2,14 @@
 
 ## 0.13.0 — Unreleased — Breadth
 
+### Changed
+
+- One rcgen (r13-f-rcgen, 0.12 follow-up F5): `id_effect_platform`, `id_effect_node`,
+  `id_effect_axum`, `id_effect_sql`, `id_effect_tool` and `id_effect_kit` move from rcgen 0.13 to
+  0.14 (the version instant-acme already brought), so `cargo tree -d` lists rcgen once and the
+  `yasna` 0.5 copy rcgen 0.13 pulled is gone from `Cargo.lock`. No public signature exposes rcgen
+  types; certificates keep ECDSA P-256 and the `id-effect dev` leaf keeps its 13-day lifetime.
+
 ### Documentation
 
 - [ADR 0015 "Breadth batteries"](docs/adrs/0015-breadth-batteries.md) (Proposed; r13-t0-adr0015):

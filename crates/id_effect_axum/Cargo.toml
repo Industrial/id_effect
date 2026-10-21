@@ -189,7 +189,7 @@ hyper = { version = "=1.12.0", default-features = false, features = [
   "http1",
   "http2",
 ] }
-rcgen = { version = "=0.13.2", default-features = false, features = [
+rcgen = { version = "=0.14.10", default-features = false, features = [
   "aws_lc_rs",
   "pem",
 ] }

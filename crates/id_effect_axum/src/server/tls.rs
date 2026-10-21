@@ -399,7 +399,7 @@ mod tests {
     let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
     let (chain, key) = (dir.join("chain.pem"), dir.join("key.pem"));
     std::fs::write(&chain, certified.cert.pem()).unwrap();
-    std::fs::write(&key, certified.key_pair.serialize_pem()).unwrap();
+    std::fs::write(&key, certified.signing_key.serialize_pem()).unwrap();
     let no_runtime = ServerTls::from_pem_files(&chain, &key, Some(Duration::from_secs(1)));
     assert!(
       matches!(&no_runtime, Err(CertError::Tls(m)) if m.contains("Tokio")),
