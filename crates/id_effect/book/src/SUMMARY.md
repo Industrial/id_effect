@@ -186,6 +186,7 @@
   - [Single sign-on with OpenID Connect (`id_effect_auth`)](./part6/ch30-05-oidc.md)
   - [Two-factor authentication with TOTP (`id_effect_auth`)](./part6/ch30-06-totp.md)
   - [Tenancy and the audit log](./part6/ch30-07-audit-tenancy.md)
+  - [The admin back office (`id_effect_admin`)](./part6/ch30-08-admin.md)
   - [Internationalization (`id_effect_i18n`)](./part6/ch30-09-i18n.md)
 - [Async messaging and jobs](./part6/ch31-00-async-messaging.md)
   - [Background jobs (`id_effect_jobs`)](./part6/ch31-01-jobs.md)
