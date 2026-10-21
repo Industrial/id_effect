@@ -1,0 +1,8 @@
+{
+  "id": "hnd-mvcngff3-emrowy",
+  "task_id": "tsk-mvcjv3zi-qxn0mq",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-17T17:07:34.287Z",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.10/r10-e7-4-promote.md",
+  "to_agent": "cli"
+}

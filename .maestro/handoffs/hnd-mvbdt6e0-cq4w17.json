@@ -1,0 +1,8 @@
+{
+  "id": "hnd-mvbdt6e0-cq4w17",
+  "task_id": "tsk-mvbdsp4f-xmojqz",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-16T19:49:46.776Z",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.9.0.md",
+  "to_agent": "cli"
+}

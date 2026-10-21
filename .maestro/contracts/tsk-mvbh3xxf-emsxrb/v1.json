@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-678e4b",
+  "taskId": "tsk-mvbh3xxf-emsxrb",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T21:22:20.628Z",
+  "lockedAt": "2026-10-16T21:22:20.628Z",
+  "intent": "r09-e3-1b-sqlite",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-e46f49",
+      "text": "Same conformance suite as pg runs green on SQLite in-memory and file DBs.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0fa362",
+      "text": "Gate: `cargo nextest run -p id_effect_sql --features sqlite`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-587a13",
+      "text": "Owns: `crates/id_effect_sql/src/sqlite/**`, feature `sqlite`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

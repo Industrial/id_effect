@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-380a8e",
+  "taskId": "tsk-mvcpexet-7d5r2f",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T18:14:19.227Z",
+  "lockedAt": "2026-10-17T18:14:19.227Z",
+  "intent": "r10-e7-1-cron",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-3da639",
+      "text": "`CronRegistry` entries enqueue a job per tick with `unique_key = name@tick`, so N schedulers enqueue once; leader election by `ClusterSingleton` over `PgAdvisoryLease`. Tests `cron_tick_enqueues_once_across_two_schedulers`, `lease_loss_hands_over_schedule`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d5d927",
+      "text": "Gate: `<pg> -p id_effect_jobs --features cron`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-891930",
+      "text": "Owns: `crates/id_effect_jobs/src/cron.rs` (feature `cron`, dep `id_effect_node/pg`)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

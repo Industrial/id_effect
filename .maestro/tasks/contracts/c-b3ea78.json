@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "id": "c-b3ea78",
+  "taskId": "tsk-mveox57m-tvw0xp",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:24:11.834Z",
+  "lockedAt": "2026-10-19T03:24:11.834Z",
+  "intent": "r11-e2-5-stm-collections",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-f53fd4",
+      "text": "conc.stm#6: TSet, TArray, TPriorityQueue (take retries when empty), TPromise (await_ parks until completed; completes once), TReentrantLock (read and write locks, reentrant per fiber) in id_effect::stm, each composing with Stm::or_else and Stm::retry.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7478d2",
+      "text": "Tests `tset_add_remove_atomic_with_tref`, `tarray_update_is_transactional`, `tpriority_queue_orders_and_retries_when_empty`, `tpromise_await_parks_until_completed`, `treentrant_lock_writer_excludes_readers`, `stm_collections_contention`; examples 087-091; book part4/ch12-04-collections.md covers all nine structures (evidence for #6 at level documented, cap 89).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f668f0",
+      "text": "Gate: `cargo nextest run -p id_effect --test stm_collections`; `cargo test -p id_effect --doc stm`; `cargo test -p id_effect --examples`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d14b06",
+      "text": "Owns: `crates/id_effect/src/stm/{tset,tarray,tpriority_queue,tpromise,treentrant_lock}.rs`, `crates/id_effect/src/stm/mod.rs`, `crates/id_effect/examples/087-091_stm_*.rs`, `crates/id_effect/tests/stm_collections.rs`, `crates/id_effect/book/src/part4/ch12-04-collections.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-e2-5-stm-collections",
+  "lockedBy": "r11-e2-5-stm-collections",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "low"
+}

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-d71720",
+  "taskId": "tsk-mvbh3xu3-3dzjef",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T22:13:18.490Z",
+  "lockedAt": "2026-10-16T22:13:18.490Z",
+  "intent": "r09-e3-1b-mysql",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-1e52f5",
+      "text": "Conformance suite green on MySQL 8 (testcontainers).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e25967",
+      "text": "Gate: `ID_EFFECT_REQUIRE_DOCKER=1 cargo nextest run -p id_effect_sql --features mysql`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5c469c",
+      "text": "Owns: `crates/id_effect_sql/src/mysql/**`, feature `mysql`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

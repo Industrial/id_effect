@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-f6083b",
+  "taskId": "tsk-mveouc1i-byube1",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:21:58.682Z",
+  "lockedAt": "2026-10-19T03:21:58.682Z",
+  "intent": "r11-sec-limits",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-e04aff",
+      "text": "M5: a LoadShed layer caps in-flight requests (default derived from available parallelism, configurable in HostConfig) and answers 503 Problem Details with Retry-After when full, without queueing; server_layer installs it by default (no such layer exists in crates/id_effect_axum/src/middleware/ today); disabling it is dangerous_no_load_shedding() (posture).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-67d0f2",
+      "text": "M8: MemoryRateLimitStore eviction is O(1) amortized (LRU list or clock ring) and the store is sharded (no full scan as at middleware/rate_limit.rs:138-145; DEFAULT_MAX_KEYS at :96 kept).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-45dda4",
+      "text": "Regression tests `m5_load_shed_rejects_over_capacity_with_503`, `m5_default_server_stack_has_concurrency_cap`, `m8_eviction_does_not_scan_all_keys` (visit counter under a test hook), `m8_eviction_evicts_least_recently_used`, `m8_sharded_store_under_contention`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-62a84e",
+      "text": "Gate: `cargo nextest run -p id_effect_axum --all-features`; `bash scripts/bench-run.sh --only id_effect_axum:gate_request` (no budget regression)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d4d664",
+      "text": "Owns: `crates/id_effect_axum/src/middleware/{rate_limit.rs,load_shed.rs,mod.rs}`, `crates/id_effect_axum/src/server/{bootstrap.rs,lifecycle.rs}`, `crates/id_effect_axum/tests/limits.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-sec-limits",
+  "lockedBy": "r11-sec-limits",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

@@ -1,0 +1,58 @@
+{
+	"schemaVersion": 1,
+	"id": "vrd-1792150235104-564363",
+	"taskId": "tsk-mvaoq06i-s0i7vr",
+	"contractVersion": 1,
+	"computedAt": "2026-10-16T11:30:35.104Z",
+	"decision": "HUMAN",
+	"proposedRiskClass": "medium",
+	"effectiveRiskClass": "medium",
+	"reasons": [
+		{
+			"category": "policy",
+			"code": "auto-merge-not-allowed",
+			"message": "Auto-merge is opt-in and not enabled for risk class \"medium\" in autopilot.yaml; the task can still complete via human review (run `maestro handoff emit`, or set autoMergeAllowed.medium: true — note: enabling auto-merge is a \"loosening\" and soaks for 30 days before taking effect; run `maestro policy pending` to see in-flight changes)."
+		},
+		{
+			"category": "evidence",
+			"code": "proof-map-incomplete",
+			"message": "6 acceptance criterion/criteria lack covering evidence: dw-f3e7b8 (\"Step 1 (alignment): every competitor v2 level/met cell is re-judged with one rule: a check met only through a third-party library counts at production level only if the framework's own docs recommend that library, otherwise the row is scored at labs (or without that check, whichever scores higher). The per-check classification is committed as docs/scorecard/alignment-2.0.json.\"); dw-77c1a9 (\"Step 2 (method 1.1): every id_effect v1 score above the cap of its v2 level is lowered to that cap; the v1 numbers are kept per row under rows[].v1 {competitors, id_effect, targets} and remain reproducible with scripts/scorecard.sh --method 1.\"); dw-a364a5 (\"Step 3 (method 2.0): method_version is \"2.0\"; rows[].competitors and rows[].id_effect hold the checklist scores and --validate fails when a stored score differs from its checklist score; rows[].targets are re-based to the v2 scale by one documented rule; --method 2 is the default.\"); dw-a0ae06 (\"METHOD.md §5.2 and §7, PLAN-OF-PLANS §1 and §6, results/v0.6.0.json, results/v0.7.0.json, REPORT-0.7.0.md, REPORT-method-v2.md and index.html are regenerated or re-stated with 2.0 numbers; the v1 numbers are kept in a history table.\"); dw-6e75f3 (\"bash scripts/scorecard.sh --validate --self-test passes, including a fixture that fails on a stored score that differs from its checklist score; the CI scorecard step passes unchanged or is updated in the same change.\"); dw-a593ac (\"Step 4: the owner accepts the re-based numbers before 0.8 scope selection (§7.1.3) uses them.\"). Record covering evidence with `maestro evidence record --task <id> --criterion dw-f3e7b8 --command \"...\" --exit 0` (criterion id matches the spec's acceptance_criteria — see `maestro spec show <slug>` or the spec frontmatter)."
+		}
+	],
+	"evidenceConsulted": [
+		"evd-1792138651098-4031aa",
+		"evd-1792138655783-986c6a",
+		"evd-1792138659989-3eb4cc"
+	],
+	"policiesConsulted": [
+		{
+			"file": "policies/risk.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/autopilot.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/release.yaml",
+			"version": "1"
+		}
+	],
+	"trustVerifier": {
+		"findingsCount": 1,
+		"errors": 0,
+		"warns": 1,
+		"infos": 0,
+		"findings": [
+			{
+				"check": "empty-diff",
+				"severity": "warn",
+				"paths": [],
+				"details": "Diff between f6d730760da0ec0c181e90675118b9277cebe6d4 and f6d730760da0ec0c181e90675118b9277cebe6d4 is empty (base equals HEAD). Commit work after locking the contract — the verifier diffs from the lock-commit."
+			}
+		]
+	},
+	"subject": {
+		"tree_sha": "5dd3cb528a978a4c508f7ca16da06b18a8112789"
+	}
+}

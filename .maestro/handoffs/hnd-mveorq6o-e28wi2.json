@@ -1,0 +1,9 @@
+{
+  "id": "hnd-mveorq6o-e28wi2",
+  "task_id": "tsk-mveorm3d-m113ii",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-19T03:19:53.424Z",
+  "agent_id": "r11-sec-csrf-headers",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.11/r11-sec-csrf-headers.md",
+  "to_agent": "cli"
+}

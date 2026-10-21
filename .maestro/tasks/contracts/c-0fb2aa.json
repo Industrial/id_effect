@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-0fb2aa",
+  "taskId": "tsk-mvf70fjh-fmn5my",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T11:50:37.239Z",
+  "lockedAt": "2026-10-19T11:50:37.239Z",
+  "intent": "r12-e12-3-h3-client",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-3bc483",
+      "text": "HttpClientConfig::http3(bool) (opt-in for the client): requests go over h3 + h3-quinn when an Alt-Svc entry for the origin is known; the client never uses reqwest HTTP/3 and the workspace never sets --cfg reqwest_unstable.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-ccda32",
+      "text": "Alt-Svc cache: max-age honoured, bounded entries (LRU), cleared on a network-change error; fallback to HTTP/2 when the QUIC handshake does not complete within 300 ms, with a 5-minute negative cache per origin; the HTTP/2 request is never delayed by more than the fallback timer.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f22c76",
+      "text": "The 0.11 SSRF guard (SsrfPolicy, crates/id_effect_platform/src/http/ssrf.rs) checks every resolved address on the h3 path too; timeouts, retries and the body cap (DEFAULT_MAX_BODY_BYTES, http/mod.rs:68) apply unchanged; TLS uses the platform webpki roots and verifies the server name.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0522df",
+      "text": "Tests `alt_svc_upgrades_next_request_to_h3`, `udp_blackhole_falls_back_to_h2_within_budget`, `negative_cache_skips_h3_after_failure`, `h3_path_enforces_ssrf_policy`, `h3_body_cap_enforced`, `h3_rejects_wrong_server_name`; book part6/ch29-08-http3-client.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-1a7464",
+      "text": "Gate: `cargo nextest run -p id_effect_platform --features http3`; `cargo nextest run -p id_effect_platform --all-features`; `! git grep -n reqwest_unstable -- '*.toml' '*.rs' '*.yml' '*.nix'`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e82485",
+      "text": "Owns: `crates/id_effect_platform/src/http/{h3.rs,alt_svc.rs,mod.rs}`, `crates/id_effect_platform/tests/http3_client.rs`, `crates/id_effect/book/src/part6/ch29-08-http3-client.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "c2-h3-client",
+  "lockedBy": "c2-h3-client",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

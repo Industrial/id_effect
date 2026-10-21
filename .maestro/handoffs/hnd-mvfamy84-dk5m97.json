@@ -1,0 +1,9 @@
+{
+  "id": "hnd-mvfamy84-dk5m97",
+  "task_id": "tsk-mvfamuiv-lyz0jg",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-19T13:32:02.116Z",
+  "agent_id": "e1-channels",
+  "spec_path": "/data/Code/rust/id_effect/.tmp/wt-012/.maestro/specs/releases/0.12/r12-e12-2-channels.md",
+  "to_agent": "cli"
+}

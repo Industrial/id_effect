@@ -1,0 +1,11 @@
+.git
+.devenv
+.direnv
+target
+target-ci-stable
+.cargo-ci-stable
+state
+tmp
+lcov.info
+.roam
+.serena

@@ -1,0 +1,8 @@
+{
+  "id": "hnd-mvbm0dm9-uaot89",
+  "task_id": "tsk-mvbm09jg-c92j9a",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-16T23:39:19.665Z",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.9/r09-w3-tutorial.md",
+  "to_agent": "cli"
+}

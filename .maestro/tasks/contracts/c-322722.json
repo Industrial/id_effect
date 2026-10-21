@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 2,
+	"id": "c-322722",
+	"taskId": "tsk-mvb0jm49-3ytgwg",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T13:38:34.732Z",
+	"lockedAt": "2026-10-16T13:38:34.732Z",
+	"intent": "0.8 E2.1c+r — cron and resilience",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-351d3d",
+			"text": "msg.cron 2/8 -> 6/8: cron-expression schedules (#1) with timezone- and DST-aware next-fire computation (#3, via the existing jiff-based scheduling/datetime.rs), overlap/missed-run policy skip|catch-up (#5), run monitoring hooks: success/failure callbacks and run history (#7), declarative central registration of named cron jobs (#8); built on Schedule/fibers (effect-native), tested with TestExecutor virtual time including a DST transition and a missed-run case.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-29cfb2",
+			"text": "fault.resilience 6/8 level tested -> 7/8 level documented: fallback policy (#7) in id_effect_resilience, plus #8 if cheap (policies compose into one reusable pipeline with telemetry); book chapter section and a runnable example; integration test.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-d41ec8",
+			"text": "Book: cron chapter or section and resilience section; examples runnable; clippy -D warnings, docs, tests green for touched crates.",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"riskClass": "medium"
+}

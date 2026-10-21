@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-24b4dd",
+  "taskId": "tsk-mvcjv42t-2myvtg",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T17:36:25.209Z",
+  "lockedAt": "2026-10-17T17:36:25.209Z",
+  "intent": "r10-e7-4-snapshots-subscriptions",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-f3425f",
+      "text": "`SnapshotStore` + aggregate load = snapshot + tail (#6); global position column and `CatchUpSubscription` with a stored checkpoint, resuming after restart (#8). Tests `aggregate_loads_from_snapshot_plus_tail`, `subscription_resumes_from_checkpoint`. Chapter + example + integration test.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-ab6e05",
+      "text": "Gate: same + `cargo test --doc -p book_snippets`; `bash scripts/tier-conformance.sh id_effect_events`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-ccad75",
+      "text": "Owns: `crates/id_effect_events/src/{snapshot.rs,subscription.rs}`, `book/src/part5/ch23-00-events-and-projections.md` (de-labs, `SUMMARY.md:151`), `crates/id_effect_events/examples/010_account.rs`, `crates/id_effect_events/tests/pg_events.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-2dbc7a",
+  "taskId": "tsk-mvblcbjl-ijn35n",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T00:58:35.210Z",
+  "lockedAt": "2026-10-17T00:58:35.210Z",
+  "intent": "r09-w3-k3",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-06884e",
+      "text": "K3 = added non-blank lines of the scripted \"invoice\" resource diff (model, migration, routes, policy, test) applied to Ledger, recorded.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-ef62e5",
+      "text": "Gate: `bash scripts/dx-kpis.sh --skip-k1` prints K3",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7aaf3c",
+      "text": "Owns: `scripts/dx-kpis.sh` (K3), the 0.9 dx results file",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

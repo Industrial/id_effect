@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-e1164a",
+  "taskId": "tsk-mvfl8acb-0806yq",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T18:28:59.683Z",
+  "lockedAt": "2026-10-19T18:28:59.683Z",
+  "intent": "r12-e12-3-webtransport",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-9040d3",
+      "text": "axum feature webtransport: WebTransport sessions (h3-webtransport =0.1.2) on the HTTP/3 adapter; the extended CONNECT is a declared typed route (public or guarded) and its Origin header is checked against the same allowlist as WebSocket (ADR 0013 R9).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-6ffbfa",
+      "text": "id_effect_rpc feature webtransport: two-way streams and subscriptions over WebTransport bidirectional streams (one QUIC stream per call), resume after session loss with the r12-e12-2-bidi-resume cursor protocol; stream credits and session limits finite.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3db9a6",
+      "text": "D12 browser tests: Chromium driven from Rust over CDP (chromiumoxide or headless_chrome, choice recorded), using serverCertificateHashes with the 13-day ECDSA dev certificate; the client prefers WebTransport, then WebSocket. The browser test runs only with ID_EFFECT_REQUIRE_BROWSER=1 (fails, never skips, when set) and in the Relay CI job.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-4070ab",
+      "text": "Tests `webtransport_bidi_round_trip`, `webtransport_subscription_round_trip`, `webtransport_resume_after_session_loss`, `r9_webtransport_connect_from_foreign_origin_refused`, `browser_prefers_webtransport_then_websocket`; book part6/ch29-06-webtransport.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b8bb8f",
+      "text": "Gate: `cargo nextest run -p id_effect_rpc -p id_effect_axum --features webtransport`; `ID_EFFECT_REQUIRE_BROWSER=1 cargo nextest run -p id_effect_rpc --features webtransport --test browser`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-8444e5",
+      "text": "Owns: `crates/id_effect_axum/src/server/webtransport.rs`, `crates/id_effect_rpc/src/transport/webtransport.rs`, `crates/id_effect_rpc/tests/{transport_webtransport.rs,browser.rs}`, `crates/id_effect/book/src/part6/ch29-06-webtransport.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "g2-webtransport",
+  "lockedBy": "g2-webtransport",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

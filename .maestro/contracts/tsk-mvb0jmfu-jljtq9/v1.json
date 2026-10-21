@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 2,
+	"id": "c-ac1d03",
+	"taskId": "tsk-mvb0jmfu-jljtq9",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T13:38:35.123Z",
+	"lockedAt": "2026-10-16T13:38:35.123Z",
+	"intent": "0.8 E2.2 — property testing and test helpers",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-957f29",
+			"text": "test.property absent 4/8 -> documented 7/8: a feature-gated id_effect::testing property module (feature proptest, on the proptest crate) with generators derived from Schema/HasSchema (#2), effect-aware properties that run framework effects under TestExecutor (#4), stateful/model-based testing (#5), shipped generators for framework domain types (Duration, Chunk, Exit/Cause, HList caps where sensible) (#8); keeps shrinking/replay from proptest; book chapter, runnable example, integration test.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-9b0b7b",
+			"text": "test.unit 5/8 -> 7/8: first-party assertions for Exit/Cause (#3; the removed 0.6 assert_exit_* in a 0.8 form) and snapshot/golden testing support (#5; e.g. on insta behind a feature, or a small first-party golden helper).",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-212d2d",
+			"text": "MIGRATION-0.8/CHANGELOG text reported (feature returns); clippy -D warnings, docs, tests green for id_effect with and without the feature.",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"riskClass": "medium"
+}

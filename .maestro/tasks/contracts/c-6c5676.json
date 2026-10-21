@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-6c5676",
+  "taskId": "tsk-mvf9rlkh-oyyusj",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T13:07:50.557Z",
+  "lockedAt": "2026-10-19T13:07:50.557Z",
+  "intent": "r12-e12-1-macro",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-f19d48",
+      "text": "#[rpc::service(version = N)] on a trait whose methods carry one of #[query] #[mutation] #[server_stream] #[client_stream] #[bidi] #[subscription] and one of #[public] / #[guard(G)] generates: the handler trait (each method an Effect<A, E, R>, so DI, typed errors and TestExecutor apply), the Rust client generic over the transport (web.rpc#3), Service::contract() and the router mount; input, output and error types must be HasSchema (an on_unimplemented message names the derive).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-179a70",
+      "text": "D11: id_effect_rpc::contract::assert_snapshot keeps rpc.contract.json current (UPDATE_GOLDEN=1 rewrites, as id_effect::testing::golden); two service versions can be served side by side (web.rpc#6).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5f8cfe",
+      "text": "trybuild compile-fail cases in crates/id_effect_rpc/tests/ui, each first error with a help: line (K4 style): procedure without access decision (ADR 0013 R1), two kinds on one method, non-HasSchema type, #[bidi] without a Duplex return, duplicate procedure names, missing version.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-000f32",
+      "text": "Tests `generated_client_round_trip_every_kind`, `contract_snapshot_is_current`, `service_versions_served_side_by_side`, `guarded_procedure_runs_guard_before_handler`; book part6/ch33-04-service-macro.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-32a289",
+      "text": "Gate: `cargo nextest run -p id_effect_rpc -p id_effect_rpc_macros --all-features`; `cargo test -p id_effect_rpc --test ui`; `bash scripts/tier-conformance.sh id_effect_rpc_macros`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-26266b",
+      "text": "Owns: `crates/id_effect_rpc_macros/**`, `crates/id_effect_rpc/src/service.rs`, `crates/id_effect_rpc/tests/{ui/**,ui.rs,service_macro.rs}`, `crates/id_effect_rpc/rpc.contract.json`, `crates/id_effect/book/src/part6/ch33-04-service-macro.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "d3-macro",
+  "lockedBy": "d3-macro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

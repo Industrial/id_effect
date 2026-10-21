@@ -1,0 +1,46 @@
+{
+	"schemaVersion": 2,
+	"id": "c-8be221",
+	"taskId": "tsk-mvb8iifv-1kp3tn",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T17:21:36.254Z",
+	"lockedAt": "2026-10-16T17:21:36.254Z",
+	"intent": "0.8 W3-D — diagnostics gallery",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-35428f",
+			"text": "crates/id_effect/tests/ui/gallery/: the 20 most likely mistakes when writing id_effect application code (missing capability, wrong provide, non-Send body, generic runner unannotated, missing retry factory, Layer output missing, effect! misuse, Never/Or error mismatches, block_on in async, etc.), each a trybuild fail case with a blessed .stderr on the pinned rustc (ui.rs BLESSED_RUSTC), registered in tests/ui.rs; the existing 9 fail + 4 pass cases still pass.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-a77d5b",
+			"text": "K4 rule (owner decision 2026-10-16): a case counts when its first error carries a note (ours via #[diagnostic::on_unimplemented] note=, or rustc's help) that states the concrete fix. Sweep the 7 existing on_unimplemented attributes (capability/hlist.rs, kernel/bind.rs, kernel/macro_support.rs, layer.rs) and proc-macro error texts so every gallery case meets the rule; all 20 meet it.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-bf4c1e",
+			"text": "docs/diagnostics.md (or a book appendix page; report the SUMMARY line) indexes each case: the mistake, the error, the fix.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-c31417",
+			"text": "cargo test -p id_effect --test ui on the pinned rustc green; clippy -D warnings and docs green.",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"riskClass": "medium"
+}

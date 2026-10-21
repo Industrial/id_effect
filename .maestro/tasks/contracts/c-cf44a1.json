@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-cf44a1",
+  "taskId": "tsk-mvf9rlnr-ts175i",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T13:07:50.681Z",
+  "lockedAt": "2026-10-19T13:07:50.681Z",
+  "intent": "r12-e12-1-postcard",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-344160",
+      "text": "D13: Codec negotiation per request (Content-Type / Accept: application/json default, application/vnd.id-effect.rpc+postcard) and per connection (WebSocket subprotocol names idrpc.json.v1 / idrpc.postcard.v1 reserved for r12-e12-2-rpc-ws-sse); an unknown codec answers 415 Problem.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-dad56e",
+      "text": "The postcard path decodes with serde and then runs the Schema validators of the input type, so refinements and brands still apply; encoded size is capped before decode.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-8e4410",
+      "text": "Tests `postcard_round_trip_every_kind`, `postcard_payload_still_runs_schema_refinements`, `unknown_codec_is_415`, `json_is_default`, `postcard_oversized_frame_rejected_before_decode`; `codec::postcard::decode_frame` is public for the fuzz target; book part6/ch33-03-encodings.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2e8c51",
+      "text": "Gate: `cargo nextest run -p id_effect_rpc --features postcard`; `cargo nextest run -p id_effect_rpc --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2bca06",
+      "text": "Owns: `crates/id_effect_rpc/src/codec/{mod.rs,postcard.rs}`, `crates/id_effect_rpc/tests/codec.rs`, `crates/id_effect/book/src/part6/ch33-03-encodings.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "d4-postcard",
+  "lockedBy": "d4-postcard",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

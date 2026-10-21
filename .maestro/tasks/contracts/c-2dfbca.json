@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-2dfbca",
+  "taskId": "tsk-mvcpeyhp-jmyzba",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T18:36:56.581Z",
+  "lockedAt": "2026-10-17T18:36:56.581Z",
+  "intent": "r10-e1-5-devcontainer",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-00ec6d",
+      "text": "Generated projects ship `.devcontainer/devcontainer.json` (+ compose services) (#8); template smoke builds it with `devcontainer read-configuration`-free JSON validation in the test; chapter.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-1a8996",
+      "text": "Gate: `cargo nextest run -p id_effect_tool`; `bash scripts/template-smoke.sh`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f2aedc",
+      "text": "Owns: `crates/id_effect_tool/templates/common/_devcontainer/**`, `src/template.rs` (`FILES`), `crates/id_effect_tool/tests/bin.rs`, `book/src/part6/ch34-02-dev.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

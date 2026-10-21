@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-788775",
+  "taskId": "tsk-mvcjv2xv-k2omgn",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T15:28:18.570Z",
+  "lockedAt": "2026-10-17T15:28:18.570Z",
+  "intent": "r10-co-schema-errors",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-b1d10f",
+      "text": "Derived schemas accumulate all field errors like combinator schemas (`decode_unknown_all`); trybuild/ui snapshots updated. Test `derived_schema_reports_every_invalid_field`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-105655",
+      "text": "Gate: `cargo nextest run -p id_effect_proc_macro -p id_effect`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-08aa45",
+      "text": "Owns: `crates/id_effect_proc_macro/src/derive_schema_parser.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

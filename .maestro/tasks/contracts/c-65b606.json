@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-65b606",
+  "taskId": "tsk-mvcpexrp-ffsx4n",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T18:33:47.323Z",
+  "lockedAt": "2026-10-17T18:33:47.323Z",
+  "intent": "r10-e7-2-redis-streams",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-6866bb",
+      "text": "`RedisStreamsBroker: MessageBroker` — `XADD`, `XREADGROUP COUNT = prefetch`, `XACK`, `XAUTOCLAIM` of idle pending entries (redelivery), DLQ stream after `max_deliveries` (#3 #5 #6). Container tests `consumer_group_ack_and_redelivery`, `poison_message_moves_to_dlq`, `outbox_relay_to_streams_end_to_end`. Chapter + example.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7238f2",
+      "text": "Gate: `<docker> -p id_effect_redis --features streams`; `bash scripts/tier-conformance.sh id_effect_messaging`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-94c49f",
+      "text": "Owns: `crates/id_effect_redis/src/streams.rs`, `crates/id_effect_redis/Cargo.toml` (feature `streams`), `book/src/part6/ch31-02-brokers.md`, `crates/id_effect_redis/examples/030_streams.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

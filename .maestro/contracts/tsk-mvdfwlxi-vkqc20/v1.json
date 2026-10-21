@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-bb0c59",
+  "taskId": "tsk-mvdfwlxi-vkqc20",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-18T06:23:59.183Z",
+  "lockedAt": "2026-10-18T06:23:59.183Z",
+  "intent": "r11-e2-5-stm-core",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-ae2d4b",
+      "text": "id_effect::stm exposes Stm, TRef, TMap, TQueue, TSemaphore, Txn, Outcome, atomically and commit with unchanged semantics (moved from crates/id_effect_fp/src/stm/mod.rs, which depends only on id_effect::{Effect, from_async} at :38 and std); always compiled, no new dependencies (0.11.0.md D5); the global commit lock (:50) is unchanged.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b7abda",
+      "text": "id_effect_fp::stm::* re-exports the core items with #[deprecated(note = \"use id_effect::stm\")] for one minor (L9); the re-export at crates/id_effect_fp/src/lib.rs:77 is kept and deprecated; the core crate doc (crates/id_effect/src/lib.rs:30-31) no longer says STM lives in id_effect_fp.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-8ed8c2",
+      "text": "Examples 077-086_stm_*.rs and tests/stm_contention.rs move to crates/id_effect and run there; book part4/ch12-00..03 point at id_effect::stm; MIGRATION-0.11 section \"STM path\".",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-791fc1",
+      "text": "The kernel is unchanged: crates/id_effect/tests/kernel_alloc.rs and the core bench gates pass.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5992ea",
+      "text": "Gate: `cargo nextest run -p id_effect -p id_effect_fp --all-features`; `cargo nextest run -p id_effect --test kernel_alloc`; `cargo test -p id_effect --examples`; `bash scripts/bench-compare.sh` (core gates)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5de298",
+      "text": "Owns: `crates/id_effect/src/stm/**`, `crates/id_effect/src/lib.rs`, `crates/id_effect/Cargo.toml`, `crates/id_effect/examples/077-086_stm_*.rs`, `crates/id_effect/tests/stm_contention.rs`, `crates/id_effect_fp/src/{stm/**,lib.rs}`, `crates/id_effect_fp/examples/077-086_stm_*.rs` (deleted), `crates/id_effect_fp/tests/stm_contention.rs` (deleted), `crates/id_effect/book/src/part4/ch12-0{0,1,2,3}-*.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

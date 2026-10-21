@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-de4276",
+  "taskId": "tsk-mvdfoc36-i9tzlz",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-18T06:17:32.599Z",
+  "lockedAt": "2026-10-18T06:17:32.599Z",
+  "intent": "r11-sec-logging",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-c8eebb",
+      "text": "M11: a pipeline with no explicit policy applies RedactionPolicy::recommended() — case-insensitive fields password, passwd, secret, token, access_token, refresh_token, id_token, api_key, apikey, authorization, cookie, set-cookie, session, csrf, private_key, client_secret and globs *_token, *_secret, *password*; RedactionPolicy::new() (crates/id_effect_logger/src/redact.rs:59-67, redacts nothing) is deprecated for RedactionPolicy::empty(); RedactionPolicy::dangerous_none() records a posture opt-out. MIGRATION-0.11 section.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-9ec617",
+      "text": "M12: the tracing-line formatter (pipeline.rs:168-181) escapes CR, LF, other control characters and ANSI escapes in messages and values, escapes spaces and = in keys and quotes values containing spaces; the structured backend (pipeline.rs:294-309) escapes keys.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3c0aba",
+      "text": "Regression tests `m11_default_pipeline_redacts_common_secret_fields`, `m11_empty_policy_is_explicit`, `m12_newline_in_message_cannot_forge_a_line`, `m12_annotation_key_cannot_inject_fields`, `m12_control_and_ansi_sequences_are_escaped`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-65d956",
+      "text": "Gate: `cargo nextest run -p id_effect_logger --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-08cd86",
+      "text": "Owns: `crates/id_effect_logger/src/{redact.rs,pipeline.rs,lib.rs}`, `crates/id_effect_logger/tests/{pipeline.rs,security.rs}`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

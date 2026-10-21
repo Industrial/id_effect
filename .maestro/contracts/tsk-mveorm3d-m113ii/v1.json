@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "id": "c-8d23e8",
+  "taskId": "tsk-mveorm3d-m113ii",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:19:53.422Z",
+  "lockedAt": "2026-10-19T03:19:53.422Z",
+  "intent": "r11-sec-csrf-headers",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-023ab9",
+      "text": "M4 (layer part): the CSRF layer reads a form body only for form content types, up to a configurable CsrfConfig::form_limit (default 64 KiB instead of FORM_LIMIT 2 MiB at crates/id_effect_axum/src/server/security/csrf.rs:40) and under a read timeout (default 10 s) at :225, independent of the order of other layers.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d2250b",
+      "text": "L1 (BREACH): the token handed to pages and headers is masked per response (one-time pad XOR, base64url) and unmasked before the constant-time compare; MIGRATION-0.11 section \"masked CSRF token format\".",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-ac0408",
+      "text": "L5 (API): CsrfToken::rotate issues a new token and invalidates the old one; r11-sec-auth-state calls it at login.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-122ebc",
+      "text": "L2 (headers): SecurityHeaders::recommended() (headers.rs:41-49) adds Cross-Origin-Opener-Policy: same-origin, Cross-Origin-Resource-Policy: same-origin and a deny-list Permissions-Policy (camera, microphone, geolocation, payment, usb), each overridable.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b95d7e",
+      "text": "Regression tests `m4_csrf_form_read_respects_limit`, `m4_csrf_form_read_times_out`, `l1_csrf_token_masked_differently_per_response`, `l1_masked_token_validates`, `l5_rotate_issues_new_token_and_invalidates_old`, `l2_recommended_headers_include_coop_corp_permissions_policy`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-43edbc",
+      "text": "Gate: `cargo nextest run -p id_effect_axum --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e79746",
+      "text": "Owns: `crates/id_effect_axum/src/server/security/**`, `crates/id_effect_axum/tests/security_defaults.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-sec-csrf-headers",
+  "lockedBy": "r11-sec-csrf-headers",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

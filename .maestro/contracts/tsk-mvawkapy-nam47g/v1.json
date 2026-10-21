@@ -1,0 +1,42 @@
+{
+	"schemaVersion": 2,
+	"id": "c-8d39d3",
+	"taskId": "tsk-mvawkapy-nam47g",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T11:47:22.464Z",
+	"lockedAt": "2026-10-16T11:47:22.464Z",
+	"intent": "0.8 E0.2 security process",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-4a3a66",
+			"text": "SECURITY.md: private reporting via GitHub security advisories, response times, supported-versions table and support window, advisory (GHSA/RUSTSEC) publication process.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-21e257",
+			"text": "deny.toml (licenses allow-list derived from cargo deny check licenses on the main workspace, bans, sources; carries the RUSTSEC-2023-0071 ignore from .cargo/audit.toml); cargo deny check exits 0; a deny job in .github/workflows/ci.yml listed in ci-pass.needs; moon task deny; cargo-deny in devenv.nix.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-186596",
+			"text": "publish.yml: a CycloneDX SBOM (cargo cyclonedx) per release attached to the GitHub release, and actions/attest-build-provenance over the packaged .crate files and SBOMs with permissions id-token: write, attestations: write scoped to that job; cargo-cyclonedx in devenv.nix; actionlint clean on changed workflows.",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mvawbp5i-g5m6ot",
+	"riskClass": "high"
+}

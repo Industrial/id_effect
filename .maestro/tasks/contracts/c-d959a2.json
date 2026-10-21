@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-d959a2",
+  "taskId": "tsk-mvcjv3zi-qxn0mq",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T17:07:34.285Z",
+  "lockedAt": "2026-10-17T17:07:34.285Z",
+  "intent": "r10-e7-4-promote",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-800e2e",
+      "text": "Moved to `crates/`; `id_effect_graph` and `es-entity` dependencies and the `es_entity/` module removed; `SqlJournal` ported to `SqlClient`/`SqlValue` (pg + sqlite); `append_expected(stream, expected_version, events)`; command/query handlers and projections return `Effect` (no `run_sync` in public paths); live tests fail under `ID_EFFECT_REQUIRE_PG`. Tests `expected_version_conflict`, `cqrs_dispatch_is_an_effect`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f8ba4f",
+      "text": "Gate: `<pg> -p id_effect_events --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d6677f",
+      "text": "Owns: `labs/id_effect_events/**` → `crates/id_effect_events/**`, `labs/Cargo.toml`, root `Cargo.toml` member line",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

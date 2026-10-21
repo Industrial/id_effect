@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-127d7d",
+  "taskId": "tsk-mvfixl0v-di486t",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T17:24:21.500Z",
+  "lockedAt": "2026-10-19T17:24:21.500Z",
+  "intent": "r12-e12-2-bidi-resume",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-e142e3",
+      "text": "web.rpc#4 (bidirectional): Duplex<In, Out, E> over WebSocket with credit-based backpressure in both directions; memory per stream bounded by the credit window.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e42978",
+      "text": "Resume: every server-to-client message carries a cursor; after a reconnect the client sends session id + last cursor and the server replays from a bounded per-session buffer (default 1,024 messages / 1 MiB / 30 s, config); a cursor older than the buffer yields the typed ResumeError::Expired so the client restarts the stream; subscriptions resume from the event store instead (r12-e12-2-subscriptions).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-757e83",
+      "text": "Security (ADR 0013 R1): session ids are 128-bit random and bound to the authenticated principal; resuming under another principal is refused and counted.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2cf9b5",
+      "text": "Tests `bidi_backpressure_bounds_memory`, `resume_after_disconnect_no_gaps_no_duplicates` (proptest over random disconnect points, 1,000 cases, TestClock), `resume_after_buffer_overrun_is_expired`, `resume_under_another_principal_refused`, `session_buffer_released_after_retention`; `resume::decode_cursor` is public for the fuzz target; book part6/ch33-07-two-way-streams.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-75c141",
+      "text": "Gate: `PROPTEST_CASES=1000 cargo nextest run -p id_effect_rpc --all-features --test resume_property`; `cargo nextest run -p id_effect_rpc --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-101b13",
+      "text": "Owns: `crates/id_effect_rpc/src/{duplex.rs,resume.rs}`, `crates/id_effect_rpc/src/transport/ws.rs` (resume handshake, after r12-e12-2-rpc-ws-sse), `crates/id_effect_rpc/tests/{bidi.rs,resume_property.rs}`, `crates/id_effect/book/src/part6/ch33-07-two-way-streams.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "f2-bidi-resume",
+  "lockedBy": "f2-bidi-resume",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

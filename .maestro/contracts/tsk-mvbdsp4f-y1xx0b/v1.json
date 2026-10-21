@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 2,
+  "id": "c-8541de",
+  "taskId": "tsk-mvbdsp4f-y1xx0b",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T20:31:59.204Z",
+  "lockedAt": "2026-10-16T20:31:59.204Z",
+  "intent": "E4.1 typed routes book chapter and example",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-08adda",
+      "text": "T0 (governance, PLAN-OF-PLANS §7.1 + ADR 0010 Rule 5): ADR 0010 Amendment 5 names every new published crate of this release (id_effect_auth, id_effect_authz, id_effect_test, and id_effect_redis if E3.4 ships) with its tier; scripts/validate-crate-packaging.sh and .github/workflows/publish.yml publish them in dependency order; docs/MIGRATION-0.9.md lists every semver break with its deprecation shim (L9).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-1678b6",
+      "text": "Every in-scope epic (table below) has its leaves shipped with evidence naming the scorecard check ids it meets (rows[].v2.evidence paths that exist at the tag); every row whose target needs ↑documented has a book chapter, a runnable example and an integration test (METHOD §7.2).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-249bb0",
+      "text": "Ledger KPI (PLAN-OF-PLANS §6): examples/reference/ledger is a workspace member tested in CI; its job runs id-effect migrate run and id-effect migrate check, CRUD over typed routes, password + session login, JWT bearer access, OIDC + PKCE login against a containerised IdP, and RBAC/ownership denials, all green; bash scripts/tier-conformance.sh passes for every platform-tier crate (check P).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f541f9",
+      "text": "Blind re-score (METHOD §6) recorded as 0.9.0 in docs/scorecard/scorecard.json; bash scripts/scorecard.sh --compare-targets 0.9.0 passes (measured E ≥ planned E − 1.0) or every missed row has a written carry-over in REPORT-0.9.0.md; data.jsonschema (0.8 carry-over) reaches ≥ 75.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-99f190",
+      "text": "bash scripts/scorecard.sh --diff 0.8.0 0.9.0 passes (no drop of 5 or more without an ADR note); red rows (< 40) ≤ 21.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f4be57",
+      "text": "DX KPIs by scripts/dx-kpis.sh: K1 ≤ 180 s, K4 ≥ 17/20, K5 ≥ 80 %, and K3 (lines to add the invoice resource to Ledger) measured and stored in the 0.9 dx results file.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b9ec6a",
+      "text": "QUALITY_BAR gates green (coverage ≥ 96 % on core/runtime/integration/platform crates, new crates included); cargo semver-checks clean except breaks listed in docs/MIGRATION-0.9.md; bench budget gates green; CHANGELOG has a Scorecard section with the index deltas.",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "missionId": "pln-mvbdsaam-th3g19",
+  "riskClass": "high"
+}

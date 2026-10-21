@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-c9f395",
+  "taskId": "tsk-mvfuszbz-xpikgu",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T22:56:46.708Z",
+  "lockedAt": "2026-10-19T22:56:46.708Z",
+  "intent": "r12-f-ts-cursor",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-d3b43c",
+      "text": "F58: `RpcStream.cursor` (and every resume the runtime sends: WS/WT `resume`, SSE `Last-Event-ID`, subscription re-`call`) is the cursor of the last item the caller has CONSUMED from the iterator, not the last item received; buffered-but-unread items are re-delivered after a resume, never skipped.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f6f8c6",
+      "text": "Credits stay consistent with the design note: an item is credited when consumed; after a resume the server counts items up to the sent cursor as credited (handoff-resume-012.md).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-37f591",
+      "text": "Deno test `resume_does_not_skip_buffered_unread_items` (server sends N items, client reads k < N, connection drops, client resumes → receives items k+1..N exactly once, in order) for a server stream and a subscription; goldens regenerated (`UPDATE_GOLDEN=1`).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-9907b8",
+      "text": "Gate: `ID_EFFECT_REQUIRE_DENO=1 cargo nextest run -p id_effect_tool --test rpc_gen_ts`; `deno test` / `deno check` under crates/id_effect_tool/tests/ts; `id-effect rpc check --generated` for Ledger and Relay web clients regenerated if their checked-in output changes.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-029880",
+      "text": "Owns: `crates/id_effect_tool/src/rpc/ts/**`, `crates/id_effect_tool/tests/{rpc_gen_ts.rs,golden/rpc/**,ts/**}`, regenerated client output under `examples/reference/{ledger,relay}/**` only where generated, CHANGELOG own hunk.",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "j3-ts-cursor",
+  "lockedBy": "j3-ts-cursor",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

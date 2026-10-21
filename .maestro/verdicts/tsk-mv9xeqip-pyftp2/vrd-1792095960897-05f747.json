@@ -1,0 +1,56 @@
+{
+	"schemaVersion": 1,
+	"id": "vrd-1792095960897-05f747",
+	"taskId": "tsk-mv9xeqip-pyftp2",
+	"contractVersion": 1,
+	"computedAt": "2026-10-15T20:26:00.897Z",
+	"decision": "HUMAN",
+	"proposedRiskClass": "high",
+	"effectiveRiskClass": "high",
+	"reasons": [
+		{
+			"category": "evidence",
+			"code": "evidence-witness-level-insufficient",
+			"message": "1 evidence row(s) are below the required witness level \"witnessed-by-maestro\" for high-risk tasks.",
+			"evidenceIds": ["evd-1792095951808-9fe3db"]
+		}
+	],
+	"evidenceConsulted": [
+		"evd-1792093364425-07f4a3",
+		"evd-1792093365529-0b63dc",
+		"evd-1792093367174-b0f3cd",
+		"evd-1792093367967-025934",
+		"evd-1792095951808-9fe3db"
+	],
+	"policiesConsulted": [
+		{
+			"file": "policies/risk.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/autopilot.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/release.yaml",
+			"version": "1"
+		}
+	],
+	"trustVerifier": {
+		"findingsCount": 1,
+		"errors": 0,
+		"warns": 1,
+		"infos": 0,
+		"findings": [
+			{
+				"check": "empty-diff",
+				"severity": "warn",
+				"paths": [],
+				"details": "Diff between f6d730760da0ec0c181e90675118b9277cebe6d4 and f6d730760da0ec0c181e90675118b9277cebe6d4 is empty (base equals HEAD). Commit work after locking the contract — the verifier diffs from the lock-commit."
+			}
+		]
+	},
+	"subject": {
+		"tree_sha": "a640c7938f9db421a8668eab98ee41f97720a4e0"
+	}
+}

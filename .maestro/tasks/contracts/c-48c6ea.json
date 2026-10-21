@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 2,
+	"id": "c-48c6ea",
+	"taskId": "tsk-mvbbmmz0-vebdrd",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T18:48:42.656Z",
+	"lockedAt": "2026-10-16T18:48:42.656Z",
+	"intent": "0.8 E0.1a — remove the labs obix outbox adapter",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-3a5918",
+			"text": "Owner decision 2026-10-16: instead of seeking consent for commit 8eb9b05 (#79, Justin Carter), remove the code that still carries it. labs/id_effect_jobs/src/obix_outbox.rs (ObixOutbox, JobsOutboxEvent) is deleted with its lib.rs mod/re-exports, its tests in tests/pg_integration.rs, and its use in examples (010/020); the obix feature keeps ObixInbox only (or is reshaped if the inbox depends on removed items); README, moon.yml and the book (part6 ch31) no longer mention the obix outbox adapter; the 0.10 jobs battery (PLAN-OF-PLANS E7) is noted as the place an outbox relay returns.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-7bda45",
+			"text": "git blame -C -C -M over every tracked file in the working tree attributes 0 lines to Justin Carter (scripted check over labs/ and crates/id_effect/book/).",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-a987b0",
+			"text": "labs: cargo check --manifest-path labs/Cargo.toml --workspace --all-targets and with --features obix for id_effect_jobs; cargo test for id_effect_jobs (non-pg tests); clippy -D warnings for id_effect_jobs; book still builds (moon run :book).",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"riskClass": "medium"
+}

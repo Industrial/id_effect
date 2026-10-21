@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-8ec8e1",
+  "taskId": "tsk-mvcjv35b-3d8syc",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T15:40:03.075Z",
+  "lockedAt": "2026-10-17T15:40:03.075Z",
+  "intent": "r10-e4-3-client-defaults",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-f337ae",
+      "text": "`RetryingHttpClient` decorator over a core `Schedule` per D10, installed by the provider layer (`:388-391`) and configured once (#4); `default_client` sets connect/total timeouts. Tests (wiremock) `retries_idempotent_get_then_succeeds`, `post_not_retried_by_default`, `retry_after_is_honoured`, `default_timeout_applies`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-6ac0b2",
+      "text": "Gate: `cargo nextest run -p id_effect_platform --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0de9ce",
+      "text": "Owns: `crates/id_effect_platform/src/http/{mod.rs,retry.rs}`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

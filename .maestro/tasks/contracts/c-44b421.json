@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "id": "c-44b421",
+  "taskId": "tsk-mvey8ngt-tghgvt",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T07:45:03.560Z",
+  "lockedAt": "2026-10-19T07:45:03.560Z",
+  "intent": "r11-t0-migration-guide",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-ded175",
+      "text": "docs/MIGRATION-0.11.md has one section per break reported by `cargo semver-checks` against 0.10.1, each with its shim or replacement (L9): typed routes need .public()/.guard() (shim Router::route_unchecked); query/execute take Sql (escape hatch query_raw + RawSqlCapability); id_effect_process Next/Info/SendError become #[non_exhaustive] with new variants; RedactionPolicy::new → RedactionPolicy::empty; Secret<T> requires Zeroize and compares in constant time; id_effect_fp::stm → id_effect::stm; HttpClient SSRF guard on and redirects off by default; plaintext TCP behind feature insecure-plaintext-tcp; masked CSRF token format; mesh protocol version bump (older nodes refused).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-112876",
+      "text": "CHANGELOG 0.11.0 has a Scorecard section (index deltas from REPORT-0.11.0.md) and a Security section (findings closed with their regression tests, and every new dangerous_*/insecure_* opt-out).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-ac1d7a",
+      "text": "Gate: `cargo semver-checks` output is a subset of the MIGRATION-0.11 list (the comparison is attached to the leaf evidence)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c7dd7c",
+      "text": "Owns: `docs/MIGRATION-0.11.md`, `CHANGELOG.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-t0-migration-guide",
+  "lockedBy": "r11-t0-migration-guide",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "low"
+}

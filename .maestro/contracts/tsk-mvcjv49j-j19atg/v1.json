@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-7a66d1",
+  "taskId": "tsk-mvcjv49j-j19atg",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T17:13:33.574Z",
+  "lockedAt": "2026-10-17T17:13:33.574Z",
+  "intent": "r10-reload-rolling",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-6c6e9f",
+      "text": "Kamal template sets the proxy healthcheck to `/ready` and a drain timeout ≥ the server's shutdown grace; test asserts the rendered values; chapter documents the rolling sequence, citing `on_sigterm_ready_turns_503_while_an_in_flight_request_completes` (`crates/id_effect_axum/tests/health.rs:216`) as the evidence (#4).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-493121",
+      "text": "Gate: `cargo nextest run -p id_effect_tool`; `cargo test --doc -p book_snippets`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5e6a68",
+      "text": "Owns: `crates/id_effect_tool/templates/service/config/deploy.yml.template`, `crates/id_effect_tool/tests/bin.rs` (one test), `book/src/part6/ch34-00-dx-ship.md` (rolling-drain section)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

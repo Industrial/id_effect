@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-18d82e",
+  "taskId": "tsk-mveoxlor-3b9mxh",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:24:33.553Z",
+  "lockedAt": "2026-10-19T03:24:33.553Z",
+  "intent": "r11-e2-6-bench-ci",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-dd6fb6",
+      "text": "test.qa#8: .github/workflows/bench.yml runs scripts/bench-run.sh for base and head on the same runner (dedicated `bench` runner label if available, otherwise ubuntu-latest) on pushes to main and on pull requests labelled perf, then scripts/bench-compare.sh against docs/benchmarks/gates.toml; a failed budget gate fails the job; SHA-pinned, permissions read.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f8ca30",
+      "text": "crates/id_effect_axum/benches/gate_request.rs gains a secure_stack case (SecurityLayer::recommended, rate limit, load shedding, authentication + guard, default log redaction) next to the bare request; gates.toml gains a `kind = \"pair\"` gate secure_stack / bare ≤ 1.15 (an intra-run ratio, which bench-compare.sh learns, with --self-test cases).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-1a91f3",
+      "text": "docs/benchmarks/README.md documents the job and the pair gate. The secure-stack figure is re-measured with the final stack by r11-w3-kpis.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c1b9bd",
+      "text": "Gate: `bash scripts/bench-compare.sh --self-test`; `bash scripts/bench-run.sh --only id_effect_axum:gate_request`; `bash scripts/check-workflows.sh`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-8908fd",
+      "text": "Owns: `.github/workflows/bench.yml`, `crates/id_effect_axum/benches/gate_request.rs`, `docs/benchmarks/{gates.toml,README.md}`, `scripts/bench-compare.sh`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-e2-6-bench-ci",
+  "lockedBy": "r11-e2-6-bench-ci",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}
