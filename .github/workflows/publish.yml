@@ -1,8 +1,10 @@
 name: Publish to crates.io
-# Trigger: push a signed semver tag, e.g.  git tag -s v0.11.0 -m v0.11.0 && git push origin v0.11.0
-# The tag must match the version in every publishable Cargo.toml. docs/RELEASING.md has the flow.
+# Trigger: a repository admin runs this workflow on main (Actions → Publish to crates.io → Run
+# workflow). It releases the workspace version at main's HEAD and creates the v<version> tag and
+# the GitHub Release itself. A pushed signed semver tag still works. docs/RELEASING.md has the flow.
 #
-#   verify-versions  versions match the tag; the tag is annotated and its signature verified (S6)
+#   verify-versions  versions match; release authorization (S6): a dispatch on main by an admin
+#                    whose HEAD commit GitHub verifies, or a signed tag GitHub verifies
 #   test             pre-publish tests
 #   validate-packaging  publish order, path-only dev-deps, cargo package per crate
 #   build            cargo package --locked of every published crate + one CycloneDX SBOM each
@@ -13,10 +15,11 @@ name: Publish to crates.io
 #   verify           downloads every crate from crates.io: sha256 == attested digest, slsa-verifier
 #   release          GitHub Release with the .crate files, SBOMs and the *.intoto.jsonl provenance
 #
-# crates.io auth: trusted publishing only (rust-lang/crates-io-auth-action exchanges the job's
-# GitHub OIDC token for a crates.io token that lives 30 minutes). No registry secret is read (S3).
-# Every crate must already exist on crates.io with this workflow as its trusted publisher; the
-# publish plan refuses a release that contains a never-published crate (docs/RELEASING.md).
+# crates.io auth: trusted publishing (rust-lang/crates-io-auth-action exchanges the job's GitHub
+# OIDC token for a crates.io token that lives 30 minutes). Trusted publishing cannot create a
+# crate, so a crate's first version, or a crate that does not list this workflow as its trusted
+# publisher yet, goes up with the CARGO_REGISTRY_TOKEN secret of the crates-io environment, and
+# publish-crate.sh then adds the trusted publisher: the next release needs no secret (S3).
 on:
   push:
     tags:
@@ -61,9 +64,13 @@ jobs:
             TAG="$GITHUB_REF_NAME"
             VERSION="${TAG#v}"
           else
-            # Dry runs from a branch: members inherit version.workspace = true, so read the root.
-            TAG=""
+            # A dispatch from a branch: members inherit version.workspace = true, so read the root. A
+            # real release (main only, authorized below) creates the v<version> tag in the release job.
             VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/^version = "\(.*\)"/\1/')
+            TAG=""
+            if [ "$DRY_RUN" != "true" ]; then
+              TAG="v$VERSION"
+            fi
           fi
           {
             echo "version=$VERSION"
@@ -71,20 +78,41 @@ jobs:
             echo "dry-run=$DRY_RUN"
           } >> "$GITHUB_OUTPUT"
           echo "Publishing version: $VERSION (tag: ${TAG:-none}, dry run: $DRY_RUN)"
-      - name: Require a signed tag (s6_release_requires_signed_tag)
+      - name: Authorize the release (s6_release_requires_signed_tag)
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           DRY_RUN: ${{ steps.version.outputs.dry-run }}
         run: |
           set -euo pipefail
-          if [ -z "$TAG" ]; then
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
             if [ "$DRY_RUN" = "true" ]; then
-              echo "Dry run from a branch: no tag to check."
+              echo "Dry run from a branch: no release to authorize."
               exit 0
             fi
-            echo "::error::A real publish runs from a signed v* tag (push the tag, or dispatch on the tag ref)."
-            exit 1
+            # A release dispatched on main: a repository admin runs it and GitHub verifies the HEAD
+            # commit's signature (squash merges are signed by GitHub), so the released tree is the one
+            # main's protected history holds. The release job creates the tag on that commit.
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "::error::A release is dispatched on main (or pushed as a signed v* tag), not on $GITHUB_REF."
+              exit 1
+            fi
+            permission=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" --jq .permission)
+            if [ "$permission" != "admin" ]; then
+              echo "::error::$GITHUB_ACTOR has $permission permission; a release is dispatched by a repository admin."
+              exit 1
+            fi
+            verification=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq '(.commit.verification.verified | tostring) + " " + .commit.verification.reason')
+            if [ "${verification%% *}" != "true" ]; then
+              echo "::error::$GITHUB_SHA is not a verified commit (reason: ${verification#* })."
+              exit 1
+            fi
+            if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha 2>/dev/null) && [ "$existing" != "$GITHUB_SHA" ]; then
+              echo "::error::$TAG already exists on $existing; this release would tag $GITHUB_SHA. Delete the tag or bump the version."
+              exit 1
+            fi
+            echo "Release $TAG of $GITHUB_SHA on main, dispatched by $GITHUB_ACTOR (admin); the commit is verified."
+            exit 0
           fi
           ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.type + " " + .object.sha')
           if [ "${ref%% *}" != "tag" ]; then
@@ -280,6 +308,8 @@ jobs:
       - name: Attested digests and publish plan (crates.io index, read-only)
         # Single source of truth for the order: scripts/validate-crate-packaging.sh.
         # Labs crates (publish = false, labs/ workspace) are never published (ADR 0010).
+        env:
+          FALLBACK_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
           base64 -d <<<"$HASHES" > "$SHA256SUMS"
@@ -304,12 +334,15 @@ jobs:
       # A trusted-publishing token lives 30 minutes, so each half of the order gets its own.
       - name: crates.io token (trusted publishing, first half)
         id: auth-1
+        # No crate lists this workflow yet (first trusted release): publish-crate.sh falls back.
+        continue-on-error: true
         if: needs.verify-versions.outputs.dry-run != 'true'
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: Publish (first half of the order)
         if: needs.verify-versions.outputs.dry-run != 'true'
         env:
           CRATES_IO_TOKEN: ${{ steps.auth-1.outputs.token }}
+          FALLBACK_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
           for crate in $(./scripts/validate-crate-packaging.sh --print-order | sed -n '1,15p'); do
@@ -319,12 +352,15 @@ jobs:
           done
       - name: crates.io token (trusted publishing, second half)
         id: auth-2
+        # No crate lists this workflow yet (first trusted release): publish-crate.sh falls back.
+        continue-on-error: true
         if: needs.verify-versions.outputs.dry-run != 'true'
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: Publish (second half of the order, then id_effect_lints)
         if: needs.verify-versions.outputs.dry-run != 'true'
         env:
           CRATES_IO_TOKEN: ${{ steps.auth-2.outputs.token }}
+          FALLBACK_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
           for crate in $(./scripts/validate-crate-packaging.sh --print-order | sed -n '16,$p'); do
@@ -370,8 +406,11 @@ jobs:
           jq -r '.payload' "$PROVENANCE" | base64 -d | jq -r '.subject[] | "\(.digest.sha256)  \(.name)"' > attested.sha256
           cat attested.sha256
           source_args=(--source-uri "github.com/$GITHUB_REPOSITORY")
-          if [ -n "$TAG" ]; then
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             source_args+=(--source-tag "$TAG")
+          else
+            # A dispatched release ran on main; its tag is created after this job.
+            source_args+=(--source-branch "$GITHUB_REF_NAME")
           fi
           mkdir -p downloaded
           failed=0
@@ -423,6 +462,8 @@ jobs:
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.verify-versions.outputs.tag }}
+          # A dispatched release creates its tag here, on the commit it released.
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           make_latest: true
           files: |

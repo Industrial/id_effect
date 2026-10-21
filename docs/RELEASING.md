@@ -11,22 +11,21 @@ serves against the attestation and creates the GitHub Release.
    `CHANGELOG.md` and the `docs/MIGRATION-<minor>.md` guide.
 2. `bash scripts/validate-crate-packaging.sh` (publish order and packaging) and
    `cargo build --workspace --locked` (the committed `Cargo.lock` is current).
-3. Merge to `main`, then tag the merge commit with a **signed annotated** tag and push it:
+3. Merge to `main`, then run the workflow on `main` as a repository admin: Actions → Publish to
+   crates.io → Run workflow, branch `main`, **Dry run** unchecked. GitHub Actions does the rest:
+   it releases the workspace version at `main`'s HEAD, publishes every crate, verifies them and
+   creates the `v<version>` tag and the GitHub Release on that commit.
 
-   ```bash
-   git tag -s v0.11.0 -m "v0.11.0"
-   git push origin v0.11.0
-   ```
+   The release is authorized (`s6_release_requires_signed_tag`) when the run is on `main`, the
+   actor is a repository admin, GitHub verifies the HEAD commit's signature (squash merges are
+   signed by GitHub) and no `v<version>` tag points elsewhere. A signed annotated tag pushed by
+   hand (`git tag -s v<version> && git push origin v<version>`) still starts a release, when
+   GitHub verifies its signature; a lightweight or unverified tag is refused.
 
-   The signing key (GPG or SSH) must be registered as a signing key on the tagger's GitHub
-   account: the workflow asks GitHub whether the tag's signature is verified and refuses a
-   lightweight or unverified tag (`s6_release_requires_signed_tag`).
-
-To rehearse, run the workflow by hand (Actions → Publish to crates.io → Run workflow) with
-**Dry run** checked. A dry run packages and attests everything, runs
-`cargo publish --dry-run` over the whole order, checks the packages against the attested digests
-and runs `slsa-verifier` on them; it uploads nothing and creates no release. A run without
-**Dry run** must be dispatched on a tag ref and passes the same tag check.
+To rehearse, run the workflow with **Dry run** checked (any branch). A dry run packages and
+attests everything, runs `cargo publish --dry-run` over the whole order, checks the packages
+against the attested digests and runs `slsa-verifier` on them; it uploads nothing and creates no
+tag or release.
 
 ## What the workflow does
 
@@ -63,19 +62,30 @@ slsa-verifier verify-artifact id_effect-0.11.0.crate \
 
 ## crates.io authentication
 
-The `publish` job uses [crates.io trusted publishing](https://crates.io/docs/trusted-publishing)
-and nothing else: [`rust-lang/crates-io-auth-action`](https://github.com/rust-lang/crates-io-auth-action)
+The `publish` job uses [crates.io trusted publishing](https://crates.io/docs/trusted-publishing):
+[`rust-lang/crates-io-auth-action`](https://github.com/rust-lang/crates-io-auth-action)
 exchanges the job's GitHub OIDC token (`id-token: write`, publish job only) for a crates.io token
 that lives 30 minutes and is revoked when the job ends. The order is published in two halves with
 a fresh token each, so a slow index never outlives a token. `publish-crate.sh` hands the token to
-cargo with `cargo login` on stdin. No workflow reads a registry secret (S3).
+cargo with `cargo login` on stdin.
 
-Trusted publishing cannot create a crate: crates.io only accepts it for a crate that already
-exists and lists this workflow as a trusted publisher. The publish plan step therefore fails a
-real release, before anything is uploaded, if any crate in the order has never been published
-(a dry run only warns). A new crate gets its name reserved by the owner first (step 2 below).
+Trusted publishing cannot create a crate, and only works for a crate that lists this workflow as
+its trusted publisher. For those cases the job falls back to the `CARGO_REGISTRY_TOKEN` secret of
+the `crates-io` environment (S3): a crate's first version, and a crate whose trusted publishing
+is denied, go up with it, and `publish-crate.sh` then adds `publish.yml` (environment
+`crates-io`) as the crate's trusted publisher through the crates.io API, so its next release
+needs no secret (a failure to add it is a warning; the crate's crates.io settings do the same).
+The publish plan fails a real release before anything is uploaded when a crate is new and the
+secret is missing or rejected by crates.io.
 
 ### Owner steps (D15)
+
+Since the dispatch release, GitHub Actions covers steps 1–3: a dispatch on `main` needs no
+signing key, new crates get their first version from the `CARGO_REGISTRY_TOKEN` secret, and the
+trusted publisher is added by the workflow. The secret must be an owner's crates.io API token that
+crates.io accepts and that may publish new crates and updates; if it may not manage trusted
+publishing, the run warns and the trusted publisher is added on crates.io instead (step 3).
+Steps 4–7 still apply; delete the secret (step 7) once every crate lists the trusted publisher.
 
 These need the owner's own crates.io and GitHub logins; the agent does not do them. Record the
 date of each in the r11-sc-publish task evidence.
