@@ -7,11 +7,10 @@
 #   VERSION               the version being published (required)
 #   DRY_RUN=true          pass --dry-run to cargo publish
 #   PLAN_ONLY=true        print "publish" or "skip" from the crates.io index and exit (read-only);
-#                         a crate that was never published fails the plan unless DRY_RUN=true:
-#                         trusted publishing cannot create a crate (docs/RELEASING.md)
+#                         a crate that was never published is planned as a new crate
 #   SHA256SUMS            optional sha256sum file of the attested .crate files: the .crate that
 #                         cargo publish uploaded must match its line
-#   CRATES_IO_TOKEN       the short-lived trusted-publishing token (rust-lang/crates-io-auth-action);
+#   CRATES_IO_TOKEN       the crates.io token (the CARGO_REGISTRY_TOKEN secret);
 #                         handed to cargo on stdin by `cargo login`, never on the command line
 set -euo pipefail
 
@@ -50,11 +49,7 @@ if published; then
 fi
 if [ "${PLAN_ONLY:-false}" = "true" ]; then
     if new_crate; then
-        if [ "${DRY_RUN:-false}" != "true" ]; then
-            echo "::error::$pkg has never been published: trusted publishing cannot create a crate. Reserve the name and add the trusted publisher first (docs/RELEASING.md, owner steps)."
-            exit 1
-        fi
-        echo "publish $pkg $version (new crate: a real release needs the owner steps in docs/RELEASING.md)"
+        echo "publish $pkg $version (new crate)"
         exit 0
     fi
     echo "publish $pkg $version"
@@ -65,7 +60,7 @@ args=(--package "$pkg" --no-verify "$@")
 if [ "${DRY_RUN:-false}" = "true" ]; then
     args+=(--dry-run)
 else
-    : "${CRATES_IO_TOKEN:?set CRATES_IO_TOKEN (trusted publishing) for a real publish}"
+    : "${CRATES_IO_TOKEN:?set CRATES_IO_TOKEN (the CARGO_REGISTRY_TOKEN secret) for a real publish}"
     cargo login <<<"$CRATES_IO_TOKEN"
 fi
 
@@ -80,7 +75,7 @@ if [ "$code" -ne 0 ]; then
         exit 0
     fi
     if grep -qiE "required permissions|403|not authorized|trusted publish" <<<"$output"; then
-        echo "::error::$pkg publish denied — trusted publishing needs Industrial/id_effect publish.yml (environment crates-io) as a trusted publisher on this crate (docs/RELEASING.md)"
+        echo "::error::$pkg publish denied — the CARGO_REGISTRY_TOKEN secret (environment crates-io) may not publish it"
         exit 1
     fi
     if grep -qiE "readme .* does not appear to exist" <<<"$output"; then

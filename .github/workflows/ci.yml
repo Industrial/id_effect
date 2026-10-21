@@ -85,7 +85,9 @@ jobs:
         with:
           node-version: '22'
       - name: Install Biome (treefmt formatter for JS/JSON)
-        run: npm install -g @biomejs/biome
+        # Pinned: 2.6.0/2.6.1 (2026-10-21) install without the platform binary
+        # (Cannot find module '@biomejs/cli-linux-x64/biome').
+        run: npm install -g @biomejs/biome@2.5.15
       - name: Install Rust (pinned, rust-toolchain.toml)
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
