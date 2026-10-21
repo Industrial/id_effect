@@ -55,6 +55,22 @@ impl std::fmt::Display for CongestionControl {
   }
 }
 
+impl std::str::FromStr for CongestionControl {
+  type Err = super::QuicError;
+
+  /// `bbr` or `cubic` (any case, surrounding spaces ignored), as a config value names them
+  /// (F36: `server.http3.congestion`).
+  fn from_str(name: &str) -> Result<Self, Self::Err> {
+    match name.trim().to_ascii_lowercase().as_str() {
+      "bbr" => Ok(Self::Bbr),
+      "cubic" => Ok(Self::Cubic),
+      _ => Err(super::QuicError::Config(format!(
+        "unknown congestion control {name:?} (bbr or cubic)"
+      ))),
+    }
+  }
+}
+
 /// The algorithm a connection's route asks for, set once the handshake has chosen the ALPN.
 #[derive(Debug, Default)]
 pub(crate) struct Selection(OnceLock<CongestionControl>);
@@ -264,5 +280,18 @@ mod tests {
     assert_eq!(CongestionControl::Cubic.as_str(), "cubic");
     let bbr = CongestionControl::Bbr.factory().build(Instant::now(), 1200);
     assert!(bbr.into_any().downcast::<Bbr>().is_ok());
+  }
+
+  #[test]
+  fn parsed_from_config_names() {
+    assert_eq!("bbr".parse(), Ok(CongestionControl::Bbr));
+    assert_eq!(" CUBIC ".parse(), Ok(CongestionControl::Cubic));
+    for c in [CongestionControl::Bbr, CongestionControl::Cubic] {
+      assert_eq!(c.as_str().parse(), Ok(c));
+    }
+    assert!(matches!(
+      "reno".parse::<CongestionControl>(),
+      Err(super::super::QuicError::Config(m)) if m.contains("bbr or cubic")
+    ));
   }
 }
