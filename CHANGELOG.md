@@ -196,6 +196,24 @@
   `POST`) cannot be overridden. The bearer token is an `id_effect_config::SecretString`, and
   `Debug` of the transport shows header names only. Calls with different headers never share a
   batch request.
+- `id_effect_admin` core (r13-e9-3-admin-core, D2; web.admin #1 read half, #2, #3, #8): the
+  `AdminSite` registration API, `AdminSite::new().register::<E>(EntityAdmin::default().list(..)
+  .search(..).filter(..).sortable(..))`, checked against `Entity::FIELDS` when registered
+  (`AdminConfigError`, `try_register`); list pages with case-insensitive text search over declared
+  columns, typed filters (`Filter::choices`, `Filter::exact`), sortable columns and keyset pages
+  (`find_after` / `find_before`), and detail pages, rendered with the axum `ui` maud views and
+  updated in place by htmx (`HX-Target: admin-results`); labels and page text through an
+  `id_effect_i18n::Catalog` in the request's locale (feature `i18n`); `testing::AdminRequest`
+  (feature `test-util`); features `i18n`, `audit`, `test-util` declared once, with the wave-3
+  modules (`edit`, `forms`, `bulk`, `relations`, `audit`) in place. Secure by default (ADR 0013
+  R1, R7, R9): the site mounts only after `.guard(g)` (an unguarded `AdminSite` has no `router`,
+  a compile error) and every route is registered as guarded; every page checks
+  `admin.<entity>.<action>` through `id_effect_authz` (default `RbacAdminPolicy`, deny by
+  default, anonymous principals always refused) before any query; rows are read through a
+  repository bound to the request's `CurrentTenant` (no tenant: refused); maud escapes every value
+  and the crate never builds unescaped markup (`no_preescaped_outside_trusted_module`); query
+  strings (2 KiB, 414), search text (100 characters, `LIKE` wildcards literal) and cursors
+  (fingerprint-checked, 400) are bounded. Book: chapter 30.8.
 
 ### Changed
 
