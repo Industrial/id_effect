@@ -45,7 +45,7 @@ jiff = "0.2.23"
 # `id-effect dev`: the localhost development CA and its 13-day ECDSA P-256 certificate
 # (WebTransport `serverCertificateHashes`), with the rcgen the platform issues certificates with;
 # sha2 for the certificate hash it prints.
-rcgen = { version = "=0.13.2", default-features = false, features = [
+rcgen = { version = "=0.14.10", default-features = false, features = [
   "aws_lc_rs",
   "pem",
 ] }

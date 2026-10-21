@@ -792,7 +792,7 @@ mod tests {
     std::fs::create_dir_all(&dir).unwrap();
     let (chain, key) = (dir.join("chain.pem"), dir.join("key.pem"));
     std::fs::write(&chain, ck.cert.pem()).unwrap();
-    std::fs::write(&key, ck.key_pair.serialize_pem()).unwrap();
+    std::fs::write(&key, ck.signing_key.serialize_pem()).unwrap();
     crate::server::bootstrap::HostTls::Files {
       cert_file: chain,
       key_file: key,

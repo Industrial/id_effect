@@ -90,7 +90,7 @@ trybuild = "1"
 # tests/tls.rs.
 testcontainers = { version = "0.28", default-features = false }
 # tests/tls.rs: a throwaway CA and server certificate (aws-lc-rs, as rustls uses).
-rcgen = { version = "0.13", default-features = false, features = [
+rcgen = { version = "0.14", default-features = false, features = [
   "aws_lc_rs",
   "pem",
 ] }

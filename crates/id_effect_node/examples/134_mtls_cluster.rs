@@ -23,7 +23,7 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 /// server name every node verifies (`"cluster"`), valid for both TLS roles.
 struct Pki {
   cert: rcgen::Certificate,
-  key: rcgen::KeyPair,
+  issuer: rcgen::Issuer<'static, rcgen::KeyPair>,
 }
 
 impl Pki {
@@ -39,7 +39,8 @@ impl Pki {
     ];
     let key = rcgen::KeyPair::generate()?;
     let cert = params.self_signed(&key)?;
-    Ok(Self { cert, key })
+    let issuer = rcgen::Issuer::new(params, key);
+    Ok(Self { cert, issuer })
   }
 
   /// Write `<name>.crt` (leaf, then CA) and `<name>.key` (PKCS#8) to `dir`.
@@ -53,7 +54,7 @@ impl Pki {
       rcgen::ExtendedKeyUsagePurpose::ClientAuth,
     ];
     let key = rcgen::KeyPair::generate()?;
-    let cert = params.signed_by(&key, &self.cert, &self.key)?;
+    let cert = params.signed_by(&key, &self.issuer)?;
     write_atomic(
       &dir.join(format!("{name}.crt")),
       &format!("{}{}", cert.pem(), self.cert.pem()),

@@ -593,7 +593,7 @@ pub mod cert {
 
   use rcgen::{
     BasicConstraints, Certificate, CertificateParams, DistinguishedName, DnType,
-    ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose, PKCS_ECDSA_P256_SHA256,
+    ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair, KeyUsagePurpose, PKCS_ECDSA_P256_SHA256,
   };
   use serde_json::{Value, json};
   use sha2::{Digest, Sha256};
@@ -746,9 +746,11 @@ pub mod cert {
     } else {
       ca_not_after - days(CA_DAYS)
     };
-    let ca = ca_certificate(&ca_key, ca_start)?;
+    let ca_params = ca_params(ca_start)?;
+    let ca = ca_params.self_signed(&ca_key).map_err(|e| e.to_string())?;
+    let issuer = Issuer::from_params(&ca_params, &ca_key);
     let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).map_err(|e| e.to_string())?;
-    let (leaf, not_after) = leaf_certificate(&leaf_key, &ca, &ca_key, now_secs)?;
+    let (leaf, not_after) = leaf_certificate(&leaf_key, &issuer, now_secs)?;
     if action == Action::Created {
       write(&dir.join(CA_FILE), ca.pem().as_bytes(), false)?;
       write(
@@ -811,9 +813,9 @@ pub mod cert {
     dn
   }
 
-  /// The CA (re)built on `key`: the same name and key sign leaves the stored CA certificate
-  /// verifies.
-  fn ca_certificate(key: &KeyPair, start: u64) -> Result<Certificate, String> {
+  /// The CA's parameters from `start`: rebuilt on the stored key, the same name and key sign
+  /// leaves the stored CA certificate verifies.
+  fn ca_params(start: u64) -> Result<CertificateParams, String> {
     let mut params = CertificateParams::default();
     params.distinguished_name = names("id-effect development CA");
     params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
@@ -826,13 +828,12 @@ pub mod cert {
     params.not_before = rcgen::date_time_ymd(y, m, d);
     let ((y, m, d), _) = day(start, CA_DAYS)?;
     params.not_after = rcgen::date_time_ymd(y, m, d);
-    params.self_signed(key).map_err(|e| e.to_string())
+    Ok(params)
   }
 
   fn leaf_certificate(
     key: &KeyPair,
-    ca: &Certificate,
-    ca_key: &KeyPair,
+    issuer: &Issuer<'_, &KeyPair>,
     now: u64,
   ) -> Result<(Certificate, u64), String> {
     let mut params =
@@ -845,9 +846,7 @@ pub mod cert {
     params.not_before = rcgen::date_time_ymd(y, m, d);
     let ((y, m, d), not_after_secs) = day(now, LEAF_DAYS)?;
     params.not_after = rcgen::date_time_ymd(y, m, d);
-    let leaf = params
-      .signed_by(key, ca, ca_key)
-      .map_err(|e| e.to_string())?;
+    let leaf = params.signed_by(key, issuer).map_err(|e| e.to_string())?;
     Ok((leaf, not_after_secs))
   }
 

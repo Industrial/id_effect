@@ -120,7 +120,7 @@ tokio = { version = "1.50", features = [
 ] }
 # Test CAs and node certificates (tests/transport_tls.rs; RSA keys need aws-lc-rs), and the
 # in-process TLS API server of the Kubernetes discovery tests.
-rcgen = { version = "0.13", default-features = false, features = [
+rcgen = { version = "0.14", default-features = false, features = [
   "aws_lc_rs",
   "pem",
 ] }
