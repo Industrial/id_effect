@@ -91,6 +91,18 @@
   (`RelationMeta`) and `Entity::LABEL`, all defaulted so hand-written impls compile unchanged.
   `repository.rs` becomes `repository/{mod,relations}.rs`; every public path is kept. Book:
   chapter 28.6.
+- Entity lifecycle hooks in `id_effect_sql` (r13-e3-3-hooks, data.orm #7, D12): `EntityHooks<T, E>`
+  with `before_insert`, `after_insert`, `before_update`, `after_update`, `before_delete` and
+  `after_delete`, registered per repository (`Repository::with_hooks` → `HookedRepository`), run in
+  registration order inside the write's transaction (opened by the repository, or a savepoint of
+  the caller's with `in_transaction`); a failing hook rolls the write and the hooks' statements
+  back, and a `before_*` hook rejects a write with the caller's error type (`E: From<SqlError>`).
+  Hooks receive a `HookContext` whose repository is bound to the transaction with the hooked
+  repository's tenant and filters, so they cannot leave the tenant; the audit log keeps its
+  explicit `append` and is wired as an `after_*` hook. Feature `outbox`: `repository::outbox`
+  (`EntityOutbox`, `OutboxEvent`, `OutboxSink`, `OutboxTable`) stages events in
+  `id_effect_outbox`, in `id_effect_messaging`'s row format, in the same transaction. Book:
+  chapter 28.8.
 - Server-rendered UI in `id_effect_axum`, feature `ui` (r13-e9-5-views, D3; web.ui #1 #2 #6, margin
   #5): maud (`=0.27.0`) `Markup` as a response on typed routes; `ui::Component` with `Slots`
   (default and named slots, composable); `ui::Page` + `ui::LayoutLayer` / `ui::BasicLayout` answer

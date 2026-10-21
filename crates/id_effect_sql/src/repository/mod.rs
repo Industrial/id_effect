@@ -88,10 +88,13 @@ use crate::transaction::{SqlTransaction, SqlTransactionService};
 use crate::value::{SqlValue, ToSqlValue};
 
 // Keyset pagination (r13-e3-3-pagination) and lifecycle hooks (r13-e3-3-hooks) land here.
-mod hooks;
+pub mod hooks;
+#[cfg(feature = "outbox")]
+pub mod outbox;
 pub mod page;
 pub mod relations;
 
+pub use hooks::{BoundHookedRepository, EntityHooks, HookContext, HookedRepository};
 pub use page::{Keyset, PageCursor, PageCursorError, PageLimits, Paged, SortOrder};
 pub use relations::{
   BoundEagerRepository, EagerRepository, FieldMeta, Loaded, MAX_EAGER_DEPTH, Relation,
