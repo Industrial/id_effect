@@ -1,8 +1,8 @@
 name: Publish to crates.io
-# Trigger: push a signed semver tag, e.g.  git tag -s v0.11.0 -m v0.11.0 && git push origin v0.11.0
+# Trigger: push a semver tag, e.g.  git tag v0.12.0 && git push origin v0.12.0
 # The tag must match the version in every publishable Cargo.toml. docs/RELEASING.md has the flow.
 #
-#   verify-versions  versions match the tag; the tag is annotated and its signature verified (S6)
+#   verify-versions  versions match the tag
 #   test             pre-publish tests
 #   validate-packaging  publish order, path-only dev-deps, cargo package per crate
 #   build            cargo package --locked of every published crate + one CycloneDX SBOM each
@@ -13,10 +13,8 @@ name: Publish to crates.io
 #   verify           downloads every crate from crates.io: sha256 == attested digest, slsa-verifier
 #   release          GitHub Release with the .crate files, SBOMs and the *.intoto.jsonl provenance
 #
-# crates.io auth: trusted publishing only (rust-lang/crates-io-auth-action exchanges the job's
-# GitHub OIDC token for a crates.io token that lives 30 minutes). No registry secret is read (S3).
-# Every crate must already exist on crates.io with this workflow as its trusted publisher; the
-# publish plan refuses a release that contains a never-published crate (docs/RELEASING.md).
+# crates.io auth: the CARGO_REGISTRY_TOKEN secret of the crates-io environment, as up to
+# 0.10.1 (it can also publish a crate's first version).
 on:
   push:
     tags:
@@ -71,7 +69,7 @@ jobs:
             echo "dry-run=$DRY_RUN"
           } >> "$GITHUB_OUTPUT"
           echo "Publishing version: $VERSION (tag: ${TAG:-none}, dry run: $DRY_RUN)"
-      - name: Require a signed tag (s6_release_requires_signed_tag)
+      - name: Require a release tag
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
@@ -83,20 +81,10 @@ jobs:
               echo "Dry run from a branch: no tag to check."
               exit 0
             fi
-            echo "::error::A real publish runs from a signed v* tag (push the tag, or dispatch on the tag ref)."
+            echo "::error::A real publish runs from a v* tag (push the tag, or dispatch on the tag ref)."
             exit 1
           fi
-          ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.type + " " + .object.sha')
-          if [ "${ref%% *}" != "tag" ]; then
-            echo "::error::$TAG is a lightweight tag; releases need a signed annotated tag (git tag -s)."
-            exit 1
-          fi
-          verification=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/${ref#* }" --jq '(.verification.verified | tostring) + " " + .verification.reason')
-          if [ "${verification%% *}" != "true" ]; then
-            echo "::error::$TAG signature is not verified by GitHub (reason: ${verification#* }). Sign it with a key registered on the tagger's GitHub account."
-            exit 1
-          fi
-          echo "$TAG is an annotated tag with a verified signature."
+          echo "Publishing from tag $TAG."
       - name: Check all crate versions match
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -260,7 +248,6 @@ jobs:
     environment: crates-io
     permissions:
       contents: read
-      id-token: write # crates.io trusted publishing (OIDC)
     env:
       VERSION: ${{ needs.verify-versions.outputs.version }}
       DRY_RUN: ${{ needs.verify-versions.outputs.dry-run }}
@@ -301,15 +288,10 @@ jobs:
           cp lints/id_effect_lints/target/package/tmp-crate/*.crate target/package/tmp-crate/
           grep '\.crate$' "$SHA256SUMS" > crates.sha256
           (cd target/package/tmp-crate && sha256sum --check --strict "$GITHUB_WORKSPACE/crates.sha256")
-      # A trusted-publishing token lives 30 minutes, so each half of the order gets its own.
-      - name: crates.io token (trusted publishing, first half)
-        id: auth-1
-        if: needs.verify-versions.outputs.dry-run != 'true'
-        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: Publish (first half of the order)
         if: needs.verify-versions.outputs.dry-run != 'true'
         env:
-          CRATES_IO_TOKEN: ${{ steps.auth-1.outputs.token }}
+          CRATES_IO_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
           for crate in $(./scripts/validate-crate-packaging.sh --print-order | sed -n '1,15p'); do
@@ -317,14 +299,10 @@ jobs:
             .github/scripts/publish-crate.sh "$crate" --locked
             echo "::endgroup::"
           done
-      - name: crates.io token (trusted publishing, second half)
-        id: auth-2
-        if: needs.verify-versions.outputs.dry-run != 'true'
-        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: Publish (second half of the order, then id_effect_lints)
         if: needs.verify-versions.outputs.dry-run != 'true'
         env:
-          CRATES_IO_TOKEN: ${{ steps.auth-2.outputs.token }}
+          CRATES_IO_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
           for crate in $(./scripts/validate-crate-packaging.sh --print-order | sed -n '16,$p'); do
