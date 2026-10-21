@@ -14,15 +14,19 @@
 //!
 //! `check` classifies every change against the previous contract and fails on a breaking change
 //! within a published version ([`check`]); `--generated <dir>` also fails when the checked-in
-//! TypeScript client is stale. Exit codes: `0` passes, `1` a breaking change or a stale client,
-//! `2` a usage error or an unreadable contract.
+//! TypeScript client is stale. `--allow-retired Service:N` (repeatable, [`RetiredVersion`]) lets
+//! the removal of that service version pass, reported as `retired`; naming a version that was not
+//! removed is a usage error. Exit codes: `0` passes, `1` a breaking change or a stale client, `2` a
+//! usage error or an unreadable contract.
 
 pub mod check;
 pub mod gen_ts;
 
+use std::fmt;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::str::FromStr;
 
 use clap::{Args, Subcommand};
 
@@ -72,6 +76,61 @@ pub struct GenTsArgs {
   /// The directory to write client.ts, types.ts and runtime.ts into (created when missing).
   #[arg(long, value_name = "DIR")]
   pub out: PathBuf,
+}
+
+/// A service version whose removal is intended: a value of `id-effect rpc check
+/// --allow-retired Service:N`.
+///
+/// Parsed from `Service:N` (the last `:` separates the version, a decimal `u32`). A retired version
+/// only excuses its own `version no longer served` change ([`check::retire`]); every other breaking
+/// change still fails the check.
+///
+/// ```rust
+/// use id_effect_tool::rpc::RetiredVersion;
+///
+/// let retired: RetiredVersion = "Greeter:1".parse().expect("Service:N");
+/// assert_eq!(retired, RetiredVersion::new("Greeter", 1));
+/// assert_eq!(retired.to_string(), "Greeter:1");
+/// assert!("Greeter".parse::<RetiredVersion>().is_err());
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RetiredVersion {
+  /// The service name, as in the contract.
+  pub service: String,
+  /// The removed version.
+  pub version: u32,
+}
+
+impl RetiredVersion {
+  /// The retired `version` of `service`.
+  pub fn new(service: impl Into<String>, version: u32) -> Self {
+    Self {
+      service: service.into(),
+      version,
+    }
+  }
+}
+
+impl FromStr for RetiredVersion {
+  type Err = String;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    let expected = || format!("`{s}`: expected `Service:N`, e.g. `Greeter:1`");
+    let (service, version) = s.rsplit_once(':').ok_or_else(expected)?;
+    if service.is_empty() {
+      return Err(expected());
+    }
+    let version = version
+      .parse::<u32>()
+      .map_err(|e| format!("`{s}`: version `{version}`: {e}"))?;
+    Ok(Self::new(service, version))
+  }
+}
+
+impl fmt::Display for RetiredVersion {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}:{}", self.service, self.version)
+  }
 }
 
 /// Runs `id-effect rpc`, writing to `out` and `err`.

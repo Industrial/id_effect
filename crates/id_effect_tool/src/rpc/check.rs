@@ -35,6 +35,11 @@
 //!
 //! **Caps.** An absent `max_items` / `max_bytes` is the server default (10,000 items, 4 MiB).
 //!
+//! **Retiring a version.** `--allow-retired Service:N` (repeatable) declares the removal of that
+//! service version intended: its `version no longer served` change is reported as `retired` and
+//! passes ([`retire`]). It excuses nothing else, and naming a version that was not removed is a
+//! usage error, so a typo cannot widen the check.
+//!
 //! `--generated <dir>` regenerates the TypeScript client in memory ([`gen_ts::generate`]) and
 //! fails when a file in `dir` is missing or differs ([`stale_files`]).
 //!
@@ -71,7 +76,12 @@ use id_effect_rpc::contract::{
 };
 use serde_json::Value;
 
+use super::RetiredVersion;
 use super::gen_ts::{self, GenTsError};
+
+/// The reason of the [`Class::Breaking`] change for a service version the current contract no
+/// longer serves (the change `--allow-retired` excuses).
+const VERSION_REMOVED: &str = "version no longer served";
 
 /// The server's client-stream item cap when the contract names none.
 pub const DEFAULT_MAX_ITEMS: u64 = 10_000;
@@ -97,6 +107,11 @@ pub struct CheckArgs {
   /// writes for `--contract`.
   #[arg(long, value_name = "DIR")]
   pub generated: Option<PathBuf>,
+  /// A service version whose removal is intended (`Service:N`, repeatable): its `version no
+  /// longer served` change passes as `retired`. Every other breaking change still fails; naming a
+  /// version that was not removed is a usage error.
+  #[arg(long, value_name = "SERVICE:N", requires = "against")]
+  pub allow_retired: Vec<RetiredVersion>,
 }
 
 /// How a change affects clients and servers of a published version.
@@ -165,6 +180,58 @@ impl fmt::Display for Change {
 /// Whether `changes` may ship: no [`Class::Breaking`] change.
 pub fn passes(changes: &[Change]) -> bool {
   changes.iter().all(|c| c.class != Class::Breaking)
+}
+
+/// Take the removals of the service versions in `allowed` (`--allow-retired`) out of `changes`
+/// and return them: each is the [`Class::Breaking`] `version no longer served` change of that
+/// service version. Nothing else is excused, so [`passes`] still fails on any other breaking
+/// change.
+///
+/// Fails, leaving `changes` untouched, with the first entry of `allowed` that names no removed
+/// version (a typo, a version still served, or one that never existed).
+///
+/// ```rust
+/// use id_effect_rpc::contract::{Contract, ServiceContract};
+/// use id_effect_tool::rpc::RetiredVersion;
+/// use id_effect_tool::rpc::check::{compare, passes, retire};
+///
+/// let old = Contract::new()
+///   .with_service(ServiceContract::new("Greeter", 1))
+///   .with_service(ServiceContract::new("Greeter", 2));
+/// let new = Contract::new().with_service(ServiceContract::new("Greeter", 2));
+/// let mut changes = compare(&old, &new);
+/// assert!(!passes(&changes));
+///
+/// let retired = retire(&mut changes, &[RetiredVersion::new("Greeter", 1)]).expect("v1 was removed");
+/// assert_eq!(retired.len(), 1);
+/// assert!(passes(&changes));
+/// assert_eq!(
+///   retire(&mut changes, &[RetiredVersion::new("Greeter", 2)]),
+///   Err(RetiredVersion::new("Greeter", 2))
+/// );
+/// ```
+pub fn retire(
+  changes: &mut Vec<Change>,
+  allowed: &[RetiredVersion],
+) -> Result<Vec<Change>, RetiredVersion> {
+  let removes = |c: &Change, r: &RetiredVersion| {
+    c.class == Class::Breaking
+      && c.procedure.is_none()
+      && c.reason == VERSION_REMOVED
+      && c.service == r.service
+      && c.version == r.version
+  };
+  if let Some(unknown) = allowed
+    .iter()
+    .find(|r| !changes.iter().any(|c| removes(c, r)))
+  {
+    return Err(unknown.clone());
+  }
+  let (retired, kept) = std::mem::take(changes)
+    .into_iter()
+    .partition(|c| allowed.iter().any(|r| removes(c, r)));
+  *changes = kept;
+  Ok(retired)
 }
 
 /// Why a contract could not be read.
@@ -296,17 +363,48 @@ pub fn run(args: &CheckArgs, out: &mut dyn Write, err: &mut dyn Write) -> ExitCo
       Ok(c) => c,
       Err(e) => return unreadable(err, e),
     };
-    let changes = compare(&previous, &current);
+    let mut changes = compare(&previous, &current);
+    let retired = match retire(&mut changes, &args.allow_retired) {
+      Ok(retired) => retired,
+      Err(r) => {
+        let _ = writeln!(
+          err,
+          "error: --allow-retired {r}: {} v{} was not removed (it is still served, or {spec} \
+           never served it)",
+          r.service, r.version
+        );
+        return ExitCode::from(2);
+      }
+    };
     let _ = writeln!(out, "rpc check: {} against {spec}", args.contract.display());
-    for change in &changes {
-      let _ = writeln!(out, "{change}");
+    let mut lines: Vec<_> = changes
+      .iter()
+      .map(|c| (c, c.to_string()))
+      .chain(retired.iter().map(|c| {
+        let line = format!(
+          "{:<10} {} v{}: {} (--allow-retired)",
+          "retired", c.service, c.version, c.reason
+        );
+        (c, line)
+      }))
+      .collect();
+    lines.sort_by(|(a, _), (b, _)| {
+      (&a.service, a.version, &a.procedure).cmp(&(&b.service, b.version, &b.procedure))
+    });
+    for (_, line) in &lines {
+      let _ = writeln!(out, "{line}");
     }
     let count = |class| changes.iter().filter(|c| c.class == class).count();
     let breaking = count(Class::Breaking);
+    let retired_count = if retired.is_empty() {
+      String::new()
+    } else {
+      format!(" {} retired,", retired.len())
+    };
     let _ = writeln!(
       out,
-      "{} changes: {breaking} breaking, {} versioned, {} compatible",
-      changes.len(),
+      "{} changes: {breaking} breaking,{retired_count} {} versioned, {} compatible",
+      lines.len(),
       count(Class::Versioned),
       count(Class::Compatible)
     );
@@ -365,7 +463,7 @@ pub fn compare(previous: &Contract, current: &Contract) -> Vec<Change> {
         version: old.version,
         procedure: None,
         path: String::new(),
-        reason: "version no longer served".to_owned(),
+        reason: VERSION_REMOVED.to_owned(),
       }),
     }
   }
