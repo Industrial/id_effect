@@ -128,3 +128,16 @@ replacement):
 | `AiError` (exhaustive) | `#[non_exhaustive]`, with `InvalidRequest`, `Blocked`, `LimitExceeded` and `Timeout`; HTTP 529 is `Transient` |
 | `SseParser::feed` trimmed every leading space of a value | one leading space is removed (the SSE rule); `feed_bytes` takes raw bytes |
 | streamed chunks parsed after the whole body was read | decoded incrementally, under `AiLimits::max_stream_bytes` / `max_stream_events` |
+
+## AI: tool calling in `ChatMessage`, `ChatRole` and `ChatRequest`
+
+Owner: r13-e9-1-tools. Tool calling (feature `tools`) needs the conversation to carry tool calls
+and their results, so the chat types grow (the labs crate had no semver promise; this supersedes
+the "`ChatMessage { role, content }` still valid" row above):
+
+| 0.12 (labs) | 0.13 |
+|---|---|
+| `ChatMessage { role, content }` literal | `ChatMessage::new(role, content)` or `ChatMessage::system` / `user` / `assistant`; the struct is `#[non_exhaustive]` and gains `tool_calls: Vec<ToolCall>` (`assistant_tool_calls`) and `tool_call_id: Option<String>` (`tool_result`); both are skipped in serde when empty, so stored JSON of plain messages is unchanged |
+| `match role { System, User, Assistant }` | add an arm for `ChatRole::Tool` (a tool result fed back to the model) |
+| `ChatRequest` without tools | gains `tools: Vec<ToolDefinition>` (`with_tools`; empty by default, so no request changes); `validate` refuses a `ChatRole::Tool` message without `tool_call_id` |
+| `ChatResponse` text only | a reply with tool calls and no text is no longer `AiError::EmptyResponse`: `content` is empty and `tool_calls` is set (both vendors) |

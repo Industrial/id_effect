@@ -56,11 +56,15 @@ pub mod embeddings;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 #[cfg(feature = "tools")]
+pub mod agent;
+#[cfg(feature = "tools")]
+pub mod structured;
+#[cfg(feature = "tools")]
 pub mod tools;
 
 pub use chat::{
   ChatMessage, ChatRequest, ChatResponse, ChatRole, LanguageModel, LanguageModelService,
-  MockLanguageModel, ToolCall, Usage, complete, provide_language_model,
+  MockLanguageModel, ToolCall, ToolDefinition, Usage, complete, provide_language_model,
   provide_mock_language_model,
 };
 pub use config::{AiConfig, AiLimits, DANGEROUS_LOG_PROMPTS};

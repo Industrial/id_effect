@@ -4,6 +4,12 @@
 //! [`max_tokens`](crate::ChatRequest::max_tokens), else
 //! [`AiLimits::max_tokens`](crate::AiLimits::max_tokens)). The API key is held as a
 //! [`Secret`] and only exposed to build the `Authorization` header.
+//!
+//! Tool calling: [`ChatRequest::tools`] are sent as `tools` of `type: "function"`; an assistant
+//! turn with tool calls is sent with its `tool_calls` (arguments as JSON text), and a
+//! [`ChatRole::Tool`] message as `role: "tool"` with its `tool_call_id`. A reply's
+//! `message.tool_calls` become [`ToolCall`]s; arguments that are not valid JSON are kept as a
+//! JSON string, which no object schema decodes, so the call is refused rather than guessed.
 
 use std::fmt;
 use std::sync::Arc;
@@ -15,8 +21,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::chat::{
-  ChatMessage, ChatRequest, ChatResponse, ChatRole, LanguageModel, LanguageModelService, Usage,
-  provide_language_model,
+  ChatMessage, ChatRequest, ChatResponse, ChatRole, LanguageModel, LanguageModelService, ToolCall,
+  ToolDefinition, Usage, provide_language_model,
 };
 use crate::config::AiConfig;
 use crate::error::{AiError, truncate_detail};
@@ -65,25 +71,64 @@ impl OpenAiLanguageModel {
       ChatRole::System => "system",
       ChatRole::User => "user",
       ChatRole::Assistant => "assistant",
+      ChatRole::Tool => "tool",
     }
   }
 
+  /// One wire message: tool results carry `tool_call_id`, assistant tool-call turns carry
+  /// `tool_calls` (and `content: null` when they have no text).
+  fn build_message(m: &ChatMessage) -> serde_json::Value {
+    let mut msg = json!({ "role": Self::role_str(m.role), "content": m.content });
+    if let Some(id) = &m.tool_call_id {
+      msg["tool_call_id"] = json!(id);
+    }
+    if !m.tool_calls.is_empty() {
+      if m.content.is_empty() {
+        msg["content"] = serde_json::Value::Null;
+      }
+      msg["tool_calls"] = m
+        .tool_calls
+        .iter()
+        .map(|c| {
+          json!({
+            "id": c.id,
+            "type": "function",
+            "function": { "name": c.name, "arguments": arguments_text(&c.arguments) },
+          })
+        })
+        .collect();
+    }
+    msg
+  }
+
   fn build_messages(messages: &[ChatMessage]) -> Vec<serde_json::Value> {
-    messages
+    messages.iter().map(Self::build_message).collect()
+  }
+
+  fn build_tools(tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
+    tools
       .iter()
-      .map(|m| json!({ "role": Self::role_str(m.role), "content": m.content }))
+      .map(|t| {
+        json!({
+          "type": "function",
+          "function": { "name": t.name, "description": t.description, "parameters": t.parameters },
+        })
+      })
       .collect()
   }
 
   /// The validated chat-completions request for `req` (`stream` selects SSE).
   fn chat_request(&self, req: &ChatRequest, stream: bool) -> Result<HttpRequest, AiError> {
     req.validate()?;
-    let body = json!({
+    let mut body = json!({
       "model": req.model,
       "messages": Self::build_messages(&req.messages),
       "max_completion_tokens": req.effective_max_tokens(self.transport.limits.max_tokens),
       "stream": stream,
     });
+    if !req.tools.is_empty() {
+      body["tools"] = json!(Self::build_tools(&req.tools));
+    }
     self.transport.post_json(
       join_url(&self.base_url, "v1/chat/completions"),
       vec![bearer_header(self.api_key.expose())],
@@ -95,19 +140,32 @@ impl OpenAiLanguageModel {
   fn parse_completion(resp: HttpResponse) -> Result<ChatResponse, AiError> {
     let parsed: OpenAiCompletionResponse =
       serde_json::from_slice(&resp.body).map_err(|e| AiError::InvalidJson(e.to_string()))?;
-    let choice = parsed.choices.into_iter().next();
-    let stop_reason = choice.as_ref().and_then(|c| c.finish_reason.clone());
-    let content = choice
-      .and_then(|c| c.message.content)
-      .filter(|s| !s.is_empty())
+    let choice = parsed
+      .choices
+      .into_iter()
+      .next()
       .ok_or(AiError::EmptyResponse)?;
+    let stop_reason = choice.finish_reason;
+    let content = choice.message.content.unwrap_or_default();
+    let tool_calls: Vec<ToolCall> = choice
+      .message
+      .tool_calls
+      .unwrap_or_default()
+      .into_iter()
+      .map(|c| ToolCall::new(c.id, c.function.name, parse_arguments(c.function.arguments)))
+      .collect();
+    if content.is_empty() && tool_calls.is_empty() {
+      return Err(AiError::EmptyResponse);
+    }
     let usage = parsed.usage.map_or_else(Usage::default, |u| {
       Usage::new(
         u.prompt_tokens.unwrap_or(0),
         u.completion_tokens.unwrap_or(0),
       )
     });
-    let resp = ChatResponse::text(content).with_usage(usage);
+    let resp = ChatResponse::text(content)
+      .with_usage(usage)
+      .with_tool_calls(tool_calls);
     Ok(match stop_reason {
       Some(reason) => resp.with_stop_reason(reason),
       None => resp,
@@ -130,6 +188,37 @@ struct OpenAiChoice {
 #[derive(Deserialize)]
 struct OpenAiMessage {
   content: Option<String>,
+  tool_calls: Option<Vec<OpenAiToolCall>>,
+}
+
+#[derive(Deserialize)]
+struct OpenAiToolCall {
+  id: String,
+  function: OpenAiFunctionCall,
+}
+
+#[derive(Deserialize)]
+struct OpenAiFunctionCall {
+  name: String,
+  #[serde(default)]
+  arguments: String,
+}
+
+/// A call's `arguments` text as JSON; text that is not JSON stays a JSON string (refused by
+/// every object schema). Empty text is an empty object.
+fn parse_arguments(text: String) -> serde_json::Value {
+  if text.trim().is_empty() {
+    return json!({});
+  }
+  serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text))
+}
+
+/// The wire `arguments` text of a call: a string as is (already text), anything else as JSON.
+fn arguments_text(arguments: &serde_json::Value) -> String {
+  match arguments {
+    serde_json::Value::String(s) => s.clone(),
+    other => other.to_string(),
+  }
 }
 
 #[derive(Deserialize)]
@@ -289,5 +378,70 @@ mod tests {
       OpenAiLanguageModel::parse_completion(response("{")),
       Err(AiError::InvalidJson(_))
     ));
+    assert_eq!(
+      OpenAiLanguageModel::parse_completion(response(
+        r#"{"choices":[{"message":{"content":"","tool_calls":null}}]}"#
+      )),
+      Err(AiError::EmptyResponse)
+    );
+  }
+
+  #[test]
+  fn tool_calls_parse_from_the_reply() {
+    let resp = OpenAiLanguageModel::parse_completion(response(
+      r#"{"choices":[{"message":{"content":null,"tool_calls":[
+        {"id":"c1","type":"function","function":{"name":"add","arguments":"{\"a\":1}"}},
+        {"id":"c2","type":"function","function":{"name":"bad","arguments":"{oops"}},
+        {"id":"c3","type":"function","function":{"name":"none"}}
+      ]},"finish_reason":"tool_calls"}]}"#,
+    ))
+    .expect("parse");
+    assert_eq!(resp.content, "");
+    assert_eq!(resp.stop_reason.as_deref(), Some("tool_calls"));
+    assert_eq!(
+      resp.tool_calls,
+      vec![
+        ToolCall::new("c1", "add", json!({"a": 1})),
+        ToolCall::new("c2", "bad", json!("{oops")),
+        ToolCall::new("c3", "none", json!({})),
+      ]
+    );
+  }
+
+  #[test]
+  fn tool_messages_and_definitions_are_written() {
+    let calls = vec![
+      ToolCall::new("c1", "add", json!({"a": 1})),
+      ToolCall::new("c2", "raw", json!("{oops")),
+    ];
+    let msgs = OpenAiLanguageModel::build_messages(&[
+      ChatMessage::assistant_tool_calls("", calls),
+      ChatMessage::tool_result("c1", "{\"sum\":1}"),
+      ChatMessage::assistant_tool_calls("thinking", vec![ToolCall::new("c3", "x", json!({}))]),
+    ]);
+    assert_eq!(msgs[0]["content"], serde_json::Value::Null);
+    assert_eq!(msgs[0]["tool_calls"][0]["type"], "function");
+    assert_eq!(
+      msgs[0]["tool_calls"][0]["function"]["arguments"],
+      "{\"a\":1}"
+    );
+    assert_eq!(msgs[0]["tool_calls"][1]["function"]["arguments"], "{oops");
+    assert_eq!(
+      msgs[1],
+      json!({"role": "tool", "content": "{\"sum\":1}", "tool_call_id": "c1"})
+    );
+    assert_eq!(msgs[2]["content"], "thinking");
+    let tools = OpenAiLanguageModel::build_tools(&[ToolDefinition::new(
+      "add",
+      "adds",
+      json!({"type": "object"}),
+    )]);
+    assert_eq!(
+      tools,
+      vec![json!({
+        "type": "function",
+        "function": {"name": "add", "description": "adds", "parameters": {"type": "object"}},
+      })]
+    );
   }
 }
