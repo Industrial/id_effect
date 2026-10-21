@@ -40,6 +40,7 @@ id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.12.0", fea
   "openapi",
   "tower",
   "http3",
+  "ui",
 ] }
 id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.12.0" }
 id_effect_config = { path = "../../crates/id_effect_config", version = "0.12.0", features = [

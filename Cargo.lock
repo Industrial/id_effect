@@ -2771,6 +2771,7 @@ dependencies = [
  "id_effect_platform",
  "id_effect_resilience",
  "jsonschema",
+ "maud",
  "quinn",
  "rand 0.9.5",
  "rcgen",
