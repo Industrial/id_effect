@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-d90e27",
+  "taskId": "tsk-mvcpeyky-peqniz",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T18:43:41.556Z",
+  "lockedAt": "2026-10-17T18:43:41.556Z",
+  "intent": "r10-e1-3-generate-job",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-9e086b",
+      "text": "`id-effect generate job <name> [--queue Q] [--cron EXPR]` writes the `Job` impl, its registration and a test into a service project; template smoke generates one into a fresh `service` and runs `cargo test`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-8bcc07",
+      "text": "Gate: `cargo nextest run -p id_effect_tool`; `bash scripts/template-smoke.sh`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7300a9",
+      "text": "Owns: `crates/id_effect_tool/src/generate/**`, `crates/id_effect_tool/templates/generate/job/**`, `src/cli.rs` (`Generate` variant, rebased after E1.5), `scripts/template-smoke.sh`, `book/src/part6/ch34-03-generators.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-e8bbec",
+  "taskId": "tsk-mveoxp2g-hrduy2",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:24:37.752Z",
+  "lockedAt": "2026-10-19T03:24:37.752Z",
+  "intent": "r11-sc-dco-docs",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-15c9c6",
+      "text": "S6: .github/workflows/dco.yml fails a pull request when any commit lacks a Signed-off-by line (`s6_dco_check_rejects_unsigned_off_commit` as a fixture run); CONTRIBUTING.md (DCO section at :12-20) documents signing commits (SSH or GPG, or gitsign) and the signed-tag rule; enabling \"require signed commits\" on protected branches is an owner action (0.11.0.md D15) recorded with its date.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b08580",
+      "text": "S7 and sec.supply#7: SECURITY.md supported versions list 0.11.x and 0.10.x (90-day window), replacing 0.9.x at :35, and a \"Security releases\" section lists the 0.10.1 GHSA advisories (ids and links) as public security-release history.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3f1362",
+      "text": "THREAT-MODEL.md: STRIDE per trust boundary (HTTP edge, authentication, authorization, mesh, console/operator surfaces, data/SQL/Redis, outbound HTTP, supply chain); each threat names its mitigation, the ADR 0013 rule (R1–R10) and the test or gate; L6 (rsa 0.9 RUSTSEC-2023-0071 via sqlx-mysql and openidconnect, ignored with a reachability reason at deny.toml:18) is an accepted risk with the reachability argument and a re-check each release.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-4de78d",
+      "text": "Gate: `bash scripts/check-workflows.sh`; `actionlint .github/workflows/dco.yml`; for each of R1..R10, `grep -c \"R<n>\" THREAT-MODEL.md` ≥ 1",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c26d27",
+      "text": "Owns: `.github/workflows/dco.yml`, `CONTRIBUTING.md`, `SECURITY.md`, `THREAT-MODEL.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-sc-dco-docs",
+  "lockedBy": "r11-sc-dco-docs",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "low"
+}

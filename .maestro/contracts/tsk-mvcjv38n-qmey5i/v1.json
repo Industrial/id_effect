@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-8e6ced",
+  "taskId": "tsk-mvcjv38n-qmey5i",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T17:07:33.829Z",
+  "lockedAt": "2026-10-17T17:07:33.829Z",
+  "intent": "r10-e4-3-tracing",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-5183ec",
+      "text": "`OtelConfig.sampler` (always/never/ratio/parent-based) and `OTEL_TRACES_SAMPLER(_ARG)` (#7); `TracedHttpClient` (feature `platform`) opens a client span and calls `inject_into_http_request` (web.client#6, obs.tracing#6); `id_effect_sql` emits a `db.query` span with `db.system` and a parameter-free statement, bridged by `OtelSpanHook` (#6); `axum.rs` uses `.instrument(span)` instead of `span.enter()` across `.await`; `metrics.rs` doc links build without `pg`. Tests with the in-memory exporter `client_span_is_child_and_sends_traceparent`, `db_query_creates_span`, `ratio_sampler_from_env`, `server_span_not_held_across_await`. Book section in `ch27-00-observability.md`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-28dc2a",
+      "text": "Gate: `cargo nextest run -p id_effect_opentelemetry -p id_effect_sql --all-features`; `cargo doc -p id_effect_sql --no-deps` with `RUSTDOCFLAGS=-D warnings`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-73c991",
+      "text": "Owns: `crates/id_effect_opentelemetry/src/{config.rs,otlp.rs,client.rs,axum.rs,span_bridge.rs}`, `crates/id_effect_opentelemetry/Cargo.toml`, `crates/id_effect_sql/src/metrics.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

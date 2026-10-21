@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-eb0e89",
+  "taskId": "tsk-mvblcbcl-ojq8t0",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T23:20:44.197Z",
+  "lockedAt": "2026-10-16T23:20:44.197Z",
+  "intent": "r09-w3-kit-template",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-dc7a24",
+      "text": "Kit features `sql-sqlite`, `sql-mysql`, `migrate`, `openapi`, `auth`, `authz`, `test` (+`redis`); `full` updated; service template replaces the `include_str!` migration (`db.rs.template:10,26`) with `migrate::run`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-da2584",
+      "text": "Gate: kit tests; CI template matrix (`ci.yml` template job)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a66179",
+      "text": "Owns: `crates/id_effect_kit/Cargo.toml` + `src/prelude.rs`, `crates/id_effect_tool/templates/service/**`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

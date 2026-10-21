@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-d16fdf",
+  "taskId": "tsk-mvcrl146-fp6v3u",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T19:38:13.909Z",
+  "lockedAt": "2026-10-17T19:38:13.909Z",
+  "intent": "r10-w3-level-audit",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-cefb30",
+      "text": "For each of the 14 rows + sec.authn: every planned check id maps to an existing path at HEAD and the row has book + example + integration test; gaps become tasks.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b7b551",
+      "text": "Gate: `python3 -I .tmp/plan10/gaps.py v` compared against the evidence map",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-368489",
+      "text": "Owns: none (read-only)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

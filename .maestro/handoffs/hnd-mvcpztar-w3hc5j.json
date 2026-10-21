@@ -1,0 +1,8 @@
+{
+  "id": "hnd-mvcpztar-w3hc5j",
+  "task_id": "tsk-mvcpeyb9-t3b4bu",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-17T18:18:37.971Z",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.10/r10-e6-2-dashboard.md",
+  "to_agent": "cli"
+}

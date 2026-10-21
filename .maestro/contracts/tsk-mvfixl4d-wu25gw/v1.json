@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "id": "c-05c7ce",
+  "taskId": "tsk-mvfixl4d-wu25gw",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T17:24:21.620Z",
+  "lockedAt": "2026-10-19T17:24:21.620Z",
+  "intent": "r12-e12-5-benches",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-1f17a7",
+      "text": "Criterion benches in crates/id_effect_rpc/benches/gate_rpc.rs: rpc/unary_json (a #[rpc::service] query, JSON, small struct, through the in-process tower path as the 0.11 gate_request bench), rpc/axum_json_handler (a raw axum handler doing the same serde JSON decode and encode of the same struct; the baseline), rpc/unary_postcard, rpc/batch_50 and rpc/sequential_50 (50 calls over loopback TCP with keep-alive, sequential awaits).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-1c3498",
+      "text": "D5: a delta gate rpc/unary_json − rpc/axum_json_handler ≤ 3,000 ns (same run and runner; ratio printed for information) is written into docs/benchmarks/gates.toml only after the first measurement is recorded in the leaf evidence; if the measurement exceeds 3 µs the leaf stops and asks the owner (release spec Open question 2) instead of loosening it.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-1b39ee",
+      "text": "Pair gate rpc/batch_50 / rpc/sequential_50 ≤ 0.20 (≥ 5× faster); the 0.11 secure-stack delta gate (≤ 5 µs) is unchanged.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0e8ba6",
+      "text": "Soak: examples/streams_soak.rs opens 10,000 concurrent WebSocket server streams on one node with heartbeats and samples RSS; pass when RSS at minute 10 is ≤ 1.05 × RSS at minute 1 and every stream received every heartbeat; a 60 s variant runs in PR CI, the 10-minute run in bench.yml.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-31646e",
+      "text": "D9: benches/h3_loss.rs measures p99 of 64 multiplexed 16 KiB responses over one connection, HTTP/2 over TLS vs HTTP/3, with tc netem loss 1% delay 5ms on loopback (bench.yml job with sudo); pair gate h3_p99 / h2_p99 ≤ 1.00 (noise 0.05); results published in docs/benchmarks/v0.12.json and README.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-18e866",
+      "text": "Gate: `bash scripts/bench-run.sh` then `bash scripts/bench-compare.sh docs/benchmarks/v0.11.json <new>` (no budget/delta/pair FAIL); `cargo run --release -p id_effect_rpc --example streams_soak -- --streams 10000 --minutes 10`; `bash scripts/check-workflows.sh`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-113b66",
+      "text": "Owns: `crates/id_effect_rpc/benches/{gate_rpc.rs,h3_loss.rs}`, `crates/id_effect_rpc/examples/streams_soak.rs`, `docs/benchmarks/{gates.toml,README.md,v0.12.json}`, `scripts/bench-run.sh`, `.github/workflows/bench.yml`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "f3-benches",
+  "lockedBy": "f3-benches",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

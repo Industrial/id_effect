@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-c62743",
+  "taskId": "tsk-mvfiv513-vvk5an",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T17:22:24.635Z",
+  "lockedAt": "2026-10-19T17:22:24.635Z",
+  "intent": "r12-e12-3-deploy-guide",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-1c73b2",
+      "text": "Book part6/ch29-07-http3-deployment.md documents both topologies: (a) a load balancer terminating HTTP/3 at the edge (needs nothing from the app; keep or disable server.http3.enabled for internal hops) and (b) direct-to-app with TCP and UDP 443 open, TLS-ALPN-01 ACME, the Alt-Svc behaviour, firewall rules, health checks over TCP, and what happens when UDP is blocked (clients stay on HTTP/2).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-ee00f6",
+      "text": "Examples docs/deploy/http3/kamal.yml (UDP port publish) and docs/deploy/http3/helm-values.yaml (a UDP service port next to TCP, a NetworkPolicy for UDP 443) with a README; every Rust snippet in the chapter compiles through examples/book-snippets (K5).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-be8ff6",
+      "text": "The mesh section links the shared-endpoint rule (D7) and quic.mesh_port, and states that the service template never shares a port with a mesh.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-394e47",
+      "text": "Gate: `cargo test -p book-snippets`; `bash scripts/check-workflows.sh`; `yq e . docs/deploy/http3/kamal.yml docs/deploy/http3/helm-values.yaml > /dev/null`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f6d80d",
+      "text": "Owns: `crates/id_effect/book/src/part6/ch29-07-http3-deployment.md`, `docs/deploy/http3/{kamal.yml,helm-values.yaml,README.md}`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "e4-deploy-guide",
+  "lockedBy": "e4-deploy-guide",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "low"
+}

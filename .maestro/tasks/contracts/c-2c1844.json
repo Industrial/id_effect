@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 2,
+	"id": "c-2c1844",
+	"taskId": "tsk-mvaw7lqp-9fes2a",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T11:37:09.169Z",
+	"lockedAt": "2026-10-16T11:37:09.169Z",
+	"intent": "Scorecard method 2.1",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-59b3b7",
+			"text": "Rows sec.supply, test.qa, eco.stability, eco.backing, eco.community, eco.production and eco.license carry \"process\": true; on them every framework level is production when it meets at least one check and absent otherwise; --validate fails otherwise (fixture bad-process-level).",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-5e239f",
+			"text": "method_version is \"2.1\"; METHOD §7.4 states the rule, §5.2 and §8 are updated; self-test passes with the new numbers.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-965cf6",
+			"text": "data.jsonschema 0.8.0 target is 50 (owner decision D1, 2026-10-16); PLAN-OF-PLANS §1/§6 and the 0.8 release spec carry the recomputed targets.",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"riskClass": "medium"
+}

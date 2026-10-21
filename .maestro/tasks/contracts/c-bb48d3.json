@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-bb48d3",
+  "taskId": "tsk-mvcjv31o-sevooz",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T15:40:33.264Z",
+  "lockedAt": "2026-10-17T15:40:33.264Z",
+  "intent": "r10-co-sql-errors",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-593ddd",
+      "text": "`SqlError` gains `#[non_exhaustive]` variants for connection and TLS failures and a typed SQLSTATE on plain `query`/`execute` (unique violation detectable without message parsing — used by E7.1 and E7.2); `PgAdvisoryLease::from_pool_config` honours explicit TLS settings. Tests `unique_violation_has_sqlstate_23505`, `tls_required_against_plain_server_is_tls_error`, `advisory_lease_uses_pool_tls`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b75a6f",
+      "text": "Gate: `<pg> -p id_effect_sql -p id_effect_node --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-116078",
+      "text": "Owns: `crates/id_effect_sql/src/{error.rs,pg/error.rs,pg/client.rs}`, `crates/id_effect_node/src/singleton.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

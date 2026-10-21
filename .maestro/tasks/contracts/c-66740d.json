@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-66740d",
+  "taskId": "tsk-mvcpexl4-f87btw",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T18:04:41.386Z",
+  "lockedAt": "2026-10-17T18:04:41.386Z",
+  "intent": "r10-e7-2-broker-api",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-525054",
+      "text": "`MessageBroker` per D7 (#4); `MemoryBroker` with consumer groups, redelivery and a dead-letter topic after `max_deliveries` (#5), bounded prefetch + concurrency (#6). Tests `nack_redelivers_then_dead_letters`, `prefetch_bounds_in_flight`, `two_groups_each_get_every_message`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-35518f",
+      "text": "Gate: `cargo nextest run -p id_effect_messaging`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-68d7d3",
+      "text": "Owns: `crates/id_effect_messaging/src/{broker.rs,delivery.rs,memory.rs}`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

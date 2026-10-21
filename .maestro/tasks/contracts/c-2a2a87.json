@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 2,
+	"id": "c-2a2a87",
+	"taskId": "tsk-mvb0jmcb-ajdki6",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T13:38:34.996Z",
+	"lockedAt": "2026-10-16T13:38:34.996Z",
+	"intent": "0.8 E2.3 — schema",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-4f6cc4",
+			"text": "data.jsonschema 0/8 -> 4/8, level tested: JSON Schema (2020-12) export for any Schema/HasSchema type (#1; first establish what crates/id_effect/src/schema/json_schema_export.rs already does and why the 0.7 scorecard did not credit it), the same schema value used for validation and export (#4), descriptions/examples/deprecation annotations emitted (#5), constraints reflected (minLength, pattern, enum, ranges) (#6); golden tests per schema kind; validated against a JSON Schema validator crate in dev-dependencies if one is already in the tree, else golden only.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-9a2f2f",
+			"text": "data.schema 6/8 -> 7/8: struct/record decoding accumulates all field errors in one pass instead of fail-fast (#6, parse.rs ~:500), or built-in validators email/uuid/url/length/range/regex (#8) — do #6, add #8 if cheap; existing parse tests keep passing; MIGRATION-0.8 text if error shapes change.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-319293",
+			"text": "Book schema chapter updated; clippy -D warnings, docs, tests green for id_effect.",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"riskClass": "medium"
+}

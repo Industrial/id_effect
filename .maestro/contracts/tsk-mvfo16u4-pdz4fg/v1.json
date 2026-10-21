@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 2,
+  "id": "c-d0ac4c",
+  "taskId": "tsk-mvfo16u4-pdz4fg",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T19:47:05.419Z",
+  "lockedAt": "2026-10-19T19:47:05.419Z",
+  "intent": "r12-w6-kit-template",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-90fe21",
+      "text": "id_effect_kit features: rpc (id_effect_rpc + macros, HTTP transport, implies web), rpc-ws (WebSocket + SSE transports, subscriptions; with events also the events-backed subscriptions), http3 (axum http3 + tls; with http-client also the platform HTTP/3 client), webtransport (http3 + rpc-ws + WebTransport); cluster additionally turns on id_effect_rpc?/channels and ?/mesh; all four in full; prelude exposes rpc::service and the procedure attributes.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b01d7d",
+      "text": "Posture probes (kit posture::check): every procedure declares public or guarded, WebSocket/WebTransport origins configured, 0-RTT off, QUIC Retry on, HTTP/3 enabled only with TLS, no id-effect dev certificate in prod; tests listed below.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-74d3a4",
+      "text": "service template: a sample #[rpc::service] next to the REST routes, HTTP/3 on by default (server.http3.enabled = true, D4) on the same port as TLS TCP, TCP always on; prod config requires certificate paths or ACME (or the flag off behind a load balancer); README and the zero-to-production tutorial explain the flag.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c92238",
+      "text": "id-effect dev creates a localhost dev CA and a 13-day ECDSA P-256 certificate (WebTransport serverCertificateHashes compatible), rotates it before expiry, prints trust instructions, and never runs in the prod profile.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-940030",
+      "text": "scripts/template-smoke.sh generates a service and its TypeScript client (id-effect rpc gen ts), runs the service and a Deno round trip over HTTP/3 and over TCP; scripts/check-dangerous.sh lists every new dangerous_* API.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-6f49c7",
+      "text": "Tests `template_service_serves_rpc_over_h3_and_tcp`, `template_http3_disabled_by_one_flag`, `posture_prod_refuses_dev_certificate`, `posture_reports_rpc_probes`, `posture_fails_on_undeclared_procedure`, `dev_cert_valid_for_webtransport_hashes`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-fb3f2b",
+      "text": "Gate: `cargo nextest run -p id_effect_kit -p id_effect_tool --all-features`; `bash scripts/template-smoke.sh`; `bash scripts/check-dangerous.sh`; `cargo test -p book-snippets` (tutorial)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2cd70b",
+      "text": "Owns: `crates/id_effect_kit/**`, `crates/id_effect_tool/templates/**`, `crates/id_effect_tool/src/dev.rs`, `crates/id_effect_tool/Cargo.toml` (rcgen for the dev certificate, after r12-e12-4-gen-ts), `crates/id_effect_tool/tests/dev_cert.rs`, `scripts/template-smoke.sh`, `scripts/check-dangerous.sh`, `crates/id_effect/book/src/tutorial-zero-to-production.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "h1-kit-template",
+  "lockedBy": "h1-kit-template",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

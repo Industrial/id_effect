@@ -1,0 +1,9 @@
+{
+  "id": "hnd-mvfl8u9a-1h9ez0",
+  "task_id": "tsk-mvfl8a7k-641iow",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-19T18:28:59.566Z",
+  "agent_id": "g1-gen-ts",
+  "spec_path": "/data/Code/rust/id_effect/.tmp/wt-012/.maestro/specs/releases/0.12/r12-e12-4-gen-ts.md",
+  "to_agent": "cli"
+}

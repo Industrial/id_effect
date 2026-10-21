@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "id": "c-ef88f6",
+  "taskId": "tsk-mvep8nuq-do4lci",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:33:08.518Z",
+  "lockedAt": "2026-10-19T03:33:08.518Z",
+  "intent": "r11-e8-3-reliable-delivery",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-1c598f",
+      "text": "At-least-once mode (0.11.0.md D19), opt-in per send (Addr::send_reliable) and per mesh (DeliveryMode::AtLeastOnce); at-most-once stays the default. Per-peer sequence numbers, ack frames, a bounded retransmit buffer (count and bytes, configurable) with backoff, and a receiver dedup window keyed by (incarnation, seq), so reconnects do not duplicate; messages pending when the peer restarts with a new incarnation fail with DeliveryFailed to the sender's monitor (documented).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e3f4bd",
+      "text": "PROTOCOL_VERSION bumps (crates/id_effect_node/src/wire.rs:16); older nodes are refused with VersionMismatch; MIGRATION-0.11 and CHANGELOG say so.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3d78bc",
+      "text": "dist.remote#8: the sending fiber's trace context is carried on remote cast, call and send (today an empty TraceContext::new() at mesh.rs:369, :384, :424) and becomes the parent span on the receiver.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-88d997",
+      "text": "Fuzz targets mesh_frame and mesh_envelope added to fuzz/ (counted in the E11.4 KPI).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c2ba0a",
+      "text": "Tests `reliable_send_survives_connection_drop`, `duplicates_suppressed_after_reconnect`, `retransmit_buffer_bound_faults_oldest`, `at_most_once_remains_default`, `remote_call_carries_trace_context`, `version_mismatch_refused`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a02314",
+      "text": "Gate: `cargo nextest run -p id_effect_node --all-features`; in fuzz/: `cargo +nightly-<pinned> fuzz build mesh_frame mesh_envelope` and each run `-max_total_time=60` with no crash",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3172eb",
+      "text": "Owns: `crates/id_effect_node/src/{envelope.rs,wire.rs,mesh.rs,session.rs,delivery.rs,lib.rs}`, `crates/id_effect_node/tests/reliable_delivery.rs`, `fuzz/fuzz_targets/{mesh_frame.rs,mesh_envelope.rs}` and their `fuzz/Cargo.toml` entries",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-e8-3-reliable-delivery",
+  "lockedBy": "r11-e8-3-reliable-delivery",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

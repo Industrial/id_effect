@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-59e3f5",
+  "taskId": "tsk-mvfoqs1j-gik5ls",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T20:06:59.040Z",
+  "lockedAt": "2026-10-19T20:06:59.040Z",
+  "intent": "r12-f-unary-perf",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-0c4d86",
+      "text": "D5: `rpc/unary_json` − `rpc/axum_json_handler` ≤ 3,000 ns on the r12-e12-5-benches harness (measured +3,399 ns at 9f422370, Maestro evidence evd-1792438306570-c6acf9), median of 5 runs at load < 4, recorded in docs/benchmarks/v0.12.json; then the D5 `[[gate]]` table in docs/benchmarks/gates.toml (as docs/benchmarks/README.md \"Unary budget (D5)\" shows) is enabled. The budget itself is not raised.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d5570e",
+      "text": "Method: profile the unary path (perf / cargo-flamegraph or criterion + counting allocations) and remove per-call work that is not security-relevant — double JSON (de)serialisation, per-call allocations, repeated header parsing, boxed futures, guard-chain clones. No security check is removed or weakened (x-rpc, Content-Type, guards, deadline clamp, InternalError redaction, idempotency); secure-stack gate stays green (≤ +5 µs).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0c8128",
+      "text": "F48: the axum host listener and `serve_router*` set `TCP_NODELAY` on accepted TCP connections (WebSocket p99 41-42 ms → ~1 ms measured by benches); test asserts nodelay on an accepted socket.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-fac02a",
+      "text": "Gate: `cargo nextest run -p id_effect_rpc -p id_effect_axum --all-features`; clippy -D warnings; bench-run + bench-compare for rpc and axum gates; coverage of changed code ≥ 96% regions.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f25b49",
+      "text": "Owns: `crates/id_effect_rpc/src/{server/**,handler.rs,registry.rs,codec/json.rs,wire.rs}`, `crates/id_effect_axum/src/server/{connection.rs,lifecycle.rs,bootstrap.rs}` (nodelay only), `docs/benchmarks/{gates.toml,v0.12.json,README.md}`, CHANGELOG own hunk.",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "h3-unary-perf",
+  "lockedBy": "h3-unary-perf",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

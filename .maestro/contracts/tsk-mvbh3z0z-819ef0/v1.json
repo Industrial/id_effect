@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-7b35a3",
+  "taskId": "tsk-mvbh3z0z-819ef0",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T21:46:08.459Z",
+  "lockedAt": "2026-10-16T21:46:08.459Z",
+  "intent": "r09-e5-5-tenancy-doc",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-a7ef51",
+      "text": "Documented row-level tenant pattern: CapOverrideLayer tenant → Repository global filter → audit actor/tenant.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-81b875",
+      "text": "Gate: book-snippets doctest",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5c340d",
+      "text": "Owns: `book/src/part6/ch30-04-audit-tenancy.md`, example",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

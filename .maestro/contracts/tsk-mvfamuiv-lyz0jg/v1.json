@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "id": "c-4537bf",
+  "taskId": "tsk-mvfamuiv-lyz0jg",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T13:32:02.114Z",
+  "lockedAt": "2026-10-19T13:32:02.114Z",
+  "intent": "r12-e12-2-channels",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-eaef62",
+      "text": "web.realtime#3: id_effect_rpc::channels topics with join and leave, mapped to mesh process groups (ProcessGroups / OrSwot, crates/id_effect_node/src/groups.rs:30,126) by one hub process per node; subscribers are RPC subscriptions (WebSocket, SSE, later WebTransport).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-54cf86",
+      "text": "web.realtime#5: a broadcast on any node reaches the subscribers on every node; delivery order per publisher is preserved; a node leaving removes its members.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a3bdd0",
+      "text": "web.realtime#4: presence with per-connection metadata, join/leave diffs pushed to subscribers, convergence after a node goes down (monitor-driven cleanup).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a51e2d",
+      "text": "web.realtime#6 (join half) and ADR 0013 R1: joining a topic goes through a JoinPolicy; the default policy denies; an adapter runs an id_effect_authz policy without making id_effect_rpc depend on axum-only authz items.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-4db6e3",
+      "text": "Tests `three_node_broadcast_under_test_clock` (in-memory mesh transport), `presence_converges_after_node_down`, `channel_join_denied_by_default_policy`, `leave_stops_delivery`, `publisher_order_preserved_per_topic`; example channels_chat.rs; book part6/ch33-09-channels-presence.md. No id_effect_channels crate (L15).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-590e14",
+      "text": "Gate: `cargo nextest run -p id_effect_rpc --features channels`; `cargo run -p id_effect_rpc --features channels --example channels_chat -- --self-test`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-cf91bb",
+      "text": "Owns: `crates/id_effect_rpc/src/channels/**`, `crates/id_effect_rpc/tests/{channels_three_nodes.rs,presence.rs}`, `crates/id_effect_rpc/examples/channels_chat.rs`, `crates/id_effect/book/src/part6/ch33-09-channels-presence.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "e1-channels",
+  "lockedBy": "e1-channels",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

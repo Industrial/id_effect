@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-c295a2",
+  "taskId": "tsk-mvcjv3pj-tef3al",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T17:07:34.000Z",
+  "lockedAt": "2026-10-17T17:07:34.000Z",
+  "intent": "r10-e6-5b-faults",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-19452d",
+      "text": "`Fault::{delay, fail, timeout}` applied to `SqlClient` and `HttpClient` doubles; delays run on the virtual clock (`TestExecutor::advance`) (#2); `FaultPlan::seeded(seed)` gives the same schedule for the same seed (#7). Tests `same_seed_same_fault_schedule`, `delay_advances_virtual_clock_only`, `retry_policy_survives_injected_latency`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-1c8539",
+      "text": "Gate: `cargo nextest run -p id_effect_test -p id_effect_sql --features id_effect_test/fault`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-db942f",
+      "text": "Owns: `crates/id_effect_test/src/fault/**` (feature `fault`), `crates/id_effect_test/Cargo.toml`, `crates/id_effect_sql/src/client.rs` (`TestSqlClient` delay only)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

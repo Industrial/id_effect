@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-f8ad18",
+  "taskId": "tsk-mvd9mln9-g1f798",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-18T03:28:19.597Z",
+  "lockedAt": "2026-10-18T03:28:19.597Z",
+  "intent": "r101-http",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-c60fc4",
+      "text": "Closes H1, H2 and M1 as specified in the Findings table of .maestro/specs/releases/0.10.1.md, within the patch-release rules there (additive API only; stricter defaults with a named dangerous/insecure opt-out). One regression test per finding, named after it (for example h1_per_ip_limit_sees_the_peer).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-13a0ef",
+      "text": "Gate: cargo test -p id_effect_axum --all-features; cargo test -p ledger (examples/reference/ledger, needs Postgres); cargo clippy -p id_effect_axum --all-features --all-targets -- -D warnings",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-145842",
+      "text": "Owns: crates/id_effect_axum/src/server/**, crates/id_effect_axum/src/middleware/rate_limit.rs, crates/id_effect_axum/src/client_ip.rs, crates/id_effect_axum/src/lib.rs (re-export only), crates/id_effect_axum/Cargo.toml (hyper-util features only), crates/id_effect_axum/tests/**, examples/reference/ledger/src/app.rs, examples/reference/ledger/config/**",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

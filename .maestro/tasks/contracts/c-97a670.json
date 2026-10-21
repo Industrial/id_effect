@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-97a670",
+  "taskId": "tsk-mvcrl10t-m63g70",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T22:28:30.551Z",
+  "lockedAt": "2026-10-17T22:28:30.551Z",
+  "intent": "r10-w3-kpis",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-68eb93",
+      "text": "K2 ≤ 8 s, K6 recorded, K3 re-measured with the job (§8 definition), K1 on an idle machine (0.9 follow-up).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-89eaa5",
+      "text": "Gate: `DX_KPIS_RELEASE=0.10 bash scripts/dx-kpis.sh`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b5180c",
+      "text": "Owns: `docs/benchmarks/dx-kpis-0.10.json`, `docs/benchmarks/k3/invoice.patch` (adds the job)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "hnd-mvbh48di-biv6bq",
+  "task_id": "tsk-mvbh3z49-hbvk3j",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-16T21:22:21.415Z",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.9/r09-e6-5-containers.md",
+  "to_agent": "cli"
+}

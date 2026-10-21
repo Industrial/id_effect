@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "id": "c-a3cc1c",
+  "taskId": "tsk-mvfc5h86-z8ef14",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T14:14:31.141Z",
+  "lockedAt": "2026-10-19T14:14:31.141Z",
+  "intent": "r12-e12-2-mesh-rpc",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-7f5516",
+      "text": "The same #[rpc::service] contract is callable node to node: an RPC endpoint process per service runs under a cluster-wide name (0.11 global registry), the client resolves it and calls over the mesh with postcard encoding; unary calls, server streams and two-way streams (credit-based) work.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-62e8a8",
+      "text": "Spans: the caller fiber trace context becomes the parent of the handler span on the remote node (the 0.11 dist.remote#8 mechanism), and the rpc.request span carries the service, procedure and node.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5c8b24",
+      "text": "An endpoint process restart under its supervisor is transparent to callers (re-resolve on noproc, bounded retry for queries only).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-4c9252",
+      "text": "No edits to crates/id_effect_node (the endpoint is a Process behaviour registered through public node APIs).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-93f172",
+      "text": "Tests `mesh_unary_and_stream_round_trip`, `mesh_call_carries_trace_context`, `mesh_endpoint_restart_is_transparent_to_callers`, `mesh_mutation_not_retried_on_noproc`; book part7/ch38-02-rpc-over-the-mesh.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-208197",
+      "text": "Gate: `cargo nextest run -p id_effect_rpc --features mesh`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2bf6e9",
+      "text": "Owns: `crates/id_effect_rpc/src/{transport/mesh.rs,client/mesh.rs}`, `crates/id_effect_rpc/tests/mesh_rpc.rs`, `crates/id_effect/book/src/part7/ch38-02-rpc-over-the-mesh.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "e2-mesh-rpc",
+  "lockedBy": "e2-mesh-rpc",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

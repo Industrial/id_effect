@@ -1,0 +1,47 @@
+{
+	"schemaVersion": 2,
+	"id": "c-46ad51",
+	"taskId": "tsk-mvawkapy-lzvg52",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T18:57:30.578Z",
+	"lockedAt": "2026-10-16T18:57:30.578Z",
+	"intent": "0.8 E0.1 relicense to MIT",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-62e32f",
+			"text": "Precondition recorded as evidence before any change: consent from every non-owner copyright holder (Justin Carter, commit 8eb9b05 / #79) or those lines rewritten; owner confirms IDClear has no claim on the 4 commits made with the idclear.com address (#67, #71, #72, #73).",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-dd6be3",
+			"text": "LICENSE at repo root with the MIT text (head -1 = MIT License); license = \"MIT\" in Cargo.toml:32 [workspace.package], labs/Cargo.toml:23 and labs/id_effect_lint/Cargo.toml:7; cargo metadata shows license MIT for every publishable package in both workspaces.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-935102",
+			"text": "README badge (README.md:19) and License footer (README.md:244-246) and labs/id_effect_lint/README.md:31-33 updated; git grep CC-BY-SA outside docs/scorecard, .maestro and CHANGELOG returns nothing; CHANGELOG notes that versions <= 0.7.0 remain CC-BY-SA-4.0.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-64c6cc",
+			"text": "CONTRIBUTING.md exists with a DCO (Signed-off-by) requirement; cargo package -p id_effect --list succeeds.",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mvawbp5i-g5m6ot",
+	"riskClass": "high"
+}

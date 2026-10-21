@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-16e5d7",
+  "taskId": "tsk-mvervb9q-tizqjp",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T04:46:45.087Z",
+  "lockedAt": "2026-10-19T04:46:45.087Z",
+  "intent": "r11-sec-client-ssrf",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-fedb8d",
+      "text": "M3 (0.11.0.md D10): HttpClientConfig::default() turns on an SsrfPolicy enforced by a custom reqwest DNS resolver that checks every resolved address (DNS-rebinding safe) and by a check on literal-IP URLs: loopback, RFC 1918, CGNAT 100.64/10, link-local 169.254/16 and fe80::/10 (incl. 169.254.169.254 and fd00:ec2::254), ULA fc00::/7, multicast, unspecified and IPv4-mapped forms are refused; schemes http and https only.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b6a9d2",
+      "text": "Redirects off by default (crates/id_effect_platform/src/http/mod.rs:299-302 builds the client without a redirect policy today, so reqwest follows up to 10); follow_redirects(max) is opt-in and re-checks the policy on every hop; allow_hosts / allow_cidrs allowlist, settable from config; dangerous_allow_private_networks() records a posture opt-out. MIGRATION-0.11 section \"SSRF default\".",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-9b96d5",
+      "text": "Existing tests that call wiremock on 127.0.0.1 through HttpClient (id_effect_platform, id_effect_mail, id_effect_auth oidc, Ledger) use the allowlist; the Ledger test profile allowlists its fakes in config/test.toml.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-66d0ca",
+      "text": "Regression tests `m3_ssrf_blocks_loopback_private_and_metadata`, `m3_ssrf_checks_every_resolved_address`, `m3_ipv4_mapped_ipv6_is_blocked`, `m3_redirects_not_followed_by_default`, `m3_followed_redirect_to_private_ip_is_blocked`, `m3_allowlist_permits_named_host`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e38aa4",
+      "text": "Gate: `cargo nextest run -p id_effect_platform -p id_effect_mail -p id_effect_auth --all-features`; `ID_EFFECT_REQUIRE_DOCKER=1 cargo nextest run -p ledger` (Docker required)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5b959d",
+      "text": "Owns: `crates/id_effect_platform/{src/http/**,Cargo.toml,tests/ssrf.rs}`, fixture lines in existing files under `crates/id_effect_mail/tests/**`, `crates/id_effect_auth/tests/**` and `examples/reference/ledger/tests/**`, `examples/reference/ledger/config/test.toml`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-sec-client-ssrf",
+  "lockedBy": "r11-sec-client-ssrf",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

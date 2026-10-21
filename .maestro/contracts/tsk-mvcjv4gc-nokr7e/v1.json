@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-10ff0e",
+  "taskId": "tsk-mvcjv4gc-nokr7e",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T15:28:18.449Z",
+  "lockedAt": "2026-10-17T15:28:18.449Z",
+  "intent": "r10-sqlt-pg-wire",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-26a1ce",
+      "text": "`TIMESTAMPTZ`/`TIMESTAMP`/`DATE`/`TIME` bind and decode through own sqlx `Type`/`Encode`/`Decode` impls on the binary wire format (i64 µs / i32 days since 2000-01-01) into jiff; `±infinity` and out-of-range values map to `SqlError` (no panic); the conformance suite date-time cases pass unchanged; new tests `pg_wire_datetime_round_trip_bounds`, `pg_infinity_is_an_error`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c6788c",
+      "text": "Gate: `<pg> -p id_effect_sql --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a51969",
+      "text": "Owns: `crates/id_effect_sql/src/pg/{value.rs,datetime.rs}`, `src/value/time_conv.rs` (deleted or pg-only replacement)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

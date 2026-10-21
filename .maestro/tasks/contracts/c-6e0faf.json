@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-6e0faf",
+  "taskId": "tsk-mvbh3yxp-p9pp0e",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T21:46:08.061Z",
+  "lockedAt": "2026-10-16T21:46:08.061Z",
+  "intent": "r09-e5-5-audit",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-3d4785",
+      "text": "`AuditLog` Layer appends `{actor, tenant, action, entity, before, after, at}` inside the caller's transaction; each record stores `sha256(prev_hash ‖ record)`; `verify_chain()` reports the first broken link. Tests `tampered_row_breaks_chain`, `audit_rolls_back_with_tx`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-93e735",
+      "text": "Gate: pg nextest `--features audit`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2e22be",
+      "text": "Owns: `crates/id_effect_sql/src/audit.rs` (feature `audit`), its migration",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

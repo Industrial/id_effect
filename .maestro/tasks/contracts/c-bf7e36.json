@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-bf7e36",
+  "taskId": "tsk-mvcpey14-2k0wis",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T18:34:51.859Z",
+  "lockedAt": "2026-10-17T18:34:51.859Z",
+  "intent": "r10-e7-3-deliver-later",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-49265e",
+      "text": "`deliver_later(mail)` / `deliver_later_in(&SqlTransaction, mail)` enqueue a `SendMail` job in `id_effect_jobs` with retries (#5). Test `deliver_later_sends_after_commit_only`. Chapter + example + integration test.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-220067",
+      "text": "Gate: `<pg> -p id_effect_mail --all-features`; `bash scripts/tier-conformance.sh id_effect_mail`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-bde893",
+      "text": "Owns: `crates/id_effect_mail/src/later.rs` (feature `jobs`), `book/src/part6/ch31-03-mail.md`, `crates/id_effect_mail/examples/010_mail.rs`, `crates/id_effect_mail/tests/mail.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

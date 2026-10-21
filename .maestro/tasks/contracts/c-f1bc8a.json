@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-f1bc8a",
+  "taskId": "tsk-mveoxua6-li0n6j",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:24:41.372Z",
+  "lockedAt": "2026-10-19T03:24:41.372Z",
+  "intent": "r11-e8-3-quic-mtls",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-c3ed94",
+      "text": "dist.tls#4: QUIC requires and verifies client certificates by default (replacing with_no_client_auth at crates/id_effect_node/src/transport/quic.rs:250, :254, :265); a peer without a client certificate, or with one from another CA, is refused.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-68da5e",
+      "text": "dist.tls#5: NodeCertificate::from_pem_files(chain, key) with PKCS#8, PKCS#1 and SEC1 keys and a CA bundle loader (today the only constructor is self_signed, quic.rs:50); dist.tls#7: a CertReloader polls the files (no notify crate, as 0.10 D4) and new connections use the new certificate without a restart; dist.tls#2: MeshConfig defaults to an encrypted transport (0.10.1 already refuses QUIC without roots or a pinned key).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-6fe6cb",
+      "text": "Every dangerous_* opt-out (accept any server cert, no client auth) calls id_effect::observability::posture::record_dangerous. id_effect_node/Cargo.toml declares, once, the features this release needs: quic, tls-tcp, insecure-plaintext-tcp, kubernetes and their deps (r11-e8-3-tcp-tls and r11-e8-3-k8s-discovery use them in wave 2 without editing Cargo.toml).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-67a4f8",
+      "text": "Level tested → documented: book part7/ch38-01-transport-security.md, example 134_mtls_cluster.rs, integration test tests/transport_tls.rs. Tests `mtls_rejects_peer_without_client_cert`, `mtls_rejects_cert_from_other_ca`, `pem_chain_and_key_load`, `rotated_cert_used_for_new_connections`, `dangerous_accept_any_server_cert_is_recorded_in_posture`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e15a6f",
+      "text": "Gate: `cargo nextest run -p id_effect_node --all-features`; `cargo run -p id_effect_node --features quic --example 134_mtls_cluster`; `cargo deny check`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-9f7ed2",
+      "text": "Owns: `crates/id_effect_node/src/transport/{quic.rs,certs.rs,mod.rs}`, `crates/id_effect_node/Cargo.toml`, `crates/id_effect_node/tests/transport_tls.rs`, `crates/id_effect_node/examples/134_mtls_cluster.rs`, `crates/id_effect/book/src/part7/ch38-01-transport-security.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-e8-3-quic-mtls",
+  "lockedBy": "r11-e8-3-quic-mtls",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-e5a1cd",
+  "taskId": "tsk-mvfr89bs-sr3cs4",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T21:16:33.675Z",
+  "lockedAt": "2026-10-19T21:16:33.675Z",
+  "intent": "r12-w7-ledger",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-f8d4e8",
+      "text": "The Ledger exposes its accounts and entries API as a #[rpc::service] (queries and mutations with idempotency keys, one server stream for statements) that calls the same handlers as its REST routes; REST and OpenAPI stay (ADR 0014: REST + OpenAPI remains the public API style).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7b5446",
+      "text": "Its tests use the generated TypeScript client under Deno for a round trip, and the Rust client for the rest; rpc.contract.json is checked in; id-effect rpc check runs in the reference-ledger CI job against the last tag.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-064f63",
+      "text": "Prod posture still clean with zero accepted risks; every procedure declared public or guarded (access-report snapshot updated).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f21f6e",
+      "text": "Tests `ledger_rpc_and_rest_agree`, `ledger_ts_client_round_trip`, `ledger_rpc_procedures_all_declared`, `ledger_rpc_mutation_idempotent`, `ledger_prod_posture_is_clean`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7a597e",
+      "text": "Gate: `ID_EFFECT_REQUIRE_DOCKER=1 cargo nextest run -p ledger` (Docker and Postgres; never the ambient DATABASE_URL); CI job `reference-ledger` green",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b5af15",
+      "text": "Owns: `examples/reference/ledger/**`, `.github/workflows/ci.yml` (steps of the `reference-ledger` job only)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "i2-ledger",
+  "lockedBy": "i2-ledger",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

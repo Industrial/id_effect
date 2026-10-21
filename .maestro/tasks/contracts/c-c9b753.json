@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-c9b753",
+  "taskId": "tsk-mvbh3xq5-gl0mv7",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T21:22:20.804Z",
+  "lockedAt": "2026-10-16T21:22:20.804Z",
+  "intent": "r09-e3-1b-conformance-routing",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-92e18a",
+      "text": "One generic test module instantiated per backend (#6 evidence); `RoutingSqlClient{primary, replicas}` sends `query` to replicas and `execute`/`begin` to primary; test `reads_go_to_replica_writes_to_primary`. Book section in ch28-01.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b87778",
+      "text": "Gate: all backend features",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d3d744",
+      "text": "Owns: `crates/id_effect_sql/tests/conformance/**`, `src/routing.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

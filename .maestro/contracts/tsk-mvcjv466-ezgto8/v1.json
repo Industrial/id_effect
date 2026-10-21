@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-6dd4b5",
+  "taskId": "tsk-mvcjv466-ezgto8",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T17:07:34.121Z",
+  "lockedAt": "2026-10-17T17:07:34.121Z",
+  "intent": "r10-reload-config",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-566b5f",
+      "text": "Profile files polled by mtime; a change re-parses and publishes through a `SubscriptionRef<C>`; an invalid change keeps the previous value and reports the errors (#5; also the strict reading of sec.config#8, G1). Tests `profile_file_change_notifies_subscribers`, `invalid_change_keeps_previous` (under the test clock).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5367cf",
+      "text": "Gate: `cargo nextest run -p id_effect_config --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-068d4c",
+      "text": "Owns: `crates/id_effect_config/src/{profile.rs,watch.rs}`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

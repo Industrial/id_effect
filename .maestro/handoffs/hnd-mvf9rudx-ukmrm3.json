@@ -1,0 +1,9 @@
+{
+  "id": "hnd-mvf9rudx-ukmrm3",
+  "task_id": "tsk-mvf9rlqz-0bc6j8",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-19T13:07:50.805Z",
+  "agent_id": "d5-subscriptions",
+  "spec_path": "/data/Code/rust/id_effect/.tmp/wt-012/.maestro/specs/releases/0.12/r12-e12-2-subscriptions.md",
+  "to_agent": "cli"
+}

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-f7c029",
+  "taskId": "tsk-mveovhgv-tk9wbj",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:22:52.616Z",
+  "lockedAt": "2026-10-19T03:22:52.616Z",
+  "intent": "r11-e8-1-timers-hibernate",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-ce04a0",
+      "text": "fault.actors#6: ProcessCtx::send_after(msg, d) -> TimerRef, Addr::send_after for callers outside the process, cancel_timer(TimerRef) -> bool (true means the message will never be delivered); timers run on the executor clock (TestExecutor can advance them) and die with the process; ProcessCtx::set_idle_timeout(d) delivers Info::Timeout once per idle period.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e8b138",
+      "text": "fault.actors#8: Next::Hibernate(state) releases the mailbox buffers and calls an optional Process::hibernate hook, and the process resumes on the next message. Next (process.rs:41) and Info (msg.rs:40) become #[non_exhaustive] (MIGRATION-0.11 section).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3df4bf",
+      "text": "Tests `send_after_delivers_under_test_clock`, `cancelled_timer_never_delivers`, `timers_die_with_process`, `idle_timeout_fires_once_per_idle_period`, `hibernate_releases_buffer_and_resumes`; runnable examples for send_after and hibernate; book part7/ch37-01-timers-selective-receive.md covers #6, #7 and #8 (row level documented).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-9b1358",
+      "text": "Gate: `cargo nextest run -p id_effect_process --all-features`; `cargo test -p id_effect_process --examples`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-418380",
+      "text": "Owns: `crates/id_effect_process/src/{process.rs,cell.rs,timer.rs,dynamic.rs,supervisor.rs,msg.rs,lib.rs}`, `crates/id_effect_process/tests/timers.rs`, `crates/id_effect_process/examples/` (new send_after and hibernate examples), `crates/id_effect/book/src/part7/ch37-01-timers-selective-receive.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-e8-1-timers-hibernate",
+  "lockedBy": "r11-e8-1-timers-hibernate",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}
