@@ -193,5 +193,9 @@ struct Ch3401DoctorGraph;
 struct Ch3500Ai;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch35-01-tools-structured-output.md")]
+struct Ch3501ToolsStructuredOutput;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch35-02-embeddings.md")]
 struct Ch3502Embeddings;

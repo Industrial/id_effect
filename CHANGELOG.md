@@ -62,6 +62,24 @@
   16 MiB, 65 536 events and 1 MiB per event (`AiError::LimitExceeded`, the stream is closed). The
   Cursor agents client stays behind the non-default `cursor` feature. API changes from the labs
   crate in [MIGRATION-0.13.md](docs/MIGRATION-0.13.md); book chapter 35 rewritten.
+- Typed tool calling, structured output and a bounded agent loop in `id_effect_ai`
+  (r13-e9-1-tools, ai.llm #3, margin #4 #8; feature `tools`): `tools::Tool<I, O>` with
+  `I, O: HasSchema` (`#[derive(Schema)]`), whose parameters are `I`'s JSON Schema exported through
+  `id_effect::schema::json_schema_for`; `ToolSet` groups the tools of a call and
+  `ChatRequest::tools` (`ToolDefinition`) carries them to the vendor in both formats (OpenAI
+  `tools`/`tool_calls`/`role: tool`, Anthropic `tools`/`tool_use`/`tool_result`; replies parse to
+  `ToolCall`s); `ChatRole::Tool`, `ChatMessage::assistant_tool_calls` and
+  `ChatMessage::tool_result`. `structured::complete_structured` decodes a reply through `T`'s
+  `Schema` (refinements run; `StructuredError::Decode` lists every issue) with at most one repair
+  retry (`MAX_REPAIR_RETRIES`). `agent::ToolLoop` runs model → tool → model. Secure by default
+  (ADR 0015 D9, ADR 0013 R1 R4): only tools registered on the call's `ToolSet` run (an unknown
+  name is `ToolError::Unregistered`, fed back to the model, never executed); arguments are decoded
+  through the tool's `Schema` before the handler (`tools::decode_arguments`, public for the
+  `ai_tool_arguments` fuzz target); tools declared `.writes()` need
+  `ToolPolicy::allow_writes`; `ToolLoopBudget` defaults to 8 steps, 32 tool calls, 60 s and
+  64 KiB per tool output, each configurable and none infinite (`AiError::LimitExceeded`
+  `tool_loop_steps` / `tool_loop_tool_calls` / `tool_loop_duration_ms`,
+  `ToolError::OutputTooLarge`). Book: chapter 35.1.
 - Embeddings in `id_effect_ai` (r13-e9-1-embeddings, ai.llm #5; feature `embeddings`): the
   `Embedder` capability (`EmbedderService`, `provide_embedder`, `embed`) with
   `EmbedRequest` / `EmbedResponse` / `Embedding`, and two adapters returning the same shape:

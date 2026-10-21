@@ -36,15 +36,26 @@ pub enum ChatRole {
   User,
   /// Assistant reply.
   Assistant,
+  /// The result of a tool call, fed back to the model (see [`ChatMessage::tool_result`]).
+  Tool,
 }
 
-/// Single chat message.
+/// Single chat message. Build it with [`ChatMessage::new`] or the role constructors
+/// (non-exhaustive, so fields can be added without a break).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ChatMessage {
   /// Role of the speaker.
   pub role: ChatRole,
-  /// Message text.
+  /// Message text (for a [`ChatRole::Tool`] message: the tool's output or refusal).
   pub content: String,
+  /// Tool calls an assistant turn asked for (empty otherwise); vendors need them echoed back
+  /// before the matching [`ChatRole::Tool`] results.
+  #[serde(default, skip_serializing_if = "Vec::is_empty")]
+  pub tool_calls: Vec<ToolCall>,
+  /// For a [`ChatRole::Tool`] message: the [`ToolCall::id`] it answers.
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub tool_call_id: Option<String>,
 }
 
 impl ChatMessage {
@@ -54,6 +65,8 @@ impl ChatMessage {
     Self {
       role,
       content: content.into(),
+      tool_calls: Vec::new(),
+      tool_call_id: None,
     }
   }
 
@@ -74,6 +87,51 @@ impl ChatMessage {
   pub fn assistant(content: impl Into<String>) -> Self {
     Self::new(ChatRole::Assistant, content)
   }
+
+  /// An assistant turn that asked for `tool_calls` (with its text, possibly empty).
+  pub fn assistant_tool_calls(content: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
+    Self {
+      tool_calls,
+      ..Self::assistant(content)
+    }
+  }
+
+  /// The result of tool call `tool_call_id`, fed back to the model.
+  pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+    Self {
+      tool_call_id: Some(tool_call_id.into()),
+      ..Self::new(ChatRole::Tool, content)
+    }
+  }
+}
+
+/// A tool the model may call, as sent to the vendor: its `name`, a `description` for the model,
+/// and the JSON Schema of its arguments. The `tools` feature builds these from typed tools
+/// (`tools::Tool::definition`); non-exhaustive, build it with [`ToolDefinition::new`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ToolDefinition {
+  /// Tool name (`[A-Za-z0-9_-]{1,64}`, the rule both vendors apply).
+  pub name: String,
+  /// What the tool does, for the model.
+  pub description: String,
+  /// JSON Schema (an `object`) of the arguments.
+  pub parameters: serde_json::Value,
+}
+
+impl ToolDefinition {
+  /// A definition of tool `name`.
+  pub fn new(
+    name: impl Into<String>,
+    description: impl Into<String>,
+    parameters: serde_json::Value,
+  ) -> Self {
+    Self {
+      name: name.into(),
+      description: description.into(),
+      parameters,
+    }
+  }
 }
 
 /// Request for a chat completion. Build it with [`ChatRequest::new`] or [`ChatRequest::user`]
@@ -90,6 +148,10 @@ pub struct ChatRequest {
   /// without a cap (ADR 0013 R4).
   #[serde(default)]
   pub max_tokens: Option<u32>,
+  /// Tools the model may call in this request (empty: none). Sending a definition does not let
+  /// anything run: the caller decides which calls execute (`tools::ToolSet`, ADR 0015 D9).
+  #[serde(default, skip_serializing_if = "Vec::is_empty")]
+  pub tools: Vec<ToolDefinition>,
 }
 
 impl ChatRequest {
@@ -99,6 +161,7 @@ impl ChatRequest {
       model: model.into(),
       messages,
       max_tokens: None,
+      tools: Vec::new(),
     }
   }
 
@@ -114,7 +177,15 @@ impl ChatRequest {
     self
   }
 
-  /// Validates the request: at least one message, and a `max_tokens` (when set) above 0.
+  /// Sets [`tools`](Self::tools).
+  #[must_use]
+  pub fn with_tools(mut self, tools: Vec<ToolDefinition>) -> Self {
+    self.tools = tools;
+    self
+  }
+
+  /// Validates the request: at least one message, a `max_tokens` (when set) above 0, and a
+  /// [`tool_call_id`](ChatMessage::tool_call_id) on every [`ChatRole::Tool`] message.
   pub fn validate(&self) -> Result<(), AiError> {
     if self.messages.is_empty() {
       return Err(AiError::EmptyRequest);
@@ -122,6 +193,15 @@ impl ChatRequest {
     if self.max_tokens == Some(0) {
       return Err(AiError::InvalidRequest(
         "max_tokens must be at least 1".into(),
+      ));
+    }
+    if self
+      .messages
+      .iter()
+      .any(|m| m.role == ChatRole::Tool && m.tool_call_id.is_none())
+    {
+      return Err(AiError::InvalidRequest(
+        "a tool message needs the tool_call_id it answers".into(),
       ));
     }
     Ok(())
@@ -162,7 +242,7 @@ impl Usage {
 
 /// A tool the model asked to call, in a provider-neutral shape: the tool's `name` and its JSON
 /// `arguments`, which the caller decodes before running anything.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCall {
   /// The vendor's id of this call (echoed back with the tool's result).
   pub id: String,
@@ -329,6 +409,30 @@ mod tests {
     assert_eq!(ChatMessage::system("s").role, ChatRole::System);
     assert_eq!(ChatMessage::user("u").role, ChatRole::User);
     assert_eq!(ChatMessage::assistant("a").role, ChatRole::Assistant);
+    let call = ToolCall::new("c1", "lookup", serde_json::json!({}));
+    let turn = ChatMessage::assistant_tool_calls("", vec![call.clone()]);
+    assert_eq!(turn.role, ChatRole::Assistant);
+    assert_eq!(turn.tool_calls, vec![call]);
+    let result = ChatMessage::tool_result("c1", "{}");
+    assert_eq!(result.role, ChatRole::Tool);
+    assert_eq!(result.tool_call_id.as_deref(), Some("c1"));
+  }
+
+  #[test]
+  fn tool_messages_and_definitions_validate_and_serialize() {
+    let def = ToolDefinition::new("lookup", "find", serde_json::json!({"type": "object"}));
+    let req = ChatRequest::new("m", vec![ChatMessage::tool_result("c1", "ok")])
+      .with_tools(vec![def.clone()]);
+    assert_eq!(req.validate(), Ok(()));
+    assert_eq!(req.tools, vec![def]);
+    let orphan = ChatMessage::new(ChatRole::Tool, "ok");
+    assert!(matches!(
+      ChatRequest::new("m", vec![orphan]).validate(),
+      Err(AiError::InvalidRequest(_))
+    ));
+    // Plain messages serialize without the tool fields.
+    let wire = serde_json::to_value(ChatMessage::user("x")).expect("encode");
+    assert_eq!(wire, serde_json::json!({"role": "User", "content": "x"}));
   }
 
   #[test]

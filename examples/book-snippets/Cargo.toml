@@ -24,6 +24,7 @@ id_effect_ai = { path = "../../crates/id_effect_ai", version = "0.12.0", feature
   "anthropic",
   "ollama",
   "embeddings",
+  "tools",
   "test-util",
 ] }
 id_effect_auth = { path = "../../crates/id_effect_auth", version = "0.12.0", features = [

@@ -5,6 +5,11 @@
 //! [`max_tokens`](crate::ChatRequest::max_tokens), else
 //! [`AiLimits::max_tokens`](crate::AiLimits::max_tokens)). The API key is held as a
 //! [`Secret`] and only exposed to build the `x-api-key` header.
+//!
+//! Tool calling: [`ChatRequest::tools`] are sent as `tools` with an `input_schema`; an assistant
+//! turn with tool calls becomes `tool_use` content blocks, and consecutive [`ChatRole::Tool`]
+//! messages become one user turn of `tool_result` blocks (the Messages API wants every result of
+//! a turn in the next user message). A reply's `tool_use` blocks become [`ToolCall`]s.
 
 use std::fmt;
 use std::sync::Arc;
@@ -16,8 +21,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::chat::{
-  ChatMessage, ChatRequest, ChatResponse, ChatRole, LanguageModel, LanguageModelService, Usage,
-  provide_language_model,
+  ChatMessage, ChatRequest, ChatResponse, ChatRole, LanguageModel, LanguageModelService, ToolCall,
+  ToolDefinition, Usage, provide_language_model,
 };
 use crate::config::AiConfig;
 use crate::error::{AiError, truncate_detail};
@@ -66,15 +71,54 @@ impl AnthropicLanguageModel {
 
   fn split_system(messages: &[ChatMessage]) -> (Option<String>, Vec<serde_json::Value>) {
     let mut system = Vec::new();
-    let mut out = Vec::new();
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    // `tool_result` blocks waiting to be sent as one user turn.
+    let mut results: Vec<serde_json::Value> = Vec::new();
+    let flush = |out: &mut Vec<serde_json::Value>, results: &mut Vec<serde_json::Value>| {
+      if !results.is_empty() {
+        out.push(json!({ "role": "user", "content": std::mem::take(results) }));
+      }
+    };
     for m in messages {
       match m.role {
         ChatRole::System => system.push(m.content.as_str()),
-        ChatRole::User => out.push(json!({ "role": "user", "content": m.content })),
-        ChatRole::Assistant => out.push(json!({ "role": "assistant", "content": m.content })),
+        ChatRole::Tool => results.push(json!({
+          "type": "tool_result",
+          "tool_use_id": m.tool_call_id.clone().unwrap_or_default(),
+          "content": m.content,
+        })),
+        ChatRole::User => {
+          flush(&mut out, &mut results);
+          out.push(json!({ "role": "user", "content": m.content }));
+        }
+        ChatRole::Assistant => {
+          flush(&mut out, &mut results);
+          if m.tool_calls.is_empty() {
+            out.push(json!({ "role": "assistant", "content": m.content }));
+          } else {
+            let mut blocks = Vec::new();
+            if !m.content.is_empty() {
+              blocks.push(json!({ "type": "text", "text": m.content }));
+            }
+            blocks.extend(m.tool_calls.iter().map(|c| {
+              json!({ "type": "tool_use", "id": c.id, "name": c.name, "input": tool_input(&c.arguments) })
+            }));
+            out.push(json!({ "role": "assistant", "content": blocks }));
+          }
+        }
       }
     }
+    flush(&mut out, &mut results);
     ((!system.is_empty()).then(|| system.join("\n\n")), out)
+  }
+
+  fn build_tools(tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
+    tools
+      .iter()
+      .map(
+        |t| json!({ "name": t.name, "description": t.description, "input_schema": t.parameters }),
+      )
+      .collect()
   }
 
   /// The validated Messages API request for `req` (`stream` selects SSE).
@@ -91,6 +135,9 @@ impl AnthropicLanguageModel {
     }
     if let Some(s) = system {
       body["system"] = json!(s);
+    }
+    if !req.tools.is_empty() {
+      body["tools"] = json!(Self::build_tools(&req.tools));
     }
     self.transport.post_json(
       join_url(&self.base_url, "v1/messages"),
@@ -115,13 +162,27 @@ impl AnthropicLanguageModel {
       .filter(|b| b.kind == "text")
       .filter_map(|b| b.text.as_deref())
       .collect();
-    if content.is_empty() {
+    let tool_calls: Vec<ToolCall> = parsed
+      .content
+      .into_iter()
+      .filter(|b| b.kind == "tool_use")
+      .map(|b| {
+        ToolCall::new(
+          b.id.unwrap_or_default(),
+          b.name.unwrap_or_default(),
+          b.input.unwrap_or_else(|| json!({})),
+        )
+      })
+      .collect();
+    if content.is_empty() && tool_calls.is_empty() {
       return Err(AiError::EmptyResponse);
     }
     let usage = parsed.usage.map_or_else(Usage::default, |u| {
       Usage::new(u.input_tokens.unwrap_or(0), u.output_tokens.unwrap_or(0))
     });
-    let resp = ChatResponse::text(content).with_usage(usage);
+    let resp = ChatResponse::text(content)
+      .with_usage(usage)
+      .with_tool_calls(tool_calls);
     Ok(match parsed.stop_reason {
       Some(reason) => resp.with_stop_reason(reason),
       None => resp,
@@ -141,6 +202,20 @@ struct AnthropicBlock {
   #[serde(rename = "type")]
   kind: String,
   text: Option<String>,
+  /// `tool_use` blocks: the call id, tool name and input object.
+  id: Option<String>,
+  name: Option<String>,
+  input: Option<serde_json::Value>,
+}
+
+/// A call's `input` for the wire: the Messages API takes an object, so anything else (a JSON
+/// string kept from another vendor's malformed arguments) is wrapped as `{"value": ...}`.
+fn tool_input(arguments: &serde_json::Value) -> serde_json::Value {
+  if arguments.is_object() {
+    arguments.clone()
+  } else {
+    json!({ "value": arguments })
+  }
 }
 
 #[derive(Deserialize)]
@@ -300,5 +375,67 @@ mod tests {
     assert_eq!(messages[1]["role"], "assistant");
     let (system, _) = AnthropicLanguageModel::split_system(&[ChatMessage::user("u")]);
     assert_eq!(system, None);
+  }
+
+  #[test]
+  fn tool_turns_become_content_blocks() {
+    let (_, messages) = AnthropicLanguageModel::split_system(&[
+      ChatMessage::user("q"),
+      ChatMessage::assistant_tool_calls(
+        "let me look",
+        vec![
+          ToolCall::new("t1", "lookup", json!({"id": 1})),
+          ToolCall::new("t2", "raw", json!("{oops")),
+        ],
+      ),
+      ChatMessage::tool_result("t1", "{\"name\":\"Ada\"}"),
+      ChatMessage::system("between results"),
+      ChatMessage::tool_result("t2", "{\"error\":\"x\"}"),
+      ChatMessage::assistant_tool_calls("", vec![ToolCall::new("t3", "lookup", json!({}))]),
+      ChatMessage::tool_result("t3", "{}"),
+    ]);
+    assert_eq!(messages.len(), 5);
+    assert_eq!(
+      messages[1]["content"][0],
+      json!({"type": "text", "text": "let me look"})
+    );
+    assert_eq!(
+      messages[1]["content"][1],
+      json!({"type": "tool_use", "id": "t1", "name": "lookup", "input": {"id": 1}})
+    );
+    assert_eq!(
+      messages[1]["content"][2]["input"],
+      json!({"value": "{oops"})
+    );
+    // Both results of the turn are one user message.
+    assert_eq!(messages[2]["role"], "user");
+    assert_eq!(messages[2]["content"].as_array().map(Vec::len), Some(2));
+    assert_eq!(messages[2]["content"][1]["tool_use_id"], "t2");
+    assert_eq!(messages[3]["content"].as_array().map(Vec::len), Some(1));
+    assert_eq!(messages[4]["content"][0]["type"], "tool_result");
+    assert_eq!(
+      AnthropicLanguageModel::build_tools(&[ToolDefinition::new(
+        "a",
+        "b",
+        json!({"type": "object"})
+      )]),
+      vec![json!({"name": "a", "description": "b", "input_schema": {"type": "object"}})]
+    );
+  }
+
+  #[test]
+  fn tool_use_blocks_parse_from_the_reply() {
+    let resp = AnthropicLanguageModel::parse_completion(response(
+      r#"{"content":[{"type":"tool_use","id":"t1","name":"lookup","input":{"id":1}},{"type":"tool_use"}],"stop_reason":"tool_use"}"#,
+    ))
+    .expect("parse");
+    assert_eq!(resp.content, "");
+    assert_eq!(
+      resp.tool_calls,
+      vec![
+        ToolCall::new("t1", "lookup", json!({"id": 1})),
+        ToolCall::new("", "", json!({})),
+      ]
+    );
   }
 }
