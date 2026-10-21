@@ -10,6 +10,12 @@
 //!   with the rules of the locale a message comes from.
 //! - [`CurrentLocale`]: the locale capability in the environment, switched per request or per
 //!   fiber with [`with_locale`]; [`translate`] formats a message in it.
+//! - [`negotiate`]: the request's locale from a preference, a cookie and a bounded
+//!   `Accept-Language` parse, always inside the supported-locale allowlist; [`Localizer`].
+//! - Feature `axum`: `axum::LocaleLayer` negotiates per request and provides the
+//!   [`Localizer`] and [`CurrentLocale`] to handlers.
+//! - Feature `maud`: `t(&localizer, "id", args)` renders a message as escaped text in a view.
+//! - Feature `schema`: `Schema` validation messages translated (English and German shipped).
 //!
 //! ```
 //! use id_effect::{Effect, Exit, HCons, HNil, Never, hlist, run_test};
@@ -60,9 +66,25 @@
 #![deny(missing_docs)]
 
 mod args;
+#[cfg(feature = "axum")]
+pub mod axum;
 mod catalog;
 mod current;
 mod locale;
+#[cfg(feature = "maud")]
+pub mod maud;
+pub mod negotiate;
+#[cfg(feature = "schema")]
+pub mod schema_messages;
+
+#[cfg(feature = "maud")]
+pub use crate::maud::{Message, t};
+pub use negotiate::{Localizer, Negotiator};
+#[cfg(feature = "schema")]
+pub use schema_messages::{
+  SchemaErrorCode, SchemaMessages, localize_parse_errors, translate_parse_error,
+  translate_parse_errors,
+};
 
 pub use args::{ArgValue, Args};
 pub use catalog::{
