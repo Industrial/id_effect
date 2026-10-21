@@ -167,6 +167,7 @@
   - [Object storage (`id_effect_storage`)](./part6/ch28-05-storage.md)
   - [Relations and eager loading](./part6/ch28-06-relations.md)
   - [Keyset pagination](./part6/ch28-07-pagination.md)
+  - [Lifecycle hooks](./part6/ch28-08-lifecycle-hooks.md)
 - [API boundaries (`id_effect_rpc`)](./part6/ch29-00-api-boundaries.md)
   - [Typed routes and validation](./part6/ch29-01-typed-routes.md)
   - [OpenAPI, API docs and the route table](./part6/ch29-02-openapi.md)

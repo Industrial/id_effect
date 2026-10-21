@@ -37,6 +37,10 @@ audit = ["dep:sha2"]
 # tenant / custom global filters) over `query`'s sea-query statements. A feature of its own so
 # `query` stays the plain statement builder.
 repository = ["query"]
+# `outbox`: `repository::outbox`, an entity-hook adapter staging events in the transactional outbox
+# (`id_effect_outbox`, id_effect_messaging's row format) in the write's transaction. No dependency
+# on id_effect_messaging: it depends on this crate, and Cargo rejects the cycle even when optional.
+outbox = ["repository"]
 # MySQL driver (sqlx mysql) and `MySqlSqlClient`, tested against MySQL 8. sqlx-mysql brings `rsa`
 # (RUSTSEC-2023-0071, ignored with its reason in deny.toml). Date-times convert to jiff in
 # `mysql::value` (no sqlx `time`).
