@@ -3160,6 +3160,7 @@ dependencies = [
  "id_effect",
  "id_effect_authz",
  "id_effect_axum",
+ "id_effect_config",
  "id_effect_events",
  "id_effect_node",
  "id_effect_opentelemetry",

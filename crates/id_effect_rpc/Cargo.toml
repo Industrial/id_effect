@@ -22,7 +22,7 @@ name = "id_effect_rpc"
 default = ["client"]
 # `client`: `RpcClient` over id_effect_platform's `HttpClientService` (batching adds same-tick
 # batches in `client::http`).
-client = ["dep:id_effect_platform"]
+client = ["dep:id_effect_platform", "dep:id_effect_config"]
 # `postcard`: the binary codec negotiated per connection (D13; r12-e12-1-postcard).
 postcard = ["dep:postcard"]
 # `ws`: every kind over WebSocket frames, server (`transport::ws`, on id_effect_axum's realtime
@@ -83,6 +83,9 @@ tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 # Optional dependencies of the features above.
 id_effect_authz = { path = "../id_effect_authz", version = "0.12.0", optional = true }
+# `Secret` bearer tokens of `HttpTransport::with_bearer` (feature `client`); already in
+# id_effect_axum's tree.
+id_effect_config = { path = "../id_effect_config", version = "0.12.0", optional = true, default-features = false }
 id_effect_events = { path = "../id_effect_events", version = "0.12.0", optional = true }
 id_effect_node = { path = "../id_effect_node", version = "0.12.0", optional = true }
 id_effect_process = { path = "../id_effect_process", version = "0.12.0", optional = true }

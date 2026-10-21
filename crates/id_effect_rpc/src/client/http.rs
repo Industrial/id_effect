@@ -21,6 +21,7 @@ use id_effect::{
   fail, need, succeed,
 };
 use id_effect_axum::route::Problem;
+use id_effect_config::SecretString;
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{HttpClient, HttpClientService, HttpMethod, HttpRequest};
 use serde_json::Value;
@@ -29,6 +30,7 @@ use super::{RPC_HEADER, RpcClient, RpcClientError};
 use crate::serialization::{
   RpcSerializationError, StructWireJson, decode_payload, encode_struct_fields,
 };
+use crate::service::TransportError;
 use crate::wire::{CallId, MAX_BATCH_BYTES, MAX_BATCH_CALLS, WireCall, WireExit, WireResult};
 
 /// Most calls the client puts in one batch request (the server default).
@@ -76,7 +78,9 @@ impl RpcClient {
         url,
         client: client.0.clone(),
         tag,
+        version: None,
         payload: Arc::new(payload),
+        headers: ExtraHeaders::default(),
       };
       // Every call is distinct (its `seq`): a request cache would only fill up.
       id_effect::request(pending, batcher())
@@ -88,6 +92,39 @@ impl RpcClient {
         })
         .narrow()
     })
+  }
+
+  /// Call `tag` of service version `version` with an encoded `payload` through `http`, in the
+  /// batch window of the calling fiber like [`call`](Self::call): the generated clients over
+  /// [`HttpTransport`](crate::service::HttpTransport) go through here, each batched call
+  /// carrying its `v` and every request the transport's `headers`. The exit is left undecoded.
+  pub(crate) fn call_value<R: Send + Sync + 'static>(
+    &self,
+    http: &HttpClientService,
+    headers: &ExtraHeaders,
+    tag: String,
+    version: u32,
+    payload: Value,
+  ) -> Effect<WireExit, TransportError, R> {
+    let pending = Pending {
+      seq: NEXT_SEQ.fetch_add(1, Ordering::Relaxed),
+      url: Arc::from(self.config().url()),
+      client: http.0.clone(),
+      tag: Arc::from(tag),
+      version: Some(version),
+      payload: Arc::new(payload),
+      headers: headers.clone(),
+    };
+    // The window is the env-free one of `call`: the request joins it from the caller's fiber
+    // whatever that fiber's environment, and the flush runs without one.
+    id_effect::request(pending, batcher())
+      .with_request_caching(false)
+      .map_err(|never: Infallible| match never {})
+      .flat_map(|answer| match answer.into_transport() {
+        Ok(exit) => succeed(exit),
+        Err(e) => fail(e),
+      })
+      .any_env()
   }
 
   /// Call `tag` over postcard (feature `postcard`, design note §7): `payload` and the output
@@ -188,6 +225,56 @@ fn post_as(url: String, body: Vec<u8>, content_type: &str) -> HttpRequest {
     body: Some(body),
     timeout: None,
     max_body_bytes: None,
+  }
+}
+
+/// A header value as a transport keeps it: a bearer stays a [`SecretString`] (zeroized on drop,
+/// redacted in `Debug`) until a request is built.
+#[derive(Clone, PartialEq)]
+enum HeaderSlot {
+  Plain(String),
+  Secret(SecretString),
+}
+
+/// The headers an [`HttpTransport`](crate::service::HttpTransport) adds to every request it
+/// sends, validated by it (never `x-rpc` or `content-type`: the CSRF header and the media type
+/// are always the client's own). Names are lower case; one value per name.
+#[derive(Clone, Default, PartialEq)]
+pub(crate) struct ExtraHeaders(Arc<Vec<(String, HeaderSlot)>>);
+
+impl ExtraHeaders {
+  /// These headers with `name` set to `value` (replacing an earlier value of `name`).
+  pub(crate) fn with_plain(&self, name: String, value: String) -> Self {
+    self.with(name, HeaderSlot::Plain(value))
+  }
+
+  /// These headers with `name` set to the secret `value`.
+  pub(crate) fn with_secret(&self, name: String, value: SecretString) -> Self {
+    self.with(name, HeaderSlot::Secret(value))
+  }
+
+  fn with(&self, name: String, value: HeaderSlot) -> Self {
+    let mut headers: Vec<_> = self.0.iter().filter(|(n, _)| *n != name).cloned().collect();
+    headers.push((name, value));
+    Self(Arc::new(headers))
+  }
+
+  /// The header names (what `Debug` shows: values may be credentials).
+  pub(crate) fn names(&self) -> Vec<&str> {
+    self.0.iter().map(|(n, _)| n.as_str()).collect()
+  }
+
+  /// A JSON `POST` of `body` to `url` with these headers and the client's own.
+  pub(crate) fn post(&self, url: String, body: Vec<u8>) -> HttpRequest {
+    let mut req = post(url, body);
+    req.headers.extend(self.0.iter().map(|(name, value)| {
+      let value = match value {
+        HeaderSlot::Plain(v) => v.clone(),
+        HeaderSlot::Secret(v) => v.expose().clone(),
+      };
+      (name.clone(), value)
+    }));
+    req
   }
 }
 
@@ -292,6 +379,23 @@ impl Answer {
       Self::Http(err) => Err(RpcClientError::Http(err)),
     }
   }
+
+  /// The exit, or why the transport did not deliver it (as `HttpTransport::unary` reads it).
+  fn into_transport(self) -> Result<WireExit, TransportError> {
+    match self {
+      Self::Exit(exit) => Ok(exit),
+      Self::Refused(problem) => Err(TransportError::Refused {
+        status: problem.status.as_u16(),
+        problem: Some(problem),
+      }),
+      Self::Status(status) => Err(TransportError::Refused {
+        status,
+        problem: None,
+      }),
+      Self::Protocol(why) => Err(TransportError::Protocol(why)),
+      Self::Http(err) => Err(TransportError::Io(err.to_string())),
+    }
+  }
 }
 
 static NEXT_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -303,7 +407,11 @@ struct Pending {
   url: Arc<str>,
   client: Arc<dyn HttpClient>,
   tag: Arc<str>,
+  /// The service version (`v`), sent when set.
+  version: Option<u32>,
   payload: Arc<Value>,
+  /// The transport's own headers (none for [`RpcClient::call`]).
+  headers: ExtraHeaders,
 }
 
 impl PartialEq for Pending {
@@ -335,33 +443,47 @@ fn batcher() -> &'static RequestResolver<Pending> {
   })
 }
 
-/// One request's calls: their index in the window, tag and payload.
-type Chunk = Vec<(usize, Arc<str>, Arc<Value>)>;
+/// One request's calls: their index in the window, tag, version and payload.
+type Chunk = Vec<(usize, Arc<str>, Option<u32>, Arc<Value>)>;
 
-/// A client, a URL and the calls of one request to it.
-type Outgoing = (Arc<dyn HttpClient>, Arc<str>, Chunk);
+/// A client, a URL, the headers and the calls of one request to it.
+type Outgoing = (Arc<dyn HttpClient>, Arc<str>, ExtraHeaders, Chunk);
 
-/// Per client and URL while splitting: its requests so far and the bytes of the last one.
-type Group = (Arc<dyn HttpClient>, Arc<str>, Vec<Chunk>, usize);
+/// Per client, URL and headers while splitting: its requests so far and the bytes of the last
+/// one.
+type Group = (
+  Arc<dyn HttpClient>,
+  Arc<str>,
+  ExtraHeaders,
+  Vec<Chunk>,
+  usize,
+);
 
-/// Split a window by client and URL, then into requests within the caps.
+/// Split a window by client, URL and headers (calls with other headers, another bearer for
+/// example, never share a request), then into requests within the caps.
 fn chunks(calls: &[Pending], max_calls: usize, max_bytes: usize) -> Vec<Outgoing> {
   let mut groups: Vec<Group> = Vec::new();
   for (index, call) in calls.iter().enumerate() {
     // A call's share of the array: its encoding, an id and a comma.
-    let size =
-      serde_json::to_vec(&WireCall::new(&*call.tag, &*call.payload)).map_or(0, |v| v.len()) + 16;
-    let at = match groups
-      .iter()
-      .position(|(client, url, ..)| Arc::ptr_eq(client, &call.client) && *url == call.url)
-    {
+    let size = serde_json::to_vec(&wire_call(&call.tag, call.version, &call.payload))
+      .map_or(0, |v| v.len())
+      + 16;
+    let at = match groups.iter().position(|(client, url, headers, ..)| {
+      Arc::ptr_eq(client, &call.client) && *url == call.url && *headers == call.headers
+    }) {
       Some(at) => at,
       None => {
-        groups.push((call.client.clone(), call.url.clone(), vec![Vec::new()], 2));
+        groups.push((
+          call.client.clone(),
+          call.url.clone(),
+          call.headers.clone(),
+          vec![Vec::new()],
+          2,
+        ));
         groups.len() - 1
       }
     };
-    let (_, _, requests, bytes) = &mut groups[at];
+    let (_, _, _, requests, bytes) = &mut groups[at];
     let full = requests
       .last()
       .is_some_and(|c| !c.is_empty() && (c.len() >= max_calls || *bytes + size > max_bytes));
@@ -371,15 +493,15 @@ fn chunks(calls: &[Pending], max_calls: usize, max_bytes: usize) -> Vec<Outgoing
     }
     *bytes += size;
     if let Some(chunk) = requests.last_mut() {
-      chunk.push((index, call.tag.clone(), call.payload.clone()));
+      chunk.push((index, call.tag.clone(), call.version, call.payload.clone()));
     }
   }
   groups
     .into_iter()
-    .flat_map(|(client, url, requests, _)| {
+    .flat_map(|(client, url, headers, requests, _)| {
       requests
         .into_iter()
-        .map(move |chunk| (client.clone(), url.clone(), chunk))
+        .map(move |chunk| (client.clone(), url.clone(), headers.clone(), chunk))
     })
     .collect()
 }
@@ -393,7 +515,7 @@ fn send_window(
   let n = calls.len();
   let sends: Vec<_> = chunks(&calls, max_calls, max_bytes)
     .into_iter()
-    .map(|(client, url, chunk)| send_chunk(&*client, url.to_string(), chunk))
+    .map(|(client, url, headers, chunk)| send_chunk(&*client, url.to_string(), &headers, chunk))
     .collect();
   all(sends, Concurrency::Unbounded).map(move |answered| {
     let mut answers: Vec<Option<Answer>> = vec![None; n];
@@ -426,22 +548,32 @@ fn exits_by_position(results: Vec<WireResult>, len: usize) -> Vec<Answer> {
     .collect()
 }
 
+/// The envelope of one call, with its `v` when it has one.
+fn wire_call<'a>(tag: &'a str, version: Option<u32>, payload: &'a Value) -> WireCall<&'a Value> {
+  let call = WireCall::new(tag, payload);
+  match version {
+    Some(v) => call.with_version(v),
+    None => call,
+  }
+}
+
 /// Send one request: a plain envelope for one call, a batch array for more.
 fn send_chunk(
   client: &dyn HttpClient,
   url: String,
+  headers: &ExtraHeaders,
   chunk: Chunk,
 ) -> Effect<Vec<(usize, Answer)>, Infallible, HNil> {
   let single = chunk.len() == 1;
   let encoded = if single {
-    let (_, tag, payload) = &chunk[0];
-    serde_json::to_vec(&WireCall::new(&**tag, &**payload))
+    let (_, tag, version, payload) = &chunk[0];
+    serde_json::to_vec(&wire_call(tag, *version, payload))
   } else {
     let calls: Vec<WireCall<&Value>> = chunk
       .iter()
       .zip(1_u64..)
-      .map(|((_, tag, payload), id)| {
-        let call = WireCall::new(&**tag, &**payload);
+      .map(|((_, tag, version, payload), id)| {
+        let call = wire_call(tag, *version, payload);
         // At most a few thousand calls: far below 2^53.
         match CallId::new(id) {
           Ok(id) => call.with_id(id),
@@ -455,7 +587,7 @@ fn send_chunk(
   let body = encoded.unwrap_or_default();
   let indexes: Vec<usize> = chunk.iter().map(|(index, ..)| *index).collect();
   client
-    .execute(post(url, body))
+    .execute(headers.post(url, body))
     .exit::<Infallible>()
     .map(move |exit| {
       let answers: Vec<Answer> = match exit {
@@ -628,7 +760,9 @@ mod tests {
       url: Arc::from(url),
       client: client.clone() as Arc<dyn HttpClient>,
       tag: Arc::from("A.b"),
+      version: None,
       payload: Arc::new(Value::String(text.to_owned())),
+      headers: ExtraHeaders::default(),
     }
   }
 
@@ -646,7 +780,7 @@ mod tests {
     let sizes = |max_calls, max_bytes| -> Vec<Vec<usize>> {
       chunks(&calls, max_calls, max_bytes)
         .into_iter()
-        .map(|(_, _, chunk)| chunk.iter().map(|(i, ..)| *i).collect())
+        .map(|(.., chunk)| chunk.iter().map(|(i, ..)| *i).collect())
         .collect()
     };
     assert_eq!(sizes(50, 1 << 20), [vec![0, 1, 2, 5], vec![3], vec![4]]);
@@ -659,14 +793,59 @@ mod tests {
     assert!(Pending::eq(&calls[0], &calls[0].clone()) && calls[0] != calls[1]);
   }
 
+  #[test]
+  fn windows_split_by_headers_and_requests_carry_them() {
+    let a = mock(200, b"");
+    let bearer = |token: &str| {
+      ExtraHeaders::default()
+        .with_plain("x-tenant".to_owned(), "t".to_owned())
+        .with_secret(
+          "authorization".to_owned(),
+          SecretString::new(format!("Bearer {token}")),
+        )
+    };
+    let with = |headers: ExtraHeaders| Pending {
+      headers,
+      ..pending(&a, "u1", "x")
+    };
+    let calls = vec![
+      with(bearer("one")),
+      with(bearer("two")),
+      with(bearer("one")),
+      pending(&a, "u1", "x"),
+    ];
+    let split: Vec<Vec<usize>> = chunks(&calls, 50, 1 << 20)
+      .into_iter()
+      .map(|(.., chunk)| chunk.iter().map(|(i, ..)| *i).collect())
+      .collect();
+    assert_eq!(split, [vec![0, 2], vec![1], vec![3]]);
+    let headers = bearer("one").with_plain("x-tenant".to_owned(), "u".to_owned());
+    assert_eq!(headers.names(), ["authorization", "x-tenant"]);
+    let req = headers.post("http://h/rpc".to_owned(), b"{}".to_vec());
+    assert_eq!(
+      req.headers,
+      [
+        ("content-type".to_owned(), "application/json".to_owned()),
+        (RPC_HEADER.to_owned(), "1".to_owned()),
+        ("authorization".to_owned(), "Bearer one".to_owned()),
+        ("x-tenant".to_owned(), "u".to_owned()),
+      ]
+    );
+  }
+
   fn answers(status: u16, body: &[u8], n: usize) -> Vec<(usize, Answer)> {
     let client = mock(status, body);
     let chunk: Chunk = (0..n)
-      .map(|i| (i + 10, Arc::from("A.b"), Arc::new(Value::from(i))))
+      .map(|i| (i + 10, Arc::from("A.b"), None, Arc::new(Value::from(i))))
       .collect();
-    let out = send_chunk(&*client, "http://h/rpc".to_owned(), chunk)
-      .block_on()
-      .into_result();
+    let out = send_chunk(
+      &*client,
+      "http://h/rpc".to_owned(),
+      &ExtraHeaders::default(),
+      chunk,
+    )
+    .block_on()
+    .into_result();
     let sent: Value = serde_json::from_slice(
       client
         .last
@@ -681,6 +860,67 @@ mod tests {
     .unwrap();
     assert_eq!(sent.is_array(), n > 1);
     out.ok().unwrap()
+  }
+
+  #[test]
+  fn answers_read_as_transport_results() {
+    let exit = Answer::of_response(200, br#"{"tag":"A.b","exit":{"_tag":"Success","value":1}}"#);
+    assert!(matches!(
+      exit.into_transport(),
+      Ok(WireExit::Success { .. })
+    ));
+    let problem = Answer::of_response(429, br#"{"status":429,"title":"Too Many Requests"}"#);
+    assert!(matches!(
+      problem.into_transport(),
+      Err(TransportError::Refused {
+        status: 429,
+        problem: Some(_)
+      })
+    ));
+    assert!(matches!(
+      Answer::Status(502).into_transport(),
+      Err(TransportError::Refused {
+        status: 502,
+        problem: None
+      })
+    ));
+    assert!(matches!(
+      Answer::Protocol(NO_RESULT.to_owned()).into_transport(),
+      Err(TransportError::Protocol(_))
+    ));
+    let http = Answer::Http(HttpError::InvalidRequest("no".to_owned()));
+    assert!(matches!(http.into_transport(), Err(TransportError::Io(_))));
+  }
+
+  #[test]
+  fn versioned_calls_carry_v_alone_and_batched() {
+    let client = mock(200, b"[]");
+    let chunk: Chunk = vec![
+      (0, Arc::from("A.b"), Some(2), Arc::new(Value::Null)),
+      (1, Arc::from("A.c"), None, Arc::new(Value::Null)),
+    ];
+    let _ = send_chunk(
+      &*client,
+      "http://h/rpc".to_owned(),
+      &ExtraHeaders::default(),
+      chunk,
+    )
+    .block_on();
+    let req = client.last.lock().unwrap().clone().unwrap();
+    let sent: Value = serde_json::from_slice(req.body.as_deref().unwrap()).unwrap();
+    assert_eq!(sent[0]["v"], 2);
+    assert!(sent[1].get("v").is_none());
+    let one: Chunk = vec![(0, Arc::from("A.b"), Some(3), Arc::new(Value::Null))];
+    let _ = send_chunk(
+      &*client,
+      "http://h/rpc".to_owned(),
+      &ExtraHeaders::default(),
+      one,
+    )
+    .block_on();
+    let req = client.last.lock().unwrap().clone().unwrap();
+    let sent: Value = serde_json::from_slice(req.body.as_deref().unwrap()).unwrap();
+    assert_eq!(sent["v"], 3);
   }
 
   #[test]
@@ -734,12 +974,17 @@ mod tests {
 
   #[test]
   fn transport_failures_reach_every_call_of_the_window() {
-    let chunk: Chunk = vec![(0, Arc::from("A.b"), Arc::new(Value::Null)); 2];
-    let out = send_chunk(&Broken, "http://h".to_owned(), chunk)
-      .block_on()
-      .into_result()
-      .ok()
-      .unwrap();
+    let chunk: Chunk = vec![(0, Arc::from("A.b"), None, Arc::new(Value::Null)); 2];
+    let out = send_chunk(
+      &Broken,
+      "http://h".to_owned(),
+      &ExtraHeaders::default(),
+      chunk,
+    )
+    .block_on()
+    .into_result()
+    .ok()
+    .unwrap();
     for (_, answer) in out {
       let err = answer.decode(&schema::string::<()>()).unwrap_err();
       assert!(matches!(
