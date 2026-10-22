@@ -128,6 +128,22 @@ over = "h3_loss/h2_p99"
 limit = 1.00
 noise = 0.05
 
+# --- 0.13 breadth (r13-e-benches, README "Breadth gates (0.13)") ----------------------------
+
+# Eager loading must cost at most a quarter of the N+1 loop it replaces: 100 parents x 10
+# children on SQLite in memory, one run (benches/repository_eager.rs in id_effect_sql).
+[[gate]]
+id = "orm/eager_100x10"
+kind = "pair"
+over = "orm/n_plus_one_100x10"
+limit = 0.25
+noise = 0
+
+# `i18n/format_plural` and `ui/render_list_50` are not listed here: a listed id must exist in
+# the base too, and neither 0.12 nor the parent of the change adding them has them. They print
+# as report rows whenever both exports carry them; their D15 budgets (measured median x 1.5)
+# are `gates-0.13.toml`, checked against `v0.13.json`.
+
 # --- report only ---------------------------------------------------------------------
 
 [[gate]]

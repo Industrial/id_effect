@@ -2904,6 +2904,7 @@ name = "id_effect_i18n"
 version = "0.12.0"
 dependencies = [
  "axum",
+ "criterion",
  "fluent-bundle",
  "fluent-langneg",
  "fluent-syntax",
@@ -3240,6 +3241,7 @@ dependencies = [
 name = "id_effect_sql"
 version = "0.12.0"
 dependencies = [
+ "criterion",
  "id_effect",
  "id_effect_proc_macro",
  "id_effect_test",

@@ -1,0 +1,30 @@
+# D15 budgets of the 0.13 breadth benches (r13-e-benches, README "Breadth gates (0.13)").
+#
+# Same format and semantics as gates.toml (read by scripts/bench-compare.sh --gates). Compare
+# against the stored 0.13 measurement, so ratio <= 1.5 is "median <= measured median x 1.5":
+#
+#   bash scripts/bench-compare.sh --gates docs/benchmarks/gates-0.13.toml \
+#       docs/benchmarks/v0.13.json NEW.json
+#
+# A separate file because a listed id must exist in the base: gates.toml is compared against
+# v0.12.json (and, in CI, against the parent commit), which do not have these benches. Both move
+# into gates.toml when v0.13.json is the stored base (0.14), once the owner confirms the numbers
+# at the 0.13.0 exit (D15).
+
+# No noise band: the 1.5 is the margin.
+metric = "median"
+noise = 0
+
+# Formatting one plural message with two arguments through a fallback chain (id_effect_i18n,
+# benches/format.rs).
+[[gate]]
+id = "i18n/format_plural"
+kind = "budget"
+limit = 1.5
+
+# Rendering a full page of 50 component rows, escaped, in the basic layout (id_effect_axum
+# feature `ui`, benches/ui_render.rs).
+[[gate]]
+id = "ui/render_list_50"
+kind = "budget"
+limit = 1.5
