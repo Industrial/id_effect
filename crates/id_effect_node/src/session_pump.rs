@@ -650,6 +650,44 @@ mod tests {
   }
 
   #[test]
+  fn a_pump_dropped_off_its_runtime_still_reports_the_peer_down() {
+    use crate::handshake::Cookie;
+    use crate::transport::Transport as _;
+    use crate::transport::memory::MemoryNetwork;
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+      .enable_all()
+      .build()
+      .expect("runtime");
+    let node = NodeName::new("b@t");
+    let mesh = Mesh::new(
+      NodeId::fresh(&node),
+      ProcessNode::new(node),
+      BehaviorRegistry::new(),
+    );
+    let (pump, _dialer) = runtime.block_on(async {
+      let net = MemoryNetwork::new();
+      let listener = net.transport("b@t").listen("b@t").await.expect("bind");
+      let dial = net.transport("a@t").connect("b@t").await.expect("dial");
+      let accepted = listener.accept().await.expect("accept");
+      let cookie = Cookie::new("pump-unit-cookie-of-at-least-32-bytes");
+      let dialer = NodeId::from_parts("a@t", 1);
+      let (a, b) = tokio::join!(
+        Session::initiate(dial, &dialer, &cookie),
+        Session::respond(accepted, mesh.node_id(), &cookie),
+      );
+      (
+        SessionPump::start(mesh.clone(), b.expect("b")),
+        a.expect("a"),
+      )
+    });
+    drop(runtime);
+    let remote = id_effect_process::Pid::from_parts(NodeName::new("a@t"), 1, 1);
+    drop(pump);
+    assert!(mesh.remote_cast(&remote, Vec::new()).is_err(), "a is down");
+  }
+
+  #[test]
   fn config_bounds_the_queue() {
     assert_eq!(SessionPumpConfig::new().send_queue(), DEFAULT_SEND_QUEUE);
     assert_eq!(SessionPumpConfig::new().with_send_queue(0).send_queue(), 1);
