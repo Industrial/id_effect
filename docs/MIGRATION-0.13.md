@@ -171,3 +171,18 @@ the "`ChatMessage { role, content }` still valid" row above):
 | `match role { System, User, Assistant }` | add an arm for `ChatRole::Tool` (a tool result fed back to the model) |
 | `ChatRequest` without tools | gains `tools: Vec<ToolDefinition>` (`with_tools`; empty by default, so no request changes); `validate` refuses a `ChatRole::Tool` message without `tool_call_id` |
 | `ChatResponse` text only | a reply with tool calls and no text is no longer `AiError::EmptyResponse`: `content` is empty and `tool_calls` is set (both vendors) |
+
+## AI: `mcp_server_template` example replaced by the `mcp` module
+
+Owner: r13-e9-1-mcp. The labs example `examples/mcp_server_template.rs` (a hand-written JSON-RPC
+loop answering `tools/list` and `tools/call` without a protocol version) is gone. MCP is now the
+`id_effect_ai::mcp` module (features `mcp`, `mcp-http`), pinned to revision 2026-07-28:
+
+| Before (0.12, labs) | After (0.13) |
+|---|---|
+| `cargo run -p id_effect_ai --example mcp_server_template` | `cargo run -p id_effect_ai --features mcp,mcp-http --example mcp_server` (stdio; `--http addr`; `--self-test`) |
+| a match on `"tools/list"` / `"tools/call"` | `McpServer::new(name, version).with_tools(tool_set)`, then `serve_stdio()` or `McpEndpoint::new(server).guard(g).router()` |
+| no `initialize`, no version check | clients call `server/discover` and send the revision in each request's `_meta`; older revisions get `UnsupportedProtocolVersion` (`-32022`) |
+
+The `mcp` feature now also enables the optional `rand` dependency (handle and cursor ids), and
+`mcp-http` enables `id_effect_authz/axum` and `id_effect_axum/ws` (for `OriginPolicy`).

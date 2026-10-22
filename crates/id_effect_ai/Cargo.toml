@@ -31,7 +31,7 @@ tools = ["id_effect/schema-serde"]
 # The `Embedder` capability (r13-e9-1-embeddings).
 embeddings = []
 # MCP server and client over stdio (r13-e9-1-mcp); tools come from the `tools` feature.
-mcp = ["tools", "dep:tokio"]
+mcp = ["tools", "dep:tokio", "dep:rand"]
 # MCP Streamable HTTP: an id_effect_axum route behind a typed guard (r13-e9-1-mcp).
 mcp-http = [
   "mcp",
@@ -110,8 +110,14 @@ rmcp = { version = "=3.4.0", default-features = false, features = [
 ] }
 
 [[example]]
-name = "mcp_server_template"
-path = "examples/mcp_server_template.rs"
+name = "mcp_server"
+path = "examples/mcp_server.rs"
+required-features = ["mcp", "mcp-http"]
+
+[[example]]
+name = "mcp_client"
+path = "examples/mcp_client.rs"
+required-features = ["mcp", "mcp-http"]
 
 [[example]]
 name = "005_scripted_model"
