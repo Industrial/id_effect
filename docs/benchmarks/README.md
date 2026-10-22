@@ -412,7 +412,32 @@ the 100-value `IN` list. Reaching 0.25 needs both a cheaper relation pass (`repo
 and fewer microseconds per row in the SQLite driver (`sqlite/`), neither in this leaf's files; or
 an owner decision on the limit (D15 wrote it before measuring). The gate stays at the decided
 0.25 and fails until one of those lands. It is a `pair`, so it reads the head export only, and
-`bench.yml` (`--enforce budget,delta,pair`) fails on it as well.
+`bench.yml` (`--enforce budget,delta,pair`) fails on it as well. A re-run on 2026-10-22 (03:00 UTC,
+1-minute load 16–30, 1 s warm-up, 4 s measurement) gave the same picture: eager 1.194 ms, N+1
+3.259 ms, flat 0.847 ms, so eager / N+1 = 0.366 and flat / N+1 = 0.260. Even the floor misses 0.25.
+With raw sqlx at about 0.67 µs a row, two statements over 1,100 rows cost about 0.8 ms, already
+a quarter of the N+1 loop, so no change in `relations.rs` alone can reach the limit.
+
+**Open owner decisions (0.13.0 exit, with D15).**
+
+1. *Eager pair limit.* Keep 0.25 and add a leaf for the SQLite driver's per-row cost
+   (`crates/id_effect_sql/src/sqlite/`, which no 0.13 leaf owns). Or set the limit from the
+   measurement: 0.40 holds the measured 0.366–0.374 with margin and still requires eager loading
+   to beat the N+1 loop by 2.5×. Or change the shape so round trips dominate as they do on a
+   networked database: more parents with fewer children, or PostgreSQL. The gate is not
+   changed without that decision.
+2. *Where the D15 budgets are enforced.* `gates-0.13.toml` holds them, read against
+   `v0.13.json`; neither the release gate (`v0.12.json` base) nor `bench.yml` (parent-commit
+   base) reads that file. The options: `bench.yml` gets a second `--gates
+   docs/benchmarks/gates-0.13.toml` step over its same-runner base and head exports, which every
+   change after this one can satisfy because its parent has the benches. Or `bench-compare.sh`
+   gets an absolute kind that needs no base. Or both budgets move into `gates.toml` once
+   `v0.13.json` is the base (0.14, as described below). Neither `bench.yml` nor
+   `bench-compare.sh` belongs to this leaf.
+
+`gates-0.13.toml` and the eight `fixtures/*.json` edits (each fixture carries the eager pair's two
+ids at passing values so `--self-test` stays green) fall under `docs/benchmarks/**`, which the
+release spec's "File ownership" table gives to `r13-e-benches` (W4).
 
 **Why the D15 budgets are a second file.** `gates.toml` is compared against `v0.12.json` (the
 release gate) and, in CI, against the parent commit; a listed id must exist in both files, and

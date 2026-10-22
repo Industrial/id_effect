@@ -269,6 +269,21 @@
   (secure stack +2.76 µs, unary RPC +1.78 µs, batch 0.092, h3/h2 0.063) and the streaming group is
   unchanged (0.997–1.017).
 
+### Performance
+
+- Breadth bench gates (r13-e-benches, `docs/benchmarks/README.md` "Breadth gates (0.13)"): benches
+  `id_effect_sql` `repository_eager` (`orm/eager_100x10`, `orm/n_plus_one_100x10`,
+  `orm/flat_100x10`; SQLite in memory), `id_effect_i18n` `format` (`i18n/format_plural`) and
+  `id_effect_axum` `ui_render` (`ui/render_list_50`, feature `ui`), all in `scripts/bench-run.sh`.
+  `gates.toml` adds the pair `orm/eager_100x10 / orm/n_plus_one_100x10 ≤ 0.25`, measured at
+  **0.374** (eager loading is 2.7× faster than the N+1 loop, but sqlx-sqlite's per-row cost puts
+  even two plain reads at 0.29; the gate fails until the relation pass and the SQLite driver get
+  cheaper or the owner revisits the limit). The D15 budgets (measured median × 1.5) are
+  `gates-0.13.toml` against the stored `v0.13.json`: `i18n/format_plural` 330 ns,
+  `ui/render_list_50` 9.81 µs. Against `v0.12.json` every 0.12 budget, delta and pair gate passes
+  (secure stack +2.76 µs, unary RPC +1.78 µs, batch 0.092, h3/h2 0.063) and the streaming group is
+  unchanged (0.997–1.017).
+
 ## 0.12.0 — 2026-10-20 — One call surface
 
 RPC becomes the first-party call surface (ADR 0014): `id_effect_rpc` leaves `labs/` with six
