@@ -253,6 +253,20 @@
   budgets, tenant resolution, the keyset cursor format, lifecycle hooks inside the transaction,
   and the ADR 0013 rules (B1–B23) every breadth surface follows. PLAN-OF-PLANS §6 restates 0.13.0
   on the measured 0.12.0 baseline: target E 85.2 (#1), RT 87.8, red ≤ 3; `sec.supply` carried over.
+- Leptos recipe (r13-e9-5-leptos, D4; not scored, web.ui #7 not claimed):
+  `examples/recipes/leptos-ssr`, a standalone project outside the workspace with its own
+  `Cargo.lock` — Leptos `=0.8.22` server-side rendering with hydration (`leptos_axum` `=0.8.10`)
+  served by the id_effect axum host: the page, the wasm bundle and a stylesheet are `.public()`
+  typed routes, the page's data comes from a `#[rpc::service]` whose procedures are guarded by a
+  service token, called through the generated `NotesClient` over HTTP (SSRF guard kept, only the
+  RPC host allowlisted). `SecurityLayer::recommended` stays on: the request's CSP nonce is handed
+  to Leptos (`Nonce::from_value`) so every inline script carries it, the CSP adds only
+  `'wasm-unsafe-eval'`, and `csrf_exempt_bearer` admits the renderer's cookie-less bearer calls;
+  no `dangerous_*` opt-out. No npm: the browser half is the same crate built for
+  `wasm32-unknown-unknown` and bound by `wasm-bindgen-cli` `=0.2.129` (`scripts/build-site.sh`).
+  Tests `leptos_recipe_ssr_renders`, `leptos_recipe_calls_rpc`, the built bundle, and hydration
+  in headless Chromium; CI job `recipe-leptos` (not in `ci-pass` until green twice). Book:
+  chapter 29.11.
 
 ### Performance
 

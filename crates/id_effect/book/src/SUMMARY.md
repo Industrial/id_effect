@@ -179,6 +179,7 @@
   - [Certificates that rotate themselves: reload and ACME](./part6/ch29-09-certificates-acme.md)
   - [Deploying HTTP/3: load balancers, direct-to-app, Kamal and Helm](./part6/ch29-07-http3-deployment.md)
   - [Server-rendered UI: maud views and htmx](./part6/ch29-10-server-rendered-ui.md)
+  - [Leptos recipe: SSR and hydration on the id_effect host](./part6/ch29-11-leptos-recipe.md)
 - [Application host](./part6/ch30-00-application.md)
   - [Authorization](./part6/ch30-02-authorization.md)
   - [Passwords and sessions (`id_effect_auth`)](./part6/ch30-03-passwords-sessions.md)
