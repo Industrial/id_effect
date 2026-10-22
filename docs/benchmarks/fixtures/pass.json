@@ -124,6 +124,16 @@
 			"mean": 950,
 			"median": 950,
 			"std_dev": 10
+		},
+		"orm/eager_100x10": {
+			"mean": 200000,
+			"median": 200000,
+			"std_dev": 2000
+		},
+		"orm/n_plus_one_100x10": {
+			"mean": 2000000,
+			"median": 2000000,
+			"std_dev": 20000
 		}
 	}
 }

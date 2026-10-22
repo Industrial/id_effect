@@ -84,6 +84,8 @@ sea-query = { version = "1.0.2", optional = true, default-features = false, feat
 sha2 = { version = "0.10", optional = true, default-features = false }
 
 [dev-dependencies]
+# benches/repository_eager.rs (r13-e-benches): the version the other gate benches use.
+criterion = "0.8.2"
 id_effect_tokio = { path = "../id_effect_tokio" }
 proptest = "1"
 serde = { version = "1", features = ["derive"] }
@@ -125,6 +127,12 @@ required-features = ["audit", "pg"]
 [[test]]
 name = "repository"
 required-features = ["repository"]
+
+# Eager loading against N+1 on SQLite in memory: the `orm/*` pair gate (docs/benchmarks/gates.toml).
+[[bench]]
+name = "repository_eager"
+harness = false
+required-features = ["repository", "sqlite"]
 
 # Typed values and rows (`params!`, `SqlRow::get`, `FromRow`) over `TestSqlClient`: no database,
 # no feature.

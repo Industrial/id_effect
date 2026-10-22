@@ -1,0 +1,485 @@
+{
+	"schema": 1,
+	"baseline": "v0.13",
+	"sha": "1a7dcb24aab235c2dbb3c810de11f76178b9dd8e",
+	"created": "2026-10-22T00:45:59Z",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cpus": "32",
+		"governor": "performance",
+		"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+		"kernel": "Linux 6.18.55"
+	},
+	"benches": {
+		"coord/channel_spsc_10k": {
+			"mean": 935899.1074855844,
+			"median": 865442.3464285715,
+			"std_dev": 201163.6243235197,
+			"mean_ci": [
+				899808.8651037617,
+				978115.7399197535
+			],
+			"median_ci": [
+				855937.8012820513,
+				876965.1388888889
+			]
+		},
+		"coord/queue_bounded_10k": {
+			"mean": 1087688.633274591,
+			"median": 958046.9017049666,
+			"std_dev": 371653.41074133856,
+			"mean_ci": [
+				1018836.2168710417,
+				1162804.734988661
+			],
+			"median_ci": [
+				888251.1906693712,
+				1057074.4341211969
+			]
+		},
+		"gate/async_bind_64": {
+			"mean": 1400.1198553905228,
+			"median": 1398.4248688317725,
+			"std_dev": 17.12488492615705,
+			"mean_ci": [
+				1396.8773974807111,
+				1403.4611301559003
+			],
+			"median_ci": [
+				1392.6208261547297,
+				1403.9310836213692
+			]
+		},
+		"gate/axum_request_bare": {
+			"mean": 959.082677225043,
+			"median": 949.6364694789859,
+			"std_dev": 56.46511044870602,
+			"mean_ci": [
+				949.1142043310053,
+				971.0654316635226
+			],
+			"median_ci": [
+				948.4886317313881,
+				952.9793016194332
+			]
+		},
+		"gate/axum_request_caps": {
+			"mean": 1293.067865929174,
+			"median": 1288.404467805519,
+			"std_dev": 30.34767154796738,
+			"mean_ci": [
+				1287.5539959585922,
+				1299.392400388789
+			],
+			"median_ci": [
+				1282.8643619077066,
+				1294.821352671112
+			]
+		},
+		"gate/axum_request_oneshot": {
+			"mean": 843.4155925544187,
+			"median": 805.7090584492676,
+			"std_dev": 142.02355395242384,
+			"mean_ci": [
+				819.9463805741501,
+				874.5260364731943
+			],
+			"median_ci": [
+				801.6224028906956,
+				809.2726178726646
+			]
+		},
+		"gate/axum_request_secure_stack": {
+			"mean": 3692.9194594686355,
+			"median": 3708.429188203101,
+			"std_dev": 95.84054272025183,
+			"mean_ci": [
+				3675.3157771714555,
+				3712.852794047094
+			],
+			"median_ci": [
+				3674.4646464646466,
+				3724.2133705911574
+			]
+		},
+		"gate/flat_map_depth_10k": {
+			"mean": 194246.4495911808,
+			"median": 194024.52102941176,
+			"std_dev": 2619.8706800269842,
+			"mean_ci": [
+				193759.8255326723,
+				194772.62094001702
+			],
+			"median_ci": [
+				193265.365,
+				194350.03225806452
+			]
+		},
+		"gate/sleep_1k_x_1ms": {
+			"mean": 3264734.967096774,
+			"median": 3263956.0774193546,
+			"std_dev": 71762.91447774223,
+			"mean_ci": [
+				3223871.669677419,
+				3307896.3393548387
+			],
+			"median_ci": [
+				3211208.067741935,
+				3308693.5096774194
+			]
+		},
+		"gate/sleep_cpu_1k_x_1ms": {
+			"mean": 12188718.502614379,
+			"median": 12210636.928104576,
+			"std_dev": 373917.0655291323,
+			"mean_ci": [
+				11975468.550980393,
+				12416230.55359477
+			],
+			"median_ci": [
+				11882644.470588235,
+				12402935.091503268
+			]
+		},
+		"gate/spawn_join_10k": {
+			"mean": 13904197.858823532,
+			"median": 13889736.19117647,
+			"std_dev": 3562021.633354002,
+			"mean_ci": [
+				11802936.2,
+				15906057.694117647
+			],
+			"median_ci": [
+				10815551.838235293,
+				16813719.94117647
+			]
+		},
+		"h3_loss/h2_p50": {
+			"mean": 255938674.66666666,
+			"median": 255998062.0,
+			"std_dev": 762631.5336011808,
+			"mean_ci": [
+				254976369.0,
+				256841593.0
+			],
+			"median_ci": [
+				254976369.0,
+				256841593.0
+			]
+		},
+		"h3_loss/h2_p99": {
+			"mean": 612139930.3333334,
+			"median": 612466390.0,
+			"std_dev": 2072670.5322313583,
+			"mean_ci": [
+				609454001.0,
+				614499400.0
+			],
+			"median_ci": [
+				609454001.0,
+				614499400.0
+			]
+		},
+		"h3_loss/h3_p50": {
+			"mean": 15771379.333333334,
+			"median": 15838301.0,
+			"std_dev": 337716.062062332,
+			"mean_ci": [
+				15328383.0,
+				16147454.0
+			],
+			"median_ci": [
+				15328383.0,
+				16147454.0
+			]
+		},
+		"h3_loss/h3_p99": {
+			"mean": 36122994.333333336,
+			"median": 38559657.0,
+			"std_dev": 5230181.95470421,
+			"mean_ci": [
+				28856588.0,
+				40952738.0
+			],
+			"median_ci": [
+				28856588.0,
+				40952738.0
+			]
+		},
+		"i18n/format_plural": {
+			"mean": 331.0437400184552,
+			"median": 330.8975278885934,
+			"std_dev": 4.564427899902567,
+			"mean_ci": [
+				330.16376476542024,
+				331.95315170811693
+			],
+			"median_ci": [
+				329.79888256983156,
+				332.0581606942889
+			]
+		},
+		"orm/eager_100x10": {
+			"mean": 1223001.4573752685,
+			"median": 1192265.1314935065,
+			"std_dev": 97456.17531850164,
+			"mean_ci": [
+				1205407.6700108743,
+				1243095.9585554458
+			],
+			"median_ci": [
+				1188439.6103896103,
+				1198184.0
+			]
+		},
+		"orm/flat_100x10": {
+			"mean": 1225599.612234889,
+			"median": 924606.061247576,
+			"std_dev": 820468.3848717365,
+			"mean_ci": [
+				1079525.2238351516,
+				1397090.344385735
+			],
+			"median_ci": [
+				859186.6235294117,
+				1010889.6923076923
+			]
+		},
+		"orm/n_plus_one_100x10": {
+			"mean": 3299278.2113333307,
+			"median": 3186100.9000000004,
+			"std_dev": 314851.96115358785,
+			"mean_ci": [
+				3242858.9606666667,
+				3363943.0869666664
+			],
+			"median_ci": [
+				3164320.466666667,
+				3219629.2
+			]
+		},
+		"phase0/bench_effect_flat_map_chain": {
+			"mean": 53.62966897911946,
+			"median": 53.523914028268955,
+			"std_dev": 0.671334420119389,
+			"mean_ci": [
+				53.504648171180705,
+				53.76612496375031
+			],
+			"median_ci": [
+				53.42589769955039,
+				53.71417243435208
+			]
+		},
+		"phase0/bench_effect_map_chain": {
+			"mean": 53.24262675742296,
+			"median": 53.039062722745975,
+			"std_dev": 0.9120778693122089,
+			"mean_ci": [
+				53.08676226383229,
+				53.43883890558241
+			],
+			"median_ci": [
+				52.913768353507734,
+				53.21707026081901
+			]
+		},
+		"phase0/bench_env_insert_overhead": {
+			"mean": 34.19097271592337,
+			"median": 34.19523758175068,
+			"std_dev": 0.2323878539960651,
+			"mean_ci": [
+				34.14595582778223,
+				34.23663242077402
+			],
+			"median_ci": [
+				34.16908939686082,
+				34.26332883366216
+			]
+		},
+		"phase0/bench_schedule_retry_overhead": {
+			"mean": 136.15711176054702,
+			"median": 136.15337838619814,
+			"std_dev": 1.0201139234853962,
+			"mean_ci": [
+				135.96159606672737,
+				136.35717814618513
+			],
+			"median_ci": [
+				135.9936185618082,
+				136.4541041178901
+			]
+		},
+		"phase0/bench_stream_throughput_collect": {
+			"mean": 1396.7705559669578,
+			"median": 1391.7002781641168,
+			"std_dev": 33.220696950417704,
+			"mean_ci": [
+				1391.0203793654823,
+				1403.9274106035139
+			],
+			"median_ci": [
+				1389.4226617656798,
+				1393.941585535466
+			]
+		},
+		"rpc/axum_json_handler": {
+			"mean": 967.2083549286696,
+			"median": 963.9622751626483,
+			"std_dev": 13.5972851569618,
+			"mean_ci": [
+				964.6125090262175,
+				969.8909653195026
+			],
+			"median_ci": [
+				962.2885492766432,
+				968.3734867330016
+			]
+		},
+		"rpc/batch_50": {
+			"mean": 150657.14906745282,
+			"median": 148596.1700619642,
+			"std_dev": 9648.937265278104,
+			"mean_ci": [
+				148843.30624370734,
+				152591.79591386812
+			],
+			"median_ci": [
+				147050.87894111997,
+				150365.84375
+			]
+		},
+		"rpc/sequential_50": {
+			"mean": 1637790.5012813231,
+			"median": 1611264.3115530303,
+			"std_dev": 123188.27277774384,
+			"mean_ci": [
+				1614264.6133793914,
+				1662450.954525049
+			],
+			"median_ci": [
+				1589418.4032258065,
+				1634655.924206349
+			]
+		},
+		"rpc/unary_json": {
+			"mean": 2746.089480435918,
+			"median": 2745.668035470264,
+			"std_dev": 27.681058153419187,
+			"mean_ci": [
+				2740.8370464027485,
+				2751.4808864181527
+			],
+			"median_ci": [
+				2740.6205878684573,
+				2749.6665879797933
+			]
+		},
+		"rpc/unary_postcard": {
+			"mean": 3309.006016841329,
+			"median": 3304.8396042363433,
+			"std_dev": 28.411048518785034,
+			"mean_ci": [
+				3303.687101994265,
+				3314.779592052484
+			],
+			"median_ci": [
+				3301.3016403885968,
+				3309.2291341508735
+			]
+		},
+		"stream/map_effect_1k": {
+			"mean": 44713.67680164118,
+			"median": 44602.33209647496,
+			"std_dev": 481.43028886230013,
+			"mean_ci": [
+				44620.90449092387,
+				44807.78775574238
+			],
+			"median_ci": [
+				44461.09961315281,
+				44687.486363636366
+			]
+		},
+		"stream/pull_map_10k": {
+			"mean": 9875.985313463818,
+			"median": 9837.78215407977,
+			"std_dev": 117.86291726037611,
+			"mean_ci": [
+				9853.37284768833,
+				9899.295494270124
+			],
+			"median_ci": [
+				9804.944837340878,
+				9869.862147753236
+			]
+		},
+		"ui/render_list_50": {
+			"mean": 9819.256429848143,
+			"median": 9807.074166666667,
+			"std_dev": 97.10357930290083,
+			"mean_ci": [
+				9800.5177044638,
+				9838.220553461799
+			],
+			"median_ci": [
+				9779.26,
+				9827.909861111111
+			]
+		}
+	},
+	"session": {
+		"leaf": "r13-e-benches",
+		"command": "bash scripts/bench-run.sh --baseline v0.13 && bash scripts/bench-export.sh v0.13 OUT && bash scripts/bench-compare.sh docs/benchmarks/v0.12.json OUT",
+		"tree": "1a7dcb24 (release/0.13.0) plus the r13-e-benches benches",
+		"started": "2026-10-22T00:13:03Z",
+		"finished": "2026-10-22T00:45:38Z",
+		"load_1min": {
+			"at_start": 35.98,
+			"at_end": 19.88,
+			"range_seen": "15-170 (shared with other agents compiling)"
+		},
+		"note": "criterion defaults, performance governor; one session on the reference machine, other agents building concurrently (load is not the idle-machine figure the leaf asks for)",
+		"gates_vs_v0_12": {
+			"budget": "7/7 PASS (max coord/queue_bounded_10k 1.225)",
+			"delta": {
+				"secure_stack": "+2759 ns PASS",
+				"unary_rpc": "+1782 ns PASS"
+			},
+			"pair": {
+				"rpc_batch_50": "0.092 PASS",
+				"h3_loss_p99": "0.063 PASS (userspace proxies)",
+				"orm_eager_100x10": "0.374 FAIL (limit 0.25)"
+			},
+			"improve": "spawn_join 0.856 PASS; sleep_cpu 0.978, axum_request_oneshot 1.031 FAIL by construction (must improve on v0.6)",
+			"streaming_vs_v0_12": {
+				"stream/pull_map_10k": 0.998,
+				"stream/map_effect_1k": 0.997,
+				"phase0/bench_stream_throughput_collect": 1.017
+			}
+		},
+		"eager_pair": {
+			"eager_100x10_ns": 1192265,
+			"n_plus_one_100x10_ns": 3186100,
+			"flat_100x10_ns": 924606,
+			"ratio": 0.374,
+			"floor_ratio_flat_over_n_plus_one": 0.290,
+			"quick_runs_ratio": [
+				0.36,
+				0.36
+			],
+			"diagnosis": "sqlx-sqlite fetch_all of 1000 rows costs ~670 us (0.67 us/row) and one small query ~30 us, so even with no relation work (orm/flat_100x10) the ratio is 0.29; eager loading adds ~270 us over flat (owner key rendered to a String per row, HashMap grouping, extra key column)"
+		},
+		"d15_budgets": {
+			"i18n/format_plural": {
+				"median_ns": 330,
+				"budget_ns": 495
+			},
+			"ui/render_list_50": {
+				"median_ns": 9807,
+				"budget_ns": 14710
+			},
+			"status": "written as budget gates (ratio <= 1.5 against this file) in gates-0.13.toml; owner confirms at the 0.13.0 exit (D15)"
+		}
+	}
+}

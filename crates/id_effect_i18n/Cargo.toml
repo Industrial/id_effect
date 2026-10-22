@@ -65,9 +65,16 @@ name = "i18n_web"
 path = "examples/i18n_web.rs"
 required-features = ["axum", "maud", "schema"]
 
+# `i18n/format_plural` (docs/benchmarks/gates.toml, r13-e-benches).
+[[bench]]
+name = "format"
+harness = false
+
 # tests/web.rs and example i18n_web (r13-e9-4-i18n-web): drive an axum router in-process and
 # serve it; the versions id_effect_axum already uses.
 [dev-dependencies]
+# benches/format.rs (r13-e-benches): the version the other gate benches use.
+criterion = "0.8.2"
 http-body-util = "0.1"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tower = { version = "0.5.3", features = ["util"] }
