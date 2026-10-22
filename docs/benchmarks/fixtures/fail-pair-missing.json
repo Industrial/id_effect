@@ -129,6 +129,26 @@
 			"mean": 2000000,
 			"median": 2000000,
 			"std_dev": 20000
+		},
+		"i18n/format_plural": {
+			"mean": 300,
+			"median": 300,
+			"std_dev": 3
+		},
+		"i18n/empty_iter": {
+			"mean": 1,
+			"median": 1,
+			"std_dev": 0
+		},
+		"ui/render_list_50": {
+			"mean": 10000,
+			"median": 10000,
+			"std_dev": 100
+		},
+		"ui/empty_iter": {
+			"mean": 1,
+			"median": 1,
+			"std_dev": 0
 		}
 	}
 }

@@ -5,10 +5,13 @@
 //!   fallback chain (`de-AT` → `de`), the CLDR plural selection and the number formatted into the
 //!   text, with Unicode bidi isolation on (the default). One call per iteration; the count cycles
 //!   through 1, 2, 5 and 21 so both plural branches are taken.
+//! - `i18n/empty_iter`: an iteration that does nothing (`black_box(())`), the harness floor the
+//!   budget is measured over.
 //!
-//! Reported by `scripts/bench-compare.sh`; its budget (measured median × 1.5, 0.13 decision D15)
-//! is `docs/benchmarks/gates-0.13.toml`, read against `docs/benchmarks/v0.13.json`
-//! (`docs/benchmarks/README.md`, "Breadth gates (0.13)").
+//! The D15 budget (measured median × 1.5, 0.13 decision D15) is a `delta` gate in
+//! `docs/benchmarks/gates.toml`: `i18n/format_plural − i18n/empty_iter ≤ 496 ns`, both from one
+//! run, so it needs no base that has these benches (`docs/benchmarks/README.md`, "Breadth gates
+//! (0.13)").
 //!
 //! Run: `cargo bench -p id_effect_i18n --bench format`
 
@@ -69,6 +72,7 @@ fn bench_format(c: &mut Criterion) {
       black_box(format(black_box(counts[n])))
     });
   });
+  group.bench_function("empty_iter", |b| b.iter(|| black_box(())));
   group.finish();
 }
 
