@@ -95,6 +95,29 @@
   `dangerous_log_prompts`, and `EmbedRequest`'s `Debug` redacts it. `testing::ScriptedModel`
   implements `Embedder` with deterministic hashed embeddings (`ScriptedModel::embedding_of`).
   Book: chapter 35.2.
+- MCP server and client in `id_effect_ai` (r13-e9-1-mcp, ai.llm #6, D7; features `mcp` and
+  `mcp-http`): an own, effect-native implementation pinned to MCP revision 2026-07-28
+  (`mcp::PROTOCOL_VERSION`, ADR 0015 §7): `server/discover` and per-request `_meta` capability
+  negotiation (another revision is answered with `UnsupportedProtocolVersion`), tools served from
+  the same `ToolSet` the agent loop runs (`McpServer::with_tools`, every call through
+  `ToolSet::invoke`; a tool failure is an `isError` result), resources and prompts
+  (`with_resource`, `with_prompt`), progress (`mcp::report_progress`) and cancellation that
+  interrupts the request's fiber and runs its finalizers. Transports: stdio
+  (`McpServer::serve_stdio` / `serve_io`, `McpClient::over_io`) and Streamable HTTP
+  (`mcp::McpEndpoint`, an `id_effect_axum` route; `McpClient::http` through the platform
+  client). Secure by default (ADR 0013, ADR 0015 B15 B16): the endpoint has no router until
+  `.guard(g)` (an MCP endpoint without an access decision does not compile), refuses browser
+  origins outside its `OriginPolicy` (empty by default), refuses bodies over 1 MiB with `413`
+  before parsing and caps in-flight requests per principal (`McpLimits`), checks
+  `MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name` and `Mcp-Param-*` against the body
+  (`HeaderMismatch`); every identifier the server mints (list cursors, `mcp::mint_handle`) is
+  128-bit random and bound to the principal; write tools are neither listed nor run unless
+  `McpServer::dangerous_mcp_write_tools()` is taken (recorded as `DANGEROUS_MCP_WRITE_TOOLS`);
+  the client obeys the platform SSRF policy (`McpError::Blocked`) and cannot override the
+  protocol's headers. `mcp::decode_message` is the bounded decoder of every transport (the
+  `mcp_jsonrpc_message` fuzz target). Interop tested both ways against `rmcp` =3.4.0 (a
+  dev-dependency only) over stdio and HTTP. Examples `mcp_server` (stdio, `--http`,
+  `--self-test`) and `mcp_client` replace `mcp_server_template`; book chapter 35.3.
 - Relations and eager loading in `id_effect_sql` (r13-e3-3-relations, data.orm #3):
   `#[entity(belongs_to(..))]`, `has_many(..)` and `many_to_many(.., through = "..")` generate
   `Relation<P, C>` constructors (`Order::lines()`); `Repository::with(rel)` returns an

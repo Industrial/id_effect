@@ -205,5 +205,9 @@ struct Ch3501ToolsStructuredOutput;
 struct Ch3502Embeddings;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch35-03-mcp.md")]
+struct Ch3503Mcp;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-11-leptos-recipe.md")]
 struct Ch2911LeptosRecipe;

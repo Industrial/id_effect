@@ -213,6 +213,7 @@
 - [AI and MCP (`id_effect_ai`)](./part6/ch35-00-ai.md)
   - [Tools, structured output and the agent loop](./part6/ch35-01-tools-structured-output.md)
   - [Embeddings and in-app similarity](./part6/ch35-02-embeddings.md)
+  - [MCP: serving and calling tools](./part6/ch35-03-mcp.md)
 
 # Part VII: Process Mesh
 

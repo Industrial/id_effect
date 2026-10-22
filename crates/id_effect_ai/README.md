@@ -74,7 +74,8 @@ cargo run -p id_effect_ai --features openai --example 010_openai_once -- "Hello"
 cargo run -p id_effect_ai --features anthropic --example 011_anthropic_once -- "Hello"
 cargo run -p id_effect_ai --features openai,anthropic --example ask_once -- --vendor openai --prompt "Hi"
 cargo run -p id_effect_ai --features cursor --example 020_cursor_agent_once -- "Summarize README"
-cargo run -p id_effect_ai --example mcp_server_template
+cargo run -p id_effect_ai --features mcp,mcp-http --example mcp_server -- --self-test
+cargo run -p id_effect_ai --features mcp,mcp-http --example mcp_client
 ```
 
 ## Testing
