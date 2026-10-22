@@ -297,9 +297,11 @@
   `gates.toml` adds the pair `orm/eager_100x10 / orm/n_plus_one_100x10 ≤ 0.25`, measured at
   **0.374** (eager loading is 2.7× faster than the N+1 loop, but sqlx-sqlite's per-row cost puts
   even two plain reads at 0.29; the gate fails until the relation pass and the SQLite driver get
-  cheaper or the owner revisits the limit). The D15 budgets (measured median × 1.5) are
-  `gates-0.13.toml` against the stored `v0.13.json`: `i18n/format_plural` 330 ns,
-  `ui/render_list_50` 9.81 µs. Against `v0.12.json` every 0.12 budget, delta and pair gate passes
+  cheaper or the owner revisits the limit). The D15 budgets (measured median × 1.5) are `delta`
+  gates in `gates.toml` over an empty iteration of the same bench (`i18n/empty_iter`,
+  `ui/empty_iter`), so the release gate and `bench.yml` enforce them with no base:
+  `i18n/format_plural` ≤ 496 ns (330.9 ns measured), `ui/render_list_50` ≤ 14,710 ns (9,807 ns
+  measured). Against `v0.12.json` every 0.12 budget, delta and pair gate passes
   (secure stack +2.76 µs, unary RPC +1.78 µs, batch 0.092, h3/h2 0.063) and the streaming group is
   unchanged (0.997–1.017).
 

@@ -139,10 +139,28 @@ over = "orm/n_plus_one_100x10"
 limit = 0.25
 noise = 0
 
-# `i18n/format_plural` and `ui/render_list_50` are not listed here: a listed id must exist in
-# the base too, and neither 0.12 nor the parent of the change adding them has them. They print
-# as report rows whenever both exports carry them; their D15 budgets (measured median x 1.5)
-# are `gates-0.13.toml`, checked against `v0.13.json`.
+# D15 budgets: measured median x 1.5, in ns, over an empty iteration of the same bench binary
+# (`*/empty_iter`, about 0.2 ns), so the gate is the bench's own time. A `delta` reads the new
+# export only, so neither 0.12 nor a CI base without these benches is needed. Measured in
+# `v0.13.json`; the owner confirms both numbers at the 0.13.0 exit (D15).
+
+# One plural message with two arguments through a fallback chain, bidi isolation on
+# (benches/format.rs in id_effect_i18n): 330.9 ns measured, budget 496 ns.
+[[gate]]
+id = "i18n/format_plural"
+kind = "delta"
+over = "i18n/empty_iter"
+limit = 496
+noise = 0
+
+# A full page of 50 component rows, escaped, in the basic layout (benches/ui_render.rs in
+# id_effect_axum, feature `ui`): 9,807 ns measured, budget 14,710 ns.
+[[gate]]
+id = "ui/render_list_50"
+kind = "delta"
+over = "ui/empty_iter"
+limit = 14710
+noise = 0
 
 # --- report only ---------------------------------------------------------------------
 

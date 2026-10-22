@@ -6,10 +6,13 @@
 //!   slots, inside [`BasicLayout`] (document head, htmx script tag). Every title and owner holds
 //!   characters maud must escape (`<`, `&`, `"`), so the escaping is on the path. No HTTP: the
 //!   request path is `gate/axum_request_*` in `gate_request.rs`.
+//! - `ui/empty_iter`: an iteration that does nothing (`black_box(())`), the harness floor the
+//!   budget is measured over.
 //!
-//! Reported by `scripts/bench-compare.sh`; its budget (measured median × 1.5, 0.13 decision D15)
-//! is `docs/benchmarks/gates-0.13.toml`, read against `docs/benchmarks/v0.13.json`
-//! (`docs/benchmarks/README.md`, "Breadth gates (0.13)").
+//! The D15 budget (measured median × 1.5, 0.13 decision D15) is a `delta` gate in
+//! `docs/benchmarks/gates.toml`: `ui/render_list_50 − ui/empty_iter ≤ 14,710 ns`, both from one
+//! run, so it needs no base that has these benches (`docs/benchmarks/README.md`, "Breadth gates
+//! (0.13)").
 //!
 //! Run: `cargo bench -p id_effect_axum --features ui --bench ui_render`
 
@@ -99,6 +102,7 @@ fn bench_ui(c: &mut Criterion) {
   group.bench_function("render_list_50", |b| {
     b.iter(|| black_box(render_page(&layout, &ctx, black_box(&todos))));
   });
+  group.bench_function("empty_iter", |b| b.iter(|| black_box(())));
   group.finish();
 }
 

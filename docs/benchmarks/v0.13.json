@@ -206,6 +206,19 @@
 				40952738.0
 			]
 		},
+		"i18n/empty_iter": {
+			"mean": 0.18762227202645249,
+			"median": 0.1873208990097694,
+			"std_dev": 0.00288431444294444,
+			"mean_ci": [
+				0.18708943659761784,
+				0.18820742473770985
+			],
+			"median_ci": [
+				0.18647514068206214,
+				0.18808617809093794
+			]
+		},
 		"i18n/format_plural": {
 			"mean": 331.0437400184552,
 			"median": 330.8975278885934,
@@ -414,6 +427,19 @@
 				9869.862147753236
 			]
 		},
+		"ui/empty_iter": {
+			"mean": 0.18597165800055418,
+			"median": 0.18526392258837154,
+			"std_dev": 0.0025990656848046997,
+			"mean_ci": [
+				0.18551864438654295,
+				0.18652429268487813
+			],
+			"median_ci": [
+				0.18503690784825655,
+				0.18550322258544677
+			]
+		},
 		"ui/render_list_50": {
 			"mean": 9819.256429848143,
 			"median": 9807.074166666667,
@@ -468,18 +494,39 @@
 				0.36,
 				0.36
 			],
-			"diagnosis": "sqlx-sqlite fetch_all of 1000 rows costs ~670 us (0.67 us/row) and one small query ~30 us, so even with no relation work (orm/flat_100x10) the ratio is 0.29; eager loading adds ~270 us over flat (owner key rendered to a String per row, HashMap grouping, extra key column)"
+			"diagnosis": "sqlx-sqlite fetch_all of 1000 rows costs ~670 us (0.67 us/row) and one small query ~30 us, so even with no relation work (orm/flat_100x10) the ratio is 0.29; eager loading adds ~270 us over flat (owner key rendered to a String per row, HashMap grouping, extra key column)",
+			"rerun_ratio": 0.349,
+			"rerun_floor_ratio": 0.29
 		},
 		"d15_budgets": {
 			"i18n/format_plural": {
-				"median_ns": 330,
-				"budget_ns": 495
+				"median_ns": 330.9,
+				"budget_ns": 496,
+				"gate": "delta over i18n/empty_iter (gates.toml)"
 			},
 			"ui/render_list_50": {
-				"median_ns": 9807,
-				"budget_ns": 14710
+				"median_ns": 9807.1,
+				"budget_ns": 14710,
+				"gate": "delta over ui/empty_iter (gates.toml)"
 			},
-			"status": "written as budget gates (ratio <= 1.5 against this file) in gates-0.13.toml; owner confirms at the 0.13.0 exit (D15)"
+			"status": "written as delta gates in gates.toml (median x 1.5 over an empty iteration, read from the new export only), enforced by the release gate and bench.yml; owner confirms at the 0.13.0 exit (D15)",
+			"rerun": {
+				"baseline": "v0_13_d15",
+				"sha": "ed8c17efb78cdb555b031e6f551253a815db2a6a",
+				"created": "2026-10-22T01:19:38Z",
+				"command": "bash scripts/bench-run.sh --baseline v0_13_d15 --only id_effect_i18n:format --only id_effect_axum:ui_render --only id_effect_sql:repository_eager",
+				"load_1min": "29-145 (other agents compiling)",
+				"note": "the two empty_iter entries in .benches come from this run; the gated medians are the first measurement",
+				"medians_ns": {
+					"i18n/empty_iter": 0.1873208990097694,
+					"i18n/format_plural": 321.76272377718965,
+					"orm/eager_100x10": 1128498.5308953342,
+					"orm/flat_100x10": 936852.77,
+					"orm/n_plus_one_100x10": 3233859.15625,
+					"ui/empty_iter": 0.18526392258837154,
+					"ui/render_list_50": 10135.84864192161
+				}
+			}
 		}
 	}
 }
