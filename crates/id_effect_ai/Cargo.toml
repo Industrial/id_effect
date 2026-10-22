@@ -40,8 +40,10 @@ mcp-http = [
   "dep:http",
   "dep:id_effect_authz",
   "dep:id_effect_axum",
-  "dep:rand",
+  "id_effect_authz?/axum",
   "id_effect_axum?/sse",
+  # `realtime::origin::OriginPolicy`, the Origin allowlist the endpoint checks (R9).
+  "id_effect_axum?/ws",
 ]
 # `testing::ScriptedModel`: deterministic replies, tool calls and streams for tests (D8).
 test-util = []
