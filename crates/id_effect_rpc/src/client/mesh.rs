@@ -12,7 +12,12 @@
 //! span is its child) and, for queries, mutations and client streams, the client's timeout as
 //! its deadline ([`MeshRpcClient::with_timeout`], default 30 s; the endpoint clamps it). A call
 //! never hangs on a dead endpoint: it monitors the endpoint process, and the monitor fires when
-//! the process exits or its node goes down. Dropping a call (or its stream) cancels it.
+//! the process exits or its node goes down. A stream is also watched by heartbeats: when the
+//! endpoint's node stays silent past the deadline ([`MeshLiveness`]), the stream fails with
+//! [`MeshRpcError::PeerSilent`] even if nothing reported the node down. Dropping a call (or its
+//! stream) cancels it.
+//!
+//! [`MeshLiveness`]: crate::transport::mesh::MeshLiveness
 //!
 //! A `#[rpc::service]` client calls over the mesh through [`MeshTransport`].
 //!
@@ -84,6 +89,16 @@ pub enum MeshRpcError {
   /// The endpoint's node is unreachable.
   #[error("the mesh endpoint's node is unreachable")]
   NodeDown,
+  /// Nothing was heard from the endpoint's node for longer than the liveness deadline
+  /// ([`MeshLiveness`](crate::transport::mesh::MeshLiveness)): the stream failed and was
+  /// cancelled, although nothing reported the node down.
+  #[error("the mesh peer {node} was silent for {silent_for:?}")]
+  PeerSilent {
+    /// The endpoint's node.
+    node: String,
+    /// How long it had been silent.
+    silent_for: Duration,
+  },
   /// An input or output did not encode or decode.
   #[error("codec: {0}")]
   Codec(String),
@@ -134,7 +149,7 @@ impl MeshRpcError {
   pub fn is_endpoint_gone(&self) -> bool {
     matches!(
       self,
-      Self::NoEndpoint(_) | Self::EndpointDown(_) | Self::NodeDown
+      Self::NoEndpoint(_) | Self::EndpointDown(_) | Self::NodeDown | Self::PeerSilent { .. }
     )
   }
 }
@@ -157,6 +172,16 @@ fn down_error(service: &str, reason: &ExitReason) -> MeshRpcError {
     ExitReason::NoProc => MeshRpcError::NoEndpoint(service.to_owned()),
     ExitReason::NoConnection => MeshRpcError::NodeDown,
     other => MeshRpcError::EndpointDown(format!("{other:?}")),
+  }
+}
+
+/// The error of a client event that ends a call (anything but a frame).
+fn event_error(service: &str, event: ClientEvent) -> MeshRpcError {
+  match event {
+    ClientEvent::Down(reason) => down_error(service, &reason),
+    ClientEvent::Silent { node, silent_for } => MeshRpcError::PeerSilent { node, silent_for },
+    ClientEvent::Violation(why) => MeshRpcError::Transport(why.into()),
+    ClientEvent::Frame(_) => MeshRpcError::Transport("an unexpected frame".into()),
   }
 }
 
@@ -231,14 +256,18 @@ impl MeshRpcClient {
     F: FnOnce(TraceContext) -> Fut + Send + 'static,
     Fut: Future<Output = Result<A, MeshRpcError>> + Send + 'static,
   {
-    let propagator = self.rpc.node.propagator();
+    let this = self.clone();
     Span::current().flat_map(move |span| {
-      let mut trace = TraceContext::new();
-      if let Some(span) = span {
-        propagator.inject(&span, &mut trace);
-      }
+      let trace = span.map_or_else(TraceContext::new, |span| this.span_context(&span));
       from_async(move || body(trace))
     })
+  }
+
+  /// `span`'s context as the node's propagator writes it.
+  fn span_context(&self, span: &Span) -> TraceContext {
+    let mut trace = TraceContext::new();
+    self.rpc.node.propagator().inject(span, &mut trace);
+    trace
   }
 
   /// Resolve the endpoint, open a call to it and send the `call` frame.
@@ -448,9 +477,7 @@ impl OpenCall {
       ClientEvent::Frame(frame) if frame.kind == FrameKind::Exit => {
         exit_value(frame.payload.as_deref())
       }
-      ClientEvent::Frame(_) => Err(MeshRpcError::Transport("an unexpected frame".into())),
-      ClientEvent::Down(reason) => Err(down_error(service, &reason)),
-      ClientEvent::Violation(why) => Err(MeshRpcError::Transport(why.into())),
+      other => Err(event_error(service, other)),
     };
     self.shared.finish();
     outcome
@@ -562,12 +589,9 @@ impl futures_util::Stream for RawStream {
           }
           _ => {}
         },
-        ClientEvent::Down(reason) => {
-          let error = down_error(&this.service, &reason);
+        ended => {
+          let error = event_error(&this.service, ended);
           return this.over(Some(Err(error)));
-        }
-        ClientEvent::Violation(why) => {
-          return this.over(Some(Err(MeshRpcError::Transport(why.into()))));
         }
       }
     }
@@ -679,12 +703,18 @@ impl<I> Drop for MeshSink<I> {
 /// codecs (`WireSchema::with_serde`) of the service's procedures, taken from `schemas`: the
 /// service's own [`RpcGroup`] (its handlers never run here). A procedure `schemas` lacks is
 /// refused (404) and one without typed codecs too (415), before anything is sent. Queries are
-/// retried on a gone endpoint like [`MeshRpcClient::query`]; a transport has no fiber, so its
-/// calls carry no trace context (call through [`MeshRpcClient`] for that). Every kind is carried.
+/// retried on a gone endpoint like [`MeshRpcClient::query`]. Every kind is carried.
+///
+/// Trace context crosses as on the 0.11 mesh sends (dist.remote#8): a generated client's queries
+/// and mutations run as effects of the calling fiber, so each carries that fiber's span and the
+/// remote `rpc.request` span is its child. The stream kinds are opened outside any fiber; they
+/// carry the context the transport was given ([`MeshTransport::in_current_span`],
+/// [`MeshTransport::with_trace_context`]), none by default.
 #[derive(Clone)]
 pub struct MeshTransport {
   client: MeshRpcClient,
   schemas: Arc<RpcGroup>,
+  trace: TraceContext,
 }
 
 impl std::fmt::Debug for MeshTransport {
@@ -805,7 +835,39 @@ impl MeshTransport {
     Self {
       client,
       schemas: Arc::new(schemas),
+      trace: TraceContext::new(),
     }
+  }
+
+  /// Carry `trace` on every call opened outside a fiber (the stream kinds, and
+  /// [`RpcTransport::unary`] awaited directly).
+  #[must_use]
+  pub fn with_trace_context(mut self, trace: TraceContext) -> Self {
+    self.trace = trace;
+    self
+  }
+
+  /// The trace context carried on calls opened outside a fiber.
+  pub fn trace_context(&self) -> &TraceContext {
+    &self.trace
+  }
+
+  /// This transport carrying the calling fiber's current span (through the node's
+  /// [`TracePropagator`](id_effect_node::TracePropagator)) on every call, the stream kinds
+  /// included; outside any span, the transport as it is.
+  pub fn in_current_span<E, R>(&self) -> Effect<Self, E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    let this = self.clone();
+    Span::current().map(move |span| match span {
+      Some(span) => {
+        let trace = this.client.span_context(&span);
+        this.with_trace_context(trace)
+      }
+      None => this,
+    })
   }
 
   fn bridges(&self, call: &TransportCall) -> Result<Bridges, TransportError> {
@@ -836,11 +898,27 @@ impl MeshTransport {
         Some(call.version),
         payload,
         after,
-        TraceContext::new(),
+        self.trace.clone(),
         deadline,
         items,
       )
       .map_err(transport_error)
+  }
+
+  /// A query or mutation carrying `trace`.
+  async fn unary_traced(
+    &self,
+    call: TransportCall,
+    trace: TraceContext,
+  ) -> Result<WireExit, TransportError> {
+    let bridges = self.bridges(&call)?;
+    let payload = bridges.input(&call.payload)?;
+    let retry = call.kind == ProcedureKind::Query;
+    let result = self
+      .client
+      .unary(&call.tag, Some(call.version), payload, trace, retry)
+      .await;
+    bridges.exit(result)
   }
 }
 
@@ -848,20 +926,24 @@ impl RpcTransport for MeshTransport {
   fn unary(&self, call: TransportCall) -> BoxFuture<Result<WireExit, TransportError>> {
     let this = self.clone();
     Box::pin(async move {
-      let bridges = this.bridges(&call)?;
-      let payload = bridges.input(&call.payload)?;
-      let retry = call.kind == ProcedureKind::Query;
-      let result = this
-        .client
-        .unary(
-          &call.tag,
-          Some(call.version),
-          payload,
-          TraceContext::new(),
-          retry,
-        )
-        .await;
-      bridges.exit(result)
+      let trace = this.trace.clone();
+      this.unary_traced(call, trace).await
+    })
+  }
+
+  /// The generated client's queries and mutations: the calling fiber's span is the call's trace
+  /// context (else the transport's own, [`MeshTransport::with_trace_context`]).
+  fn unary_effect<R: Send + Sync + 'static>(
+    &self,
+    call: TransportCall,
+  ) -> Effect<WireExit, TransportError, R> {
+    let this = self.clone();
+    Span::current().flat_map(move |span| {
+      let trace = span.map_or_else(
+        || this.trace.clone(),
+        |span| this.client.span_context(&span),
+      );
+      from_async(move || async move { this.unary_traced(call, trace).await })
     })
   }
 

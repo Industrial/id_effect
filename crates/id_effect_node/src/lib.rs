@@ -22,6 +22,7 @@ pub mod mesh;
 pub mod placement;
 pub mod registry;
 pub mod session;
+pub mod session_pump;
 pub mod singleton;
 pub mod transport;
 pub mod wire;
@@ -58,6 +59,7 @@ pub use placement::{
 };
 pub use registry::{BehaviorEntry, BehaviorRegistry};
 pub use session::{Session, SessionError};
+pub use session_pump::{Ingress, SessionPump, SessionPumpConfig, SessionPumpStats, Unverified};
 #[cfg(feature = "pg")]
 pub use singleton::PgAdvisoryLease;
 pub use singleton::{

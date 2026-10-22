@@ -244,6 +244,26 @@
   longer admitted. `Http3Options::congestion(CongestionControl::Cubic)` switches the `h3` route
   off BBR (still the default; the mesh stays CUBIC), and `Http3Options::config()` reads it from the
   config key `server.http3.congestion`; `CongestionControl` implements `FromStr`.
+- A node session pump, mesh RPC trace context and stream liveness (r13-f-mesh-session, 0.12
+  follow-ups F30, F34; ADR 0013 R1 R4 R8): `id_effect_node::SessionPump` runs an authenticated
+  `Session` for a mesh (peer registered, bounded send queue `SessionPumpConfig`, peer reported down
+  when the session ends or the pump drops) and checks every envelope against the session's peer
+  before anything acts on it (`session_pump::verify_envelope`: messages for processes target this
+  node; links, exit signals, monitor answers, spawn replies and name claims speak for the peer);
+  unverified envelopes are dropped and counted (`SessionPumpStats`). Verified envelopes go to an
+  `Ingress` — the mesh, or `id_effect_rpc`'s `MeshRpc` (which implements it) — never around it.
+  `channels::attach_session` / `attach_session_rpc` now run on the pump instead of a private loop,
+  and `attach_session` on a bare mesh delivers through the node's `MeshRpc` when there is one
+  (`MeshRpc::of`), so mesh RPC over a plain channels link works instead of being dropped as
+  unverified (0.12 F33); `SessionLink::stats`. `MeshTransport` (generated clients over the mesh)
+  carries the calling fiber's span on queries and mutations (`RpcTransport::unary_effect`) and a
+  given context on streams (`MeshTransport::in_current_span`, `with_trace_context`). Mesh streams
+  heartbeat: the calling node pings the endpoint of every open server stream, subscription and
+  two-way stream each `MeshLiveness` interval (default 5 s, `Ping`/`Pong` frames), and a stream
+  whose endpoint stays silent past 3 intervals fails with `MeshRpcError::PeerSilent` and is
+  cancelled, without waiting for `peer_down` (`MeshRpc::with_liveness`, `MeshRpc::heartbeat`;
+  interval and deadline clamped finite). New `MeshRpcError` variant: see
+  [MIGRATION-0.13.md](docs/MIGRATION-0.13.md).
 
 ### Documentation
 
