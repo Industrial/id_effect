@@ -289,16 +289,26 @@ fn admin_registration_is_typed() {
   let report = router.access_report();
   assert!(report.public.is_empty() && !report.has_opt_outs());
   let guarded: Vec<&str> = report.guarded.iter().map(|(r, _)| r.as_str()).collect();
-  assert_eq!(
-    guarded,
-    [
-      "GET /admin",
-      "GET /admin/document",
-      "GET /admin/document/{id}",
-      "GET /admin/label",
-      "GET /admin/label/{id}",
-    ]
-  );
+  let mut expected = vec!["GET /admin".to_owned()];
+  for slug in ["document", "label"] {
+    // Read pages, then the write pages of r13-e9-3-admin-edit.
+    for route in [
+      "GET /admin/{}",
+      "GET /admin/{}/{id}",
+      "GET /admin/{}/@new",
+      "POST /admin/{}/@new",
+      "GET /admin/{}/{id}/@edit",
+      "POST /admin/{}/{id}/@edit",
+      "GET /admin/{}/{id}/@delete",
+      "POST /admin/{}/{id}/@delete",
+      "POST /admin/{}/@bulk",
+      "GET /admin/{}/@pick/{relation}",
+      "POST /admin/{}/{id}/@rel/{relation}",
+    ] {
+      expected.push(route.replacen("{}", slug, 1));
+    }
+  }
+  assert_eq!(guarded, expected);
   assert!(report.guarded.iter().all(|(_, p)| p == &["staff"]));
 }
 

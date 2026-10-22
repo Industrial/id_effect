@@ -36,6 +36,35 @@ pub const UI_MESSAGES: &[(&str, &str)] = &[
   ("admin.not-found", "This record does not exist."),
   ("admin.bad-request", "This request is not valid."),
   ("admin.error", "Something went wrong."),
+  ("admin.new", "New"),
+  ("admin.create", "Create"),
+  ("admin.edit", "Edit"),
+  ("admin.save", "Save"),
+  ("admin.cancel", "Cancel"),
+  ("admin.delete", "Delete"),
+  (
+    "admin.delete-confirm",
+    "Delete this record? This cannot be undone.",
+  ),
+  ("admin.invalid", "Please correct the errors below."),
+  (
+    "admin.conflict",
+    "Someone else changed this record. Reload it and try again.",
+  ),
+  ("admin.duplicate", "A record with this key already exists."),
+  (
+    "admin.csrf",
+    "This form has expired. Reload the page and try again.",
+  ),
+  ("admin.too-large", "This form is too large."),
+  ("admin.too-many", "Too many records are selected."),
+  ("admin.select", "Select"),
+  ("admin.selected", "With the selected records:"),
+  ("admin.run", "Run"),
+  ("admin.find", "Find"),
+  ("admin.add", "Add"),
+  ("admin.remove", "Remove"),
+  ("admin.none", "None."),
 ];
 
 /// The English text of the chrome message `key`.
@@ -99,6 +128,20 @@ impl Labels {
     self.label(key, || english(key).to_owned())
   }
 
+  /// The validation `message` (a `Schema` issue's English message) in the request's language:
+  /// the `id_effect_i18n` schema message of its code, or the message id it is itself; `None`
+  /// without a catalog or a translation.
+  #[cfg_attr(not(feature = "i18n"), allow(unused_variables))]
+  pub(crate) fn schema_message(&self, message: &str) -> Option<String> {
+    #[cfg(feature = "i18n")]
+    if let Some((catalog, locale)) = &self.i18n {
+      let issue = id_effect::schema::ParseError::new("", message);
+      let translated = id_effect_i18n::translate_parse_error(catalog, locale, &issue).message;
+      return (translated != message).then_some(translated);
+    }
+    None
+  }
+
   /// `admin.results` for `count` rows.
   pub(crate) fn results(&self, count: u64) -> String {
     self
@@ -128,6 +171,7 @@ mod tests {
     assert_eq!(labels.results(3), "3 results");
     assert_eq!(labels.label("document.title", || "Title".into()), "Title");
     assert_eq!(labels.lang(), "en");
+    assert_eq!(labels.schema_message("expected i64"), None);
     assert!(
       UI_MESSAGES
         .iter()

@@ -207,7 +207,7 @@ fn dir_name(order: SortOrder) -> &'static str {
 }
 
 /// `text` with the `LIKE` wildcards and the escape character escaped by `\`.
-fn escape_like(text: &str) -> String {
+pub(crate) fn escape_like(text: &str) -> String {
   let mut out = String::with_capacity(text.len());
   for c in text.chars() {
     if matches!(c, '%' | '_' | '\\') {
@@ -246,6 +246,8 @@ pub(crate) async fn list<E: Entity>(
     Err(status) => return ctx.error(&site, status, "admin.bad-request"),
   };
   let can_view = ctx.allowed(&site, &spec, AdminAction::View).await.is_ok();
+  let bulk = crate::bulk::options(&ctx, &site, &spec).await;
+  let new = crate::edit::new_link(&ctx, &site, &spec).await;
   // The statements are rendered here; the (non-`Send`) conditions end with this block.
   let read = {
     let cond = query.condition(&spec);
@@ -261,13 +263,13 @@ pub(crate) async fn list<E: Entity>(
   };
   match EffectExecutor::global().run_effect(read).await {
     Exit::Success((page, total)) => {
-      let results = results(&ctx, &site, &spec, &query, &page, total, can_view);
+      let results = results(&ctx, &site, &spec, &query, &page, total, can_view, &bulk);
       let wants_results = ctx.layout.hx().target.as_deref() == Some(RESULTS_ID);
       let label = ctx.entity_label(&spec);
       let content = if wants_results && ctx.layout.hx().is_htmx() {
         results
       } else {
-        list_page(&ctx, &site, &spec, &query, &label, results)
+        list_page(&ctx, &site, &spec, &query, &label, new, results)
       };
       ctx.page(&site, &label, content, StatusCode::OK)
     }
@@ -289,6 +291,7 @@ fn list_page(
   spec: &EntitySpec,
   query: &ListQuery,
   label: &str,
+  new: Markup,
   results: Markup,
 ) -> Markup {
   let path = site.list_path(&spec.slug);
@@ -299,6 +302,7 @@ fn list_page(
     section.admin-list {
       (ctx.crumbs(site, &[(label.to_owned(), None)]))
       h1 { (label) }
+      (new)
       @if has_form {
         form.admin-search role="search" method="get" action=(path)
           hx-get=(path) hx-target=(target) hx-push-url="true" hx-trigger="submit, change" {
@@ -342,7 +346,8 @@ fn list_page(
   }
 }
 
-/// The results region: count, table, pager.
+/// The results region: count, table (in the bulk form when `bulk` offers actions), pager.
+#[allow(clippy::too_many_arguments)]
 fn results<E: Entity>(
   ctx: &Ctx,
   site: &SiteShared,
@@ -351,6 +356,7 @@ fn results<E: Entity>(
   page: &Paged<E>,
   total: u64,
   can_view: bool,
+  bulk: &[(String, String)],
 ) -> Markup {
   let path = site.list_path(&spec.slug);
   let target = format!("#{RESULTS_ID}");
@@ -401,49 +407,59 @@ fn results<E: Entity>(
     params.push((key.to_owned(), cursor.encode()));
     link(&path, &params)
   };
-  html! {
-    div #(RESULTS_ID) .admin-results {
-      p.admin-count { (ctx.labels.results(total)) }
-      @if rows.is_empty() {
-        p.admin-empty { (ctx.labels.ui("admin.empty")) }
-      } @else {
-        table.admin-table {
-          thead {
-            tr {
-              @for at in &spec.list {
-                @let sorted = order.filter(|(o, _)| o == at).map(|(_, dir)| match dir {
-                  SortOrder::Asc => "ascending",
-                  SortOrder::Desc => "descending",
-                });
-                th scope="col" aria-sort=[sorted] {
-                  @if spec.sortable.contains(at) {
-                    @let href = sort_link(*at);
-                    a href=(href) hx-get=(href) hx-target=(target) hx-push-url="true" {
-                      (ctx.field_label(spec, *at))
-                    }
-                  } @else {
+  let select = !bulk.is_empty();
+  let table = || {
+    html! {
+      table.admin-table {
+        thead {
+          tr {
+            @if select { th scope="col" {} }
+            @for at in &spec.list {
+              @let sorted = order.filter(|(o, _)| o == at).map(|(_, dir)| match dir {
+                SortOrder::Asc => "ascending",
+                SortOrder::Desc => "descending",
+              });
+              th scope="col" aria-sort=[sorted] {
+                @if spec.sortable.contains(at) {
+                  @let href = sort_link(*at);
+                  a href=(href) hx-get=(href) hx-target=(target) hx-push-url="true" {
                     (ctx.field_label(spec, *at))
                   }
+                } @else {
+                  (ctx.field_label(spec, *at))
                 }
               }
             }
           }
-          tbody {
-            @for (id, cells) in &rows {
-              tr {
-                @for (i, cell) in cells.iter().enumerate() {
-                  td {
-                    @if i == 0 && can_view {
-                      a href=(site.detail_path(&spec.slug, id)) { (cell) }
-                    } @else {
-                      (cell)
-                    }
+        }
+        tbody {
+          @for (id, cells) in &rows {
+            tr {
+              @if select { td { (crate::bulk::checkbox(ctx, id)) } }
+              @for (i, cell) in cells.iter().enumerate() {
+                td {
+                  @if i == 0 && can_view {
+                    a href=(site.detail_path(&spec.slug, id)) { (cell) }
+                  } @else {
+                    (cell)
                   }
                 }
               }
             }
           }
         }
+      }
+    }
+  };
+  html! {
+    div #(RESULTS_ID) .admin-results {
+      p.admin-count { (ctx.labels.results(total)) }
+      @if rows.is_empty() {
+        p.admin-empty { (ctx.labels.ui("admin.empty")) }
+      } @else if select {
+        (crate::bulk::form(ctx, site, spec, bulk, table()))
+      } @else {
+        (table())
       }
       @if page.prev.is_some() || page.next.is_some() {
         nav.admin-pager aria-label="pagination" {

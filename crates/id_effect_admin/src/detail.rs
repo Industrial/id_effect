@@ -3,7 +3,9 @@
 //!
 //! The id in the path is parsed as the primary key's type ([`FieldMeta::schema_type`]
 //! (id_effect_sql::FieldMeta)); an id that does not parse, a missing row and a row of another
-//! tenant all answer the same 404.
+//! tenant all answer the same 404. The page links to the edit and delete pages the principal may
+//! use, and lists the record's `has_many` and `many_to_many` relations
+//! ([`relations`](crate::relations)).
 
 use std::sync::Arc;
 
@@ -62,19 +64,24 @@ pub(crate) async fn detail<E: Entity>(
   };
   let (yes, no) = (ctx.labels.ui("admin.yes"), ctx.labels.ui("admin.no"));
   let label = ctx.entity_label(&spec);
-  let id = id_text(&value(spec.id_field().column));
+  let key = value(spec.id_field().column);
+  let id = id_text(&key);
+  let links = crate::edit::record_links(&ctx, &site, &spec, &id).await;
+  let related = crate::relations::inline(&ctx, &site, &spec, &key, &id).await;
   let list = site.list_path(&spec.slug);
   let title = format!("{label} {id}");
   let content = html! {
     section.admin-detail {
       (ctx.crumbs(&site, &[(label.clone(), Some(list.clone())), (id.clone(), None)]))
       h1 { (title) }
+      (links)
       dl.admin-fields {
         @for at in &spec.detail {
           dt { (ctx.field_label(&spec, *at)) }
           dd { (display(&value(spec.fields[*at].column), &yes, &no)) }
         }
       }
+      (related)
       p { a.admin-back href=(list) { (ctx.labels.ui("admin.back")) } }
     }
   };

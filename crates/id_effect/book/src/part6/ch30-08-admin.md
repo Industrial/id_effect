@@ -126,7 +126,10 @@ let admin = AdminSite::new()
 let report = admin.access_report();
 assert!(report.public.is_empty());
 let routes: Vec<&str> = report.guarded.iter().map(|(route, _)| route.as_str()).collect();
-assert_eq!(routes, ["GET /admin", "GET /admin/document", "GET /admin/document/{id}"]);
+assert_eq!(routes[..3], ["GET /admin", "GET /admin/document", "GET /admin/document/{id}"]);
+// …and the write pages (see "Editing records" below), every one guarded too.
+assert!(routes.contains(&"POST /admin/document/{id}/@edit"));
+assert_eq!(routes.len(), 12);
 ```
 
 Merge the router into the application's typed router (`Router::merge`) behind the authentication
@@ -290,3 +293,151 @@ assert_eq!(no_tenant.status, StatusCode::FORBIDDEN);
 
 `.htmx(id_effect_admin::list::RESULTS_ID)` sends the headers of the list's htmx requests, to test
 the fragment the page swaps in.
+
+## Editing records
+
+Every registered entity also gets a create form (`/admin/<entity>/@new`), an edit form
+(`/admin/<entity>/{id}/@edit`) and a delete confirmation (`/admin/<entity>/{id}/@delete`), each
+behind its own permission (`create`, `update`, `delete`). The list page shows a "New" link and the
+detail page "Edit" and "Delete" links only to principals who may use them.
+
+The forms bind **only the fields you declared editable** with `#[entity(editable)]` — never the
+primary key, the version, tenant or soft-delete column. `EntityAdmin::form` narrows that set
+further (it can never widen it). A submitted field the form does not declare is ignored and logged
+by name: a forged `secret=…` or `org_id=…` in the body changes nothing. The other fields of a new
+record come from `EntityAdmin::new_record` (or are NULL, or the column's zero for a generated id
+and a version); an entity with a required field nothing fills has no create page.
+
+```rust
+use id_effect::schema::{ParseError, ParseErrors};
+use id_effect::succeed;
+use id_effect_admin::EntityAdmin;
+use id_effect_sql::repository::EntityHooks;
+use id_effect_sql::{Entity, FromRow};
+
+#[derive(Clone, Debug, FromRow, Entity)]
+#[entity(table = "documents", tenant = "org_id")]
+struct Document {
+    #[entity(id, generated)]
+    id: i64,
+    #[entity(editable)]
+    title: String,
+    #[entity(editable)]
+    pages: i64,
+    /// Never on a form: only the repository and the hooks write it.
+    slug: String,
+    #[entity(version)]
+    version: i64,
+}
+
+let admin = EntityAdmin::<Document>::default()
+    .form(["title", "pages"])
+    .new_record(|| Document { id: 0, title: String::new(), pages: 1, slug: String::new(), version: 0 })
+    .validate(|doc: &Document| {
+        if doc.pages < 1 {
+            return Err(ParseErrors::one(ParseError::new("pages", "must be >= 1")));
+        }
+        Ok(())
+    })
+    .hooks(EntityHooks::<Document>::new().before_insert(|_ctx, doc| {
+        let slug = doc.title.to_lowercase().replace(' ', "-");
+        succeed(Document { slug, ..doc })
+    }));
+assert_eq!(admin.info().unwrap().form, ["title", "pages"]);
+```
+
+**Validation.** Each value is parsed as its field's type, the record is decoded from the row (an
+entity with `#[from_row(schema)]` runs its `Schema` and its refinements), then `validate` runs.
+Every issue is bound to its field through the `ui` form helpers (Chapter 29.10) and the form comes
+back with 422 and what the user typed. With feature `i18n` and a catalog built with
+`.schema_messages()` (Chapter 30.9), the messages appear in the request's language — "Darf nicht
+leer sein." for a German reader — while the stable message key (`schema-must-not-be-empty`) stays
+in the markup.
+
+**Writes go through the repository.** Create, update and delete run through the entity's
+repository bound to the request's tenant, with the `EntityHooks` you gave `.hooks(..)` (Chapter
+28.8), inside one transaction with the audit record: a failing hook rolls the write back.
+Optimistic locking applies — the edit form carries the version it was rendered with, and a record
+someone else changed in between answers 409 instead of being overwritten.
+
+**Secure by default** (ADR 0013): a form body over 64 KiB answers 413 before it is decoded
+(`id_effect_admin::forms::MAX_FORM_BYTES`; `forms::decode_form` is the bounded decoder, fuzzed as
+`admin_form_body`), and every `POST` must have passed the masked-token CSRF check of
+`id_effect_axum`'s `SecurityLayer` (Chapter 30). Install the layer around the application; the
+forms render the token. A write the layer did not check is refused with 403, whatever its body says.
+
+## Relations
+
+The admin reads the relations you declared on the entity (Chapter 28.6) and shows each one whose
+target is registered on the same site and listable by the principal:
+
+| Relation | On the admin |
+|---|---|
+| `belongs_to` | the foreign key is a picker on the forms: a select of the target's rows and a search box that refreshes it (`/admin/<entity>/@pick/<relation>?_q=…`, htmx) |
+| `has_many` | an inline list of the children on the detail page, linking to their pages |
+| `many_to_many` | an inline list with a "Remove" button per row and an "Add" picker, writing the join table |
+
+Everything a relation shows is read through the target's repository bound to the request's
+tenant: a picker never offers another tenant's rows, and a foreign key or an "Add" naming one is
+refused ("must reference an existing record" on the form, 400 for the join table). Adding a pair
+twice writes it once.
+
+## Bulk actions
+
+The list page shows a checkbox per row and an action menu to principals holding
+`admin.<entity>.bulk` and the action's own permission: the built-in `delete` needs
+`admin.<entity>.delete`, a custom action the one it `requires` (`update` by default).
+
+```rust
+use id_effect::succeed;
+use id_effect_admin::bulk::BulkAction;
+use id_effect_admin::{AdminAction, EntityAdmin};
+use id_effect_sql::{Entity, FromRow};
+
+#[derive(Clone, Debug, FromRow, Entity)]
+#[entity(table = "documents")]
+struct Document {
+    #[entity(id)]
+    id: i64,
+    #[entity(editable)]
+    status: String,
+}
+
+let publish = BulkAction::new("publish", "Publish", |ctx, rows: Vec<Document>| {
+    rows.into_iter().fold(succeed(()), |done, doc| {
+        // Through the entity's hooks, in the action's transaction.
+        let update = ctx.update(Document { status: "published".into(), ..doc });
+        done.flat_map(move |()| update.map(|_| ()))
+    })
+})
+.requires(AdminAction::Update);
+let admin = EntityAdmin::<Document>::default().action(publish);
+assert_eq!(admin.info().unwrap().actions, ["publish"]);
+```
+
+A request selects at most 100 records (`id_effect_admin::bulk::MAX_BULK_IDS`); more is refused
+with 400 before any query. The selected ids are read through the tenant-bound repository, so an id
+of another tenant selects nothing, and the action runs in one transaction with its audit record.
+
+## The audit trail
+
+With feature `audit`, every create, update, delete, join-table change and bulk action is appended
+to `id_effect_sql`'s hash-chained audit log (Chapter 30.7) **in the transaction of the write**, so
+the record commits or rolls back with the change. A record names the principal (`actor`), the
+tenant (its own chain), the action (`admin.create`, `admin.update`, `admin.delete`,
+`admin.relation.add`, `admin.relation.remove`, `admin.bulk.<name>`), the record
+(`<entity>:<id>`) and the changed fields as JSON — an update records only what changed, and only
+form fields ever reach the log, so an excluded secret column never does.
+
+Auditing is on by default with the feature, into the default `audit_log` table
+(`.audit_log(AuditLog::new().with_table(..))` picks another). Turning it off takes
+`.dangerous_without_audit()`, which is recorded in the posture registry and reported by the prod
+posture check.
+
+The crate's example runs a whole session — create with a picker, a refused foreign key, an edit
+with a forged field, a label added, a bulk publish, a refused delete without a CSRF token, a
+confirmed delete:
+
+```bash
+cargo run -p id_effect_admin --all-features --example admin_site -- --self-test
+```

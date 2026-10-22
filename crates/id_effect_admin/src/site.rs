@@ -21,6 +21,16 @@
 //! | `GET <prefix>` | the entities the principal may list | `admin.<entity>.list` per entry |
 //! | `GET <prefix>/<entity>` | list: search, filters, sort, keyset pages | `admin.<entity>.list` |
 //! | `GET <prefix>/<entity>/{id}` | detail | `admin.<entity>.view` |
+//! | `GET`, `POST <prefix>/<entity>/@new` | create ([`edit`](crate::edit)) | `admin.<entity>.create` |
+//! | `GET`, `POST <prefix>/<entity>/{id}/@edit` | update | `admin.<entity>.update` |
+//! | `GET`, `POST <prefix>/<entity>/{id}/@delete` | delete, after a confirmation | `admin.<entity>.delete` |
+//! | `POST <prefix>/<entity>/@bulk` | a bulk action ([`bulk`](crate::bulk)) | `admin.<entity>.bulk` and the action's own |
+//! | `GET <prefix>/<entity>/@pick/<relation>` | picker options ([`relations`](crate::relations)) | `create` or `update`, `list` on the target |
+//! | `POST <prefix>/<entity>/{id}/@rel/<relation>` | add / remove a join-table pair | `update`, `list` on the target |
+//!
+//! Every `POST` also needs the CSRF check of `id_effect_axum`'s `SecurityLayer` (install it
+//! around the application; a write it did not check is refused with 403) and reads at most
+//! 64 KiB of form ([`forms`](crate::forms)).
 //!
 //! A site without a guard has no router:
 //!
@@ -48,9 +58,11 @@ use id_effect_axum::route::{Endpoint, GuardFuture, RouteGuard, RouteInfo, Router
 use id_effect_axum::ui::{BasicLayout, Layout, LayoutContext, Markup, Page, html, respond};
 use id_effect_sql::{CurrentTenant, Dialect, Entity, Repository, SqlClient, SqlClientService};
 
+use crate::edit::{AdminRoute, Typed};
 use crate::entity::{AdminConfigError, EntityAdmin, EntityInfo, EntitySpec};
 use crate::labels::Labels;
 use crate::permission::{AdminAction, AdminPermission, RbacAdminPolicy, authorize};
+use crate::relations::{Lookup, Reader};
 use crate::value::{encode, humanize};
 
 /// The default path prefix of an admin site.
@@ -144,15 +156,20 @@ impl fmt::Debug for AdminDatabase {
   }
 }
 
-/// A registered entity: its checked configuration and its two routes.
+/// A registered entity: its checked configuration and its routes.
 trait Mount: Send + Sync {
   fn spec(&self) -> &Arc<EntitySpec>;
   fn list(&self, site: Arc<SiteShared>) -> MethodRouter;
   fn detail(&self, site: Arc<SiteShared>) -> MethodRouter;
+  /// The create, edit, delete, bulk and relation routes.
+  fn edit_routes(&self, site: &Arc<SiteShared>) -> Vec<AdminRoute>;
+  /// The entity as the target of other entities' relations.
+  fn lookup(&self) -> Arc<dyn Lookup>;
 }
 
 struct Registered<E> {
   spec: Arc<EntitySpec>,
+  typed: Arc<Typed<E>>,
   entity: PhantomData<fn() -> E>,
 }
 
@@ -173,6 +190,17 @@ impl<E: Entity> Mount for Registered<E> {
     axum::routing::get(move |Path(id): Path<String>, req: Request| {
       crate::detail::detail::<E>(Arc::clone(&site), Arc::clone(&spec), id, req)
     })
+  }
+
+  fn edit_routes(&self, site: &Arc<SiteShared>) -> Vec<AdminRoute> {
+    let mut routes = crate::edit::routes::<E>(site, &self.spec, &self.typed);
+    routes.push(crate::bulk::route::<E>(site, &self.spec, &self.typed));
+    routes.extend(crate::relations::routes::<E>(site, &self.spec));
+    routes
+  }
+
+  fn lookup(&self) -> Arc<dyn Lookup> {
+    Arc::new(Reader::<E>::new(Arc::clone(&self.spec)))
   }
 }
 
@@ -203,7 +231,8 @@ impl<E: Entity> Mount for Registered<E> {
 ///   .router::<()>(AdminDatabase::new(Arc::new(TestSqlClient::new()), Dialect::Sqlite));
 /// let report = router.access_report();
 /// assert!(report.public.is_empty());
-/// assert_eq!(report.guarded.len(), 3); // index, list, detail
+/// // index, list, detail; create, edit, delete (GET and POST each); bulk; picker, relations
+/// assert_eq!(report.guarded.len(), 12);
 /// ```
 pub struct AdminSite<A: SiteAccess = Unguarded> {
   prefix: String,
@@ -214,6 +243,9 @@ pub struct AdminSite<A: SiteAccess = Unguarded> {
   stylesheets: Vec<String>,
   #[cfg(feature = "i18n")]
   catalog: Option<id_effect_i18n::Catalog>,
+  /// Where changes are audited (feature `audit`; see [`audit`](crate::audit)).
+  #[cfg(feature = "audit")]
+  pub(crate) audit: Option<id_effect_sql::audit::AuditLog>,
   access: A,
 }
 
@@ -253,6 +285,8 @@ impl AdminSite<Unguarded> {
       stylesheets: Vec::new(),
       #[cfg(feature = "i18n")]
       catalog: None,
+      #[cfg(feature = "audit")]
+      audit: Some(id_effect_sql::audit::AuditLog::new()),
       access: Unguarded,
     }
   }
@@ -293,22 +327,28 @@ impl AdminSite<Guarded> {
       layout: self.layout,
       stylesheets: self.stylesheets,
       entities: self.entities.iter().map(|e| Arc::clone(e.spec())).collect(),
+      lookups: self.entities.iter().map(|e| e.lookup()).collect(),
       #[cfg(feature = "i18n")]
       catalog: self.catalog,
+      #[cfg(feature = "audit")]
+      audit: self.audit,
     });
     let guards = self.access;
-    let endpoint = |path: String, handler: &'static str, method_router: MethodRouter| {
-      let mut info = RouteInfo::new(Method::GET, path);
-      info.handler = Some(handler);
-      let first = SharedGuard(Arc::clone(&guards.first));
-      let endpoint = Endpoint::<S, _>::from_parts(info, method_router.with_state(())).guard(first);
-      guards
-        .more
-        .iter()
-        .fold(endpoint, |e, g| e.guard(SharedGuard(Arc::clone(g))))
-    };
+    let endpoint =
+      |method: Method, path: String, handler: &'static str, method_router: MethodRouter| {
+        let mut info = RouteInfo::new(method, path);
+        info.handler = Some(handler);
+        let first = SharedGuard(Arc::clone(&guards.first));
+        let endpoint =
+          Endpoint::<S, _>::from_parts(info, method_router.with_state(())).guard(first);
+        guards
+          .more
+          .iter()
+          .fold(endpoint, |e, g| e.guard(SharedGuard(Arc::clone(g))))
+      };
     let index_site = Arc::clone(&site);
     let mut router = Router::new().route(endpoint(
+      Method::GET,
       site.prefix.clone(),
       "id_effect_admin::index",
       axum::routing::get(move |req: Request| index(Arc::clone(&index_site), req)),
@@ -317,15 +357,25 @@ impl AdminSite<Guarded> {
       let slug = &entity.spec().slug;
       router = router
         .route(endpoint(
+          Method::GET,
           site.list_path(slug),
           "id_effect_admin::list",
           entity.list(Arc::clone(&site)),
         ))
         .route(endpoint(
+          Method::GET,
           format!("{}/{{id}}", site.list_path(slug)),
           "id_effect_admin::detail",
           entity.detail(Arc::clone(&site)),
         ));
+      for route in entity.edit_routes(&site) {
+        router = router.route(endpoint(
+          route.method,
+          route.path,
+          route.handler,
+          route.router,
+        ));
+      }
     }
     router
   }
@@ -342,6 +392,8 @@ impl<A: SiteAccess> AdminSite<A> {
       stylesheets: self.stylesheets,
       #[cfg(feature = "i18n")]
       catalog: self.catalog,
+      #[cfg(feature = "audit")]
+      audit: self.audit,
       access,
     }
   }
@@ -412,6 +464,7 @@ impl<A: SiteAccess> AdminSite<A> {
     }
     self.entities.push(Arc::new(Registered::<E> {
       spec: Arc::new(spec),
+      typed: Arc::new(Typed::new(&admin.edit)),
       entity: PhantomData,
     }));
     Ok(self)
@@ -469,8 +522,12 @@ pub(crate) struct SiteShared {
   layout: Option<Arc<dyn Layout>>,
   stylesheets: Vec<String>,
   entities: Vec<Arc<EntitySpec>>,
+  /// Every registered entity as a relation target.
+  lookups: Vec<Arc<dyn Lookup>>,
   #[cfg(feature = "i18n")]
   pub(crate) catalog: Option<id_effect_i18n::Catalog>,
+  #[cfg(feature = "audit")]
+  pub(crate) audit: Option<id_effect_sql::audit::AuditLog>,
 }
 
 impl SiteShared {
@@ -480,6 +537,11 @@ impl SiteShared {
 
   pub(crate) fn detail_path(&self, slug: &str, id: &str) -> String {
     format!("{}/{slug}/{}", self.prefix, encode(id))
+  }
+
+  /// The registered entity named `entity` (`Entity::NAME`), as a relation target.
+  pub(crate) fn lookup(&self, entity: &str) -> Option<&Arc<dyn Lookup>> {
+    self.lookups.iter().find(|l| l.entity() == entity)
   }
 }
 
@@ -535,9 +597,14 @@ impl Ctx {
       })
   }
 
+  /// The principal's id.
+  pub(crate) fn principal_id(&self) -> &str {
+    self.principal.id()
+  }
+
   /// The request's tenant: a `CurrentTenant` request extension, else one recorded in the request
   /// capabilities.
-  fn tenant(&self) -> Option<CurrentTenant> {
+  pub(crate) fn tenant(&self) -> Option<CurrentTenant> {
     if let Some(tenant) = self.parts.extensions.get::<CurrentTenant>() {
       return Some(tenant.clone());
     }

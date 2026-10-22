@@ -21,7 +21,7 @@ name = "id_effect_admin"
 [features]
 default = []
 # Entity, field and page labels through an `id_effect_i18n::Catalog` in the request's locale.
-i18n = ["dep:id_effect_i18n"]
+i18n = ["dep:id_effect_i18n", "id_effect_i18n/schema"]
 # The hash-chained audit log of admin changes (r13-e9-3-admin-edit): id_effect_sql's `audit`.
 audit = ["id_effect_sql/audit"]
 # `testing`: requests carrying a principal, tenant and htmx headers, sent to an admin router.
@@ -62,7 +62,7 @@ id_effect_sql = { path = "../id_effect_sql", features = [
 ] }
 id_effect_tokio = { path = "../id_effect_tokio" }
 serde_json = "1"
-tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.50.0", features = ["macros", "net", "rt-multi-thread"] }
 tower = { version = "0.5.3", features = ["util"] }
 
 [[test]]
@@ -70,9 +70,29 @@ name = "admin"
 path = "tests/admin.rs"
 required-features = ["test-util"]
 
+[[test]]
+name = "edit"
+path = "tests/edit.rs"
+required-features = ["test-util"]
+
+[[test]]
+name = "bulk"
+path = "tests/bulk.rs"
+required-features = ["test-util"]
+
+[[test]]
+name = "relations"
+path = "tests/relations.rs"
+required-features = ["test-util"]
+
 [[example]]
 name = "010_permissions"
 path = "examples/010_permissions.rs"
+
+[[example]]
+name = "admin_site"
+path = "examples/admin_site.rs"
+required-features = ["test-util"]
 
 [package.metadata.docs.rs]
 all-features = true
