@@ -72,6 +72,36 @@ whose `BatchConfig` caps a batch below 50 calls or 1 MiB refuses a larger window
 Problem, given to each call of it; raise the server caps or call through
 `RpcTransport::unary`, which still sends one call per request.
 
+## RPC / node: session pump, `MeshRpcError::PeerSilent`
+
+Owner: r13-f-mesh-session. One break, two behaviour changes; everything else is additive
+(`id_effect_node::session_pump`, `MeshLiveness`, `MeshRpc::{with_liveness, liveness, heartbeat,
+of}`, `MeshTransport::{in_current_span, with_trace_context, trace_context}`, `SessionLink::stats`).
+
+- `id_effect_rpc::client::mesh::MeshRpcError` gains the variant `PeerSilent { node, silent_for }`
+  (the enum is not `#[non_exhaustive]`), so an exhaustive `match` needs one more arm. No shim:
+  the error is new behaviour. Treat it like `NodeDown` (`MeshRpcError::is_endpoint_gone` is true
+  for it):
+
+  ```rust,ignore
+  match error {
+    MeshRpcError::NodeDown | MeshRpcError::PeerSilent { .. } => reconnect_later(),
+    other => fail(other),
+  }
+  ```
+
+- Mesh streams (server streams, subscriptions, two-way streams) now heartbeat. A stream whose
+  endpoint's node answers nothing for 3 × 5 s fails with `PeerSilent` even when no `peer_down` was
+  reported. Tune it with `MeshRpc::with_liveness(MeshLiveness::new().every(..).silent_after(..))`;
+  the interval and the deadline are clamped finite. An endpoint on 0.12 does not answer the
+  heartbeats: upgrade the serving nodes before (or with) the calling ones.
+- `channels::attach_session` on a bare mesh now delivers through the node's `MeshRpc` when one is
+  built over that mesh, so mesh RPC calls over the link run instead of being dropped as
+  unverified; and every envelope a session carries is checked against the session's peer (an
+  envelope naming a third node's process, or claiming a third node's name, is dropped and counted
+  in `SessionLink::stats`). Code that relied on `attach_session` dropping RPC calls should not
+  build a `MeshRpc` over that mesh.
+
 ## Tool: `rpc::check::CheckArgs::allow_retired`
 
 Owner: r13-f-rpc-retire. `id_effect_tool::rpc::check::CheckArgs` (the clap arguments of

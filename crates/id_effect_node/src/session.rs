@@ -3,6 +3,9 @@
 //! Combines transport connect/accept with the cookie handshake and frame
 //! codec. This is the unit the membership and remote-process layers build
 //! on: one session per (local, remote) pair per connection epoch.
+//!
+//! A [`crate::session_pump::SessionPump`] runs a session for a [`crate::Mesh`]: it verifies
+//! every envelope the peer sends against [`Session::peer`] before the node's ingress sees it.
 
 use crate::handshake::{Cookie, HandshakeError, initiate, respond};
 use crate::id::NodeId;
