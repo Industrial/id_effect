@@ -203,3 +203,7 @@ struct Ch3501ToolsStructuredOutput;
 #[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch35-02-embeddings.md")]
 struct Ch3502Embeddings;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-11-leptos-recipe.md")]
+struct Ch2911LeptosRecipe;

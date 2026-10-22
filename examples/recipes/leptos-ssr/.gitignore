@@ -1,0 +1,3 @@
+# The recipe builds outside the workspace, so it has its own target directory; the site
+# (`target/site/pkg`, written by scripts/build-site.sh) lives inside it.
+/target
