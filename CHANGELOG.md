@@ -244,6 +244,17 @@
   longer admitted. `Http3Options::congestion(CongestionControl::Cubic)` switches the `h3` route
   off BBR (still the default; the mesh stays CUBIC), and `Http3Options::config()` reads it from the
   config key `server.http3.congestion`; `CongestionControl` implements `FromStr`.
+- WebSocket control frames get their own rate cap (r13-f-ws-credit, 0.12 follow-up F39; ADR 0013
+  R4): `id_effect_axum`'s `WsConfig::classify` takes a hook sorting inbound messages into
+  `WsFrameClass::Data` and `WsFrameClass::Control`; control messages, and WebSocket pings and pongs
+  (uncounted before), no longer count against `messages_per_second` but against
+  `WsConfig::control_messages_per_second`, by default 4× the message rate
+  (`DEFAULT_CONTROL_RATE_FACTOR`), and exceeding it closes the socket with 1008
+  (`WsClose::ControlRateLimited`, "control frame rate exceeded"). `id_effect_rpc`'s WebSocket
+  transport installs `transport::ws::classify_frame` on every `RpcWsConfig` socket: well-formed
+  `credit` and `ping` frames of at most 256 bytes are control, so a client reading a fast stream is
+  no longer closed by its own credits. Additive API (`WsClose` is `#[non_exhaustive]`); no semver
+  break.
 - A node session pump, mesh RPC trace context and stream liveness (r13-f-mesh-session, 0.12
   follow-ups F30, F34; ADR 0013 R1 R4 R8): `id_effect_node::SessionPump` runs an authenticated
   `Session` for a mesh (peer registered, bounded send queue `SessionPumpConfig`, peer reported down
