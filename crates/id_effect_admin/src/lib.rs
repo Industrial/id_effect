@@ -68,7 +68,13 @@
 //! - **Signed-in principals only.** Even behind a guard that admits anonymous callers, an
 //!   anonymous principal is refused (401) before the policy is asked.
 //! - **Bounded input.** Query strings, search text, filter values and page cursors have limits
-//!   ([`list`]).
+//!   ([`list`]); a form body is at most 64 KiB (413 above) and a bulk action at most 100 records.
+//! - **No mass assignment.** Forms bind only the fields declared `#[entity(editable)]`; any other
+//!   submitted field is ignored and logged ([`forms`]).
+//! - **CSRF on every write.** A `POST` must have passed the masked-token check of
+//!   `id_effect_axum`'s `SecurityLayer`; without it the admin refuses to write (403).
+//! - **Every change audited** (feature `audit`): in the write's transaction, into the
+//!   hash-chained audit log ([`audit`]).
 //!
 //! ## Modules
 //!
@@ -78,6 +84,11 @@
 //! | [`entity`] | [`EntityAdmin`]: columns, search, filters, sort, page size |
 //! | [`permission`] | [`AdminPermission`], [`RbacAdminPolicy`] |
 //! | [`list`] | the list page's query parameters and limits |
+//! | [`edit`] | create, edit and delete pages: validation, hooks, optimistic locking |
+//! | [`forms`] | the bounded form decoder and the mass-assignment guard |
+//! | [`relations`] | `belongs_to` pickers, `has_many` / `many_to_many` inline lists |
+//! | [`bulk`] | bulk delete and custom [`BulkAction`]s (at most 100 records) |
+//! | [`audit`] | every change in the hash-chained audit log (feature `audit`) |
 //! | [`labels`] | labels and page text, translated with feature `i18n` |
 //! | `testing` | requests with a principal and tenant (feature `test-util`) |
 
@@ -99,6 +110,7 @@ pub mod site;
 pub mod testing;
 mod value;
 
+pub use bulk::{BulkAction, BulkContext};
 pub use entity::{AdminConfigError, EntityAdmin, EntityInfo, Filter};
 pub use permission::{AdminAction, AdminPermission, AdminPermissionError, RbacAdminPolicy};
 pub use site::{AdminDatabase, AdminSite, Guarded, SiteAccess, Unguarded};

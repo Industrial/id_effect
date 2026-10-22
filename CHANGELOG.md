@@ -228,6 +228,26 @@
   and the crate never builds unescaped markup (`no_preescaped_outside_trusted_module`); query
   strings (2 KiB, 414), search text (100 characters, `LIKE` wildcards literal) and cursors
   (fingerprint-checked, 400) are bounded. Book: chapter 30.8.
+- `id_effect_admin` editing (r13-e9-3-admin-edit; web.admin #1 write half, margin #4 #5 #6):
+  create, edit and delete pages (`/admin/<entity>/@new`, `{id}/@edit`, `{id}/@delete` with a
+  confirmation) from the entity's editable fields (`#[entity(editable)]`, narrowed by
+  `EntityAdmin::form`), `EntityAdmin::new_record`, `EntityAdmin::validate` and `#[from_row(schema)]`
+  validation errors bound to fields through the `ui` form helpers (422; translated with feature
+  `i18n` through the catalog's schema messages), writes through the repository with
+  `EntityAdmin::hooks` (lifecycle hooks) and optimistic locking (409 on a stale version);
+  `belongs_to` pickers (`@pick/<relation>`, htmx search), `has_many` inline lists and
+  `many_to_many` add / remove (`@rel/<relation>`); bulk delete and custom `BulkAction`s
+  (`BulkContext`) from list-page checkboxes; with feature `audit`, every create, update, delete,
+  join-table change and bulk action appended to the hash-chained audit log in the write's
+  transaction (on by default; `AdminSite::audit_log`, recorded opt-out
+  `AdminSite::dangerous_without_audit`); `testing::AdminRequest::post` / `csrf` and
+  `AdminResponse::csrf_token` / `csrf_cookie` / `location`; example `admin_site` (`--self-test`).
+  Secure by default (ADR 0013 R1, R4, R9, R10): only declared-editable fields are bound (others
+  ignored and logged), form bodies are capped at 64 KiB (413; `forms::decode_form`, the fuzz
+  target `admin_form_body`), a bulk action takes at most 100 ids, every `POST` needs the masked
+  CSRF check of `SecurityLayer` (403 without it), each action checks its permission, and pickers,
+  inline lists and submitted foreign keys stay in the request's tenant. Book: chapter 30.8
+  (editing, relations, bulk actions, audit trail).
 
 ### Changed
 

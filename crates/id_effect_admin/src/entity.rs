@@ -77,6 +77,9 @@ pub struct EntityAdmin<E> {
   sortable: Vec<String>,
   default_sort: Option<(String, SortOrder)>,
   page_size: u32,
+  /// The editing options: form fields, hooks, validation, new-record template, bulk actions
+  /// (set by the builder methods of [`edit`](crate::edit) and [`bulk`](crate::bulk)).
+  pub(crate) edit: crate::edit::EditOptions<E>,
   entity: PhantomData<fn() -> E>,
 }
 
@@ -92,6 +95,7 @@ impl<E> Default for EntityAdmin<E> {
       sortable: Vec::new(),
       default_sort: None,
       page_size: DEFAULT_PAGE_SIZE,
+      edit: crate::edit::EditOptions::default(),
       entity: PhantomData,
     }
   }
@@ -109,6 +113,7 @@ impl<E> Clone for EntityAdmin<E> {
       sortable: self.sortable.clone(),
       default_sort: self.default_sort.clone(),
       page_size: self.page_size,
+      edit: self.edit.clone(),
       entity: PhantomData,
     }
   }
@@ -335,6 +340,7 @@ impl<E: Entity> EntityAdmin<E> {
         size: self.page_size,
       });
     }
+    let edit = crate::edit::EditSpec::check::<E>(&self.edit, &self.exclude, &search)?;
     Ok(EntitySpec {
       slug,
       permissions,
@@ -351,6 +357,7 @@ impl<E: Entity> EntityAdmin<E> {
       sortable,
       default_sort,
       page_size: self.page_size,
+      edit,
     })
   }
 }
@@ -382,6 +389,8 @@ pub(crate) struct EntitySpec {
   pub(crate) sortable: Vec<usize>,
   pub(crate) default_sort: Option<(usize, SortOrder)>,
   pub(crate) page_size: u32,
+  /// Forms, relations and bulk actions, checked.
+  pub(crate) edit: crate::edit::EditSpec,
 }
 
 impl EntitySpec {
@@ -415,6 +424,9 @@ impl EntitySpec {
       sortable: names(&self.sortable),
       page_size: self.page_size,
       permissions: self.permissions.clone(),
+      form: names(&self.edit.form),
+      actions: self.edit.actions.iter().map(|a| a.name.clone()).collect(),
+      relations: self.edit.relations.iter().map(|r| r.name).collect(),
     }
   }
 }
@@ -446,6 +458,12 @@ pub struct EntityInfo {
   pub page_size: u32,
   /// The entity's permissions, one per [`AdminAction`] in [`AdminAction::ALL`] order.
   pub permissions: Vec<AdminPermission>,
+  /// The fields the create and edit forms bind ([`EntityAdmin::form`]).
+  pub form: Vec<&'static str>,
+  /// The custom bulk actions, by name ([`EntityAdmin::action`]).
+  pub actions: Vec<String>,
+  /// The declared relations ([`Entity::RELATIONS`]), by name.
+  pub relations: Vec<&'static str>,
 }
 
 /// Why an [`EntityAdmin`] (or an [`AdminSite`](crate::AdminSite)) configuration was refused.
@@ -532,6 +550,22 @@ pub enum AdminConfigError {
     /// The prefix.
     prefix: String,
   },
+  /// A form field is not declared `#[entity(editable)]`, is excluded, or is of a type a form
+  /// cannot parse ([`EntityAdmin::form`]).
+  NotEditable {
+    /// The entity type.
+    entity: &'static str,
+    /// The field.
+    field: String,
+  },
+  /// A bulk action's name is not snake_case ASCII starting with a letter, is `delete`, or is
+  /// registered twice ([`EntityAdmin::action`]).
+  InvalidAction {
+    /// The entity type.
+    entity: &'static str,
+    /// The action name.
+    action: String,
+  },
 }
 
 impl fmt::Display for AdminConfigError {
@@ -585,6 +619,16 @@ impl fmt::Display for AdminConfigError {
       Self::InvalidPrefix { prefix } => write!(
         f,
         "admin: path prefix `{prefix}` must be `/` followed by segments of a-z, 0-9, `-` and `_`"
+      ),
+      Self::NotEditable { entity, field } => write!(
+        f,
+        "admin `{entity}`: `{field}` is not an editable field (`#[entity(editable)]`, not \
+         excluded, of a type a form can parse)"
+      ),
+      Self::InvalidAction { entity, action } => write!(
+        f,
+        "admin `{entity}`: bulk action `{action}` must be a unique snake_case name other than \
+         `delete`"
       ),
     }
   }
