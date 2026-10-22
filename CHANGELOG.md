@@ -196,6 +196,20 @@
   `POST`) cannot be overridden. The bearer token is an `id_effect_config::SecretString`, and
   `Debug` of the transport shows header names only. Calls with different headers never share a
   batch request.
+- `id_effect_rpc`'s `WsClient` dials `wss://` itself and speaks postcard (r13-f-ws-client-tls,
+  0.12 follow-up F40; ADR 0013 R8): `WsClient::connect` (and `RpcClient::subscribe` over
+  `TransportKind::WebSocket`) takes `wss://` URLs over rustls, with the server name checked and the
+  certificate verified by `rustls-platform-verifier`, the root source of the platform HTTP client.
+  `WsClient::connect_with(request, &WsClientConfig)` takes a URL or a request carrying upgrade
+  headers (an `authorization` the guards read), `WsClientConfig::add_root_certificate_der` trusts
+  a private CA on top of the platform roots, and (feature `postcard`) `WsClientConfig::postcard(group)`
+  offers `idrpc.postcard.v1`, encoding inputs and decoding outputs through the group's typed codecs
+  (a procedure the group lacks is refused 404, one without `with_serde` schemas 415, before
+  anything is sent); `WsClient::over_postcard` does the same on a socket opened by hand and
+  `WsClient::codec` reports the negotiated codec. JSON stays the default; `WsClient::over` is
+  unchanged. There is no API that accepts an untrusted or invalid certificate. Feature `ws` turns
+  on tokio-tungstenite's `__rustls-tls` (no root store of its own), with the rustls and
+  `rustls-platform-verifier` already in the tree (one of each in `cargo tree -d`).
 - `id_effect_admin` core (r13-e9-3-admin-core, D2; web.admin #1 read half, #2, #3, #8): the
   `AdminSite` registration API, `AdminSite::new().register::<E>(EntityAdmin::default().list(..)
   .search(..).filter(..).sortable(..))`, checked against `Entity::FIELDS` when registered

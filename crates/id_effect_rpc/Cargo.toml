@@ -26,11 +26,17 @@ client = ["dep:id_effect_platform", "dep:id_effect_config"]
 # `postcard`: the binary codec negotiated per connection (D13; r12-e12-1-postcard).
 postcard = ["dep:postcard"]
 # `ws`: every kind over WebSocket frames, server (`transport::ws`, on id_effect_axum's realtime
-# layer) and client (`client::ws`, tokio-tungstenite at the pin axum's realtime layer uses).
+# layer) and client (`client::ws`, tokio-tungstenite at the pin axum's realtime layer uses). The
+# client dials `wss://` over rustls with the platform verifier (F40, r13-f-ws-client-tls):
+# tokio-tungstenite's `__rustls-tls` takes our `ClientConfig` and brings no root store of its
+# own (its `rustls-tls-*-roots` features would add a second root source).
 ws = [
   "id_effect_axum/ws",
   "dep:tokio-tungstenite",
   "dep:tungstenite",
+  "tokio-tungstenite/__rustls-tls",
+  "dep:rustls",
+  "dep:rustls-platform-verifier",
   "futures-util/sink",
 ]
 # `sse`: subscriptions and server streams over server-sent events (`transport::sse`, `client::sse`).
@@ -100,6 +106,11 @@ tokio-tungstenite = { version = "=0.29.0", optional = true, default-features = f
 tungstenite = { version = "=0.29.0", optional = true, default-features = false, features = [
   "handshake",
 ] }
+# `wss://` of `client::ws` (feature `ws`): the rustls and the platform verifier
+# id_effect_platform and reqwest already use (one copy of each in `cargo tree -d`; the rustls
+# floor carries the security fixes named in id_effect_platform's manifest).
+rustls = { version = "0.23.46", optional = true }
+rustls-platform-verifier = { version = "=0.7.1", optional = true }
 
 [dev-dependencies]
 # Path-only dev-dependencies (cargo publish resolves path+version dev-deps on crates.io).
@@ -107,8 +118,10 @@ id_effect_events = { path = "../id_effect_events", features = ["pg"] }
 # tests/channels_three_nodes.rs: three nodes on QUIC with mutual TLS (r12-e12-2-channels).
 id_effect_node = { path = "../id_effect_node", features = ["quic"] }
 id_effect_opentelemetry = { path = "../id_effect_opentelemetry" }
+# `tls`: tests/ws_client_tls.rs serves `wss://` with a throwaway certificate.
 id_effect_platform = { path = "../id_effect_platform", features = [
   "test-util",
+  "tls",
 ] }
 id_effect_test = { path = "../id_effect_test", features = ["sql"] }
 id_effect_tokio = { path = "../id_effect_tokio" }
