@@ -4,6 +4,17 @@
 
 ### Added
 
+- WebTransport in the host entry points (r13-f-webtransport-host, 0.12 follow-ups F43 and F45):
+  `HostConfig::webtransport` (config key `server.http3.webtransport`, `WEBTRANSPORT_KEY`; default
+  `false`, ADR 0013 R9) makes `ServerHandle`, `serve_router` and `serve` serve the app's
+  `webtransport::endpoint` routes on the host's own HTTP/3 endpoint (QUIC datagrams through
+  `webtransport::quic_limits`, `Http3Options::webtransport`), so apps no longer run a private
+  `serve_h3` endpoint; the route's `Origin` allowlist and session caps apply there unchanged.
+  Set without feature `webtransport` the host refuses to start; without HTTP/3 or TLS files the
+  posture warns (`WEBTRANSPORT_WITHOUT_HTTP3_WARNING`). `HostConfig` gains a public field
+  ([MIGRATION-0.13.md](docs/MIGRATION-0.13.md)). The generated TypeScript client is tested over
+  WebTransport under Deno (`--unstable-net`, `serverCertificateHashes` with the 13-day ECDSA
+  development certificate) against that host (`tests/ts/webtransport.test.ts`).
 - `id-effect generate admin <Entity> [--read-only] [--permissions admin.<name>]`
   (r13-e1-3-generate-admin, web.admin #8): finds the `#[derive(Entity)]` struct in the project's
   library and writes `src/admin/<entity>.rs` (an `id_effect_admin::EntityAdmin` with list columns,

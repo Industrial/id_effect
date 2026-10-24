@@ -18,6 +18,19 @@ pub const HTTP3_WITHOUT_TLS_WARNING: &str = "HTTP/3 is enabled but the host has 
   needs a certificate and browsers ignore Alt-Svc over plain HTTP, so no Alt-Svc is sent; set \
   HostConfig::tls (TLS_CERT_FILE and TLS_KEY_FILE) or turn HTTP/3 off (HTTP3=false)";
 
+/// The posture warning of a host that turns WebTransport on but serves no HTTP/3
+/// ([`HostConfig::posture_warnings`]).
+pub const WEBTRANSPORT_WITHOUT_HTTP3_WARNING: &str = "WebTransport is enabled \
+  (server.http3.webtransport) but the host serves no HTTP/3: WebTransport rides the host's \
+  HTTP/3 endpoint, which needs HTTP3=true and TLS certificate files (TLS_CERT_FILE and \
+  TLS_KEY_FILE); no WebTransport session can start";
+
+/// The config key of [`HostConfig::webtransport`]: `server.http3.webtransport` (default
+/// `false`). In a profile file that is `[server.http3] webtransport = true`; flat providers join
+/// the path with their delimiter (`server_http3_webtransport` for the environment provider's
+/// default), as `Http3Options::config` does for `server.http3.congestion`.
+pub const WEBTRANSPORT_KEY: &str = "server.http3.webtransport";
+
 /// TLS on the host's TCP listener ([`HostConfig::tls`]): PEM files (re-read when they change)
 /// or, with feature `tls`, ready settings.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,7 +102,7 @@ impl HostTls {
 
 /// Host bind, shutdown, load-shedding, TLS and HTTP/3 settings loaded from the environment
 /// (`HOST`, `PORT`, `SHUTDOWN_TIMEOUT_SECS`, `MAX_IN_FLIGHT`, `TLS_CERT_FILE`, `TLS_KEY_FILE`,
-/// `TLS_RELOAD_SECS`, `HTTP3`).
+/// `TLS_RELOAD_SECS`, `HTTP3`, and [`WEBTRANSPORT_KEY`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostConfig {
   /// Bind address (e.g. `0.0.0.0`).
@@ -109,11 +122,20 @@ pub struct HostConfig {
   /// [`Self::tls`]: without it the [posture warnings](Self::posture_warnings) say so and no
   /// `Alt-Svc` is sent. `false` turns HTTP/3 and `Alt-Svc` off.
   pub http3: bool,
+  /// Whether the host's HTTP/3 endpoint serves WebTransport sessions (feature `webtransport`,
+  /// [`WEBTRANSPORT_KEY`]; default `false`, ADR 0013 R9). On, the endpoint carries QUIC
+  /// datagrams (`webtransport::quic_limits`) and its connections advertise WebTransport
+  /// (`Http3Options::webtransport`), so the app's `webtransport::endpoint` routes take sessions
+  /// on the host's own port, with their `Origin` allowlist and session caps as on any
+  /// endpoint: no endpoint of the app's own is needed. Needs [`Self::http3`] and certificate
+  /// files (the [posture warnings](Self::posture_warnings) say when it has neither); set
+  /// without the feature, the host refuses to start.
+  pub webtransport: bool,
 }
 
 impl Default for HostConfig {
-  /// `0.0.0.0:8080`, a 30 s shutdown timeout, the default [`LoadShed`], plain HTTP and HTTP/3
-  /// on (what [`Self::config`] loads from an empty environment).
+  /// `0.0.0.0:8080`, a 30 s shutdown timeout, the default [`LoadShed`], plain HTTP, HTTP/3 on
+  /// and WebTransport off (what [`Self::config`] loads from an empty environment).
   fn default() -> Self {
     Self {
       bind_host: "0.0.0.0".to_owned(),
@@ -122,6 +144,7 @@ impl Default for HostConfig {
       load_shed: LoadShed::default(),
       tls: None,
       http3: true,
+      webtransport: false,
     }
   }
 }
@@ -171,25 +194,46 @@ impl HostConfig {
     ))
   }
 
+  /// The WebTransport descriptor: [`WEBTRANSPORT_KEY`] (`server.http3.webtransport`, default
+  /// `false`).
+  #[inline]
+  pub fn webtransport_descriptor() -> Config<bool> {
+    Config::boolean(WEBTRANSPORT_KEY).with_default(false)
+  }
+
   /// The validated descriptor (port in `1..=65535`, non-negative timeout, `MAX_IN_FLIGHT` at
   /// least 1, both TLS files or neither, non-negative `TLS_RELOAD_SECS`).
   #[inline]
   pub fn config() -> Config<HostConfig> {
-    Config::all((Self::descriptor(), Self::tls_descriptor())).map_attempt(Self::from_parts)
+    Config::all((
+      Self::descriptor(),
+      Self::tls_descriptor(),
+      Self::webtransport_descriptor(),
+    ))
+    .map_attempt(Self::from_parts)
   }
 
   #[allow(clippy::result_large_err, clippy::type_complexity)]
   fn from_parts(
-    (base, tls): (
+    (base, tls, webtransport): (
       (String, i64, i64, Option<i64>),
       (Option<String>, Option<String>, i64, bool),
+      bool,
     ),
   ) -> Result<Self, ConfigError> {
     let mut config = Self::from_tuple(base)?;
     let (tls, http3) = Self::tls_from_tuple(tls)?;
     config.tls = tls;
     config.http3 = http3;
+    config.webtransport = webtransport;
     Ok(config)
+  }
+
+  /// This config serving WebTransport on the host's HTTP/3 endpoint ([`Self::webtransport`]).
+  #[must_use]
+  pub fn with_webtransport(mut self) -> Self {
+    self.webtransport = true;
+    self
   }
 
   /// This config serving TLS with `tls`.
@@ -201,11 +245,16 @@ impl HostConfig {
 
   /// What the prod posture warns about in this config (empty when nothing): HTTP/3 enabled
   /// (feature `http3` and [`Self::http3`]) without [`Self::tls`]
-  /// ([`HTTP3_WITHOUT_TLS_WARNING`]). The host logs them when it starts.
+  /// ([`HTTP3_WITHOUT_TLS_WARNING`]); WebTransport on ([`Self::webtransport`]) while HTTP/3 is
+  /// off or has no TLS ([`WEBTRANSPORT_WITHOUT_HTTP3_WARNING`]). The host logs them when it
+  /// starts.
   pub fn posture_warnings(&self) -> Vec<&'static str> {
     let mut warnings = Vec::new();
     if cfg!(feature = "http3") && self.http3 && self.tls.is_none() {
       warnings.push(HTTP3_WITHOUT_TLS_WARNING);
+    }
+    if self.webtransport && !(self.http3 && self.tls.is_some()) {
+      warnings.push(WEBTRANSPORT_WITHOUT_HTTP3_WARNING);
     }
     warnings
   }
@@ -447,6 +496,58 @@ mod tests {
       ..HostConfig::default()
     };
     assert!(off.posture_warnings().is_empty());
+  }
+
+  #[test]
+  fn webtransport_is_off_unless_configured() {
+    use id_effect_config::ProviderOptions;
+
+    assert!(!load(&[]).unwrap().webtransport);
+    assert!(!HostConfig::default().webtransport);
+    // The environment form joins the path with `_`.
+    assert!(
+      load(&[("server_http3_webtransport", "true")])
+        .unwrap()
+        .webtransport
+    );
+    // Dotted, as a profile file (`[server.http3] webtransport = true`) provides it.
+    let dotted = MapConfigProvider::from_pairs_with_options(
+      [(WEBTRANSPORT_KEY, "true")],
+      ProviderOptions {
+        path_delim: ".",
+        ..ProviderOptions::default()
+      },
+    );
+    let cfg = load_host_config()
+      .provide_all(bootstrap_env(dotted))
+      .block_on()
+      .into_result()
+      .unwrap();
+    assert!(cfg.webtransport);
+    assert!(load(&[("server_http3_webtransport", "maybe")]).is_err());
+    assert!(HostConfig::default().with_webtransport().webtransport);
+  }
+
+  #[test]
+  fn posture_warns_about_webtransport_without_http3() {
+    let served = HostConfig::default()
+      .with_tls(HostTls::files("c.pem", "k.pem"))
+      .with_webtransport();
+    assert!(served.posture_warnings().is_empty());
+    let no_tls = HostConfig::default().with_webtransport();
+    assert!(
+      no_tls
+        .posture_warnings()
+        .contains(&WEBTRANSPORT_WITHOUT_HTTP3_WARNING)
+    );
+    let no_http3 = HostConfig {
+      http3: false,
+      ..served
+    };
+    assert_eq!(
+      no_http3.posture_warnings(),
+      vec![WEBTRANSPORT_WITHOUT_HTTP3_WARNING]
+    );
   }
 
   #[test]
