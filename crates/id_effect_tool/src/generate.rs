@@ -2714,7 +2714,7 @@ mod tests {
 
     #[test]
     fn secrets_are_recognized_by_word() {
-      for secret in [
+      for name in [
         "password_hash",
         "api_token",
         "apiKey",
@@ -2722,7 +2722,7 @@ mod tests {
         "totp",
         "secret",
       ] {
-        assert!(is_secret(secret), "{secret}");
+        assert!(is_secret(name), "{name}");
       }
       for plain in ["footprint", "tokenizer_name", "title", "keyword"] {
         assert!(!is_secret(plain), "{plain}");

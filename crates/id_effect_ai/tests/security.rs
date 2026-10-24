@@ -96,9 +96,15 @@ fn ai_api_key_redacted_in_debug() {
     format!("{anthropic:?}"),
   ] {
     for key in ["sk-openai-secret", "sk-anthropic-secret", "cursor-secret"] {
-      assert!(!printed.contains(key), "{key} printed in {printed}");
+      assert!(
+        !printed.contains(key),
+        "an API key leaked into a Debug print"
+      );
     }
-    assert!(printed.contains("<redacted>"), "{printed}");
+    assert!(
+      printed.contains("<redacted>"),
+      "a Debug print lacks the <redacted> marker"
+    );
   }
 }
 

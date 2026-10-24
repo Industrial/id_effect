@@ -244,7 +244,10 @@ mod tests {
       OpenAiEmbedder::MAX_BATCH_SIZE
     );
     let printed = format!("{embedder:?}");
-    assert!(!printed.contains("sk-embed-secret"), "{printed}");
+    assert!(
+      !printed.contains("sk-embed-secret"),
+      "the API key leaked into the Debug print"
+    );
     assert!(OpenAiEmbedder::from_config(&AiConfig::default()).is_err());
     assert!(provide_openai_embedder::<AiError>(cfg.http_client(), AiConfig::default()).is_err());
   }

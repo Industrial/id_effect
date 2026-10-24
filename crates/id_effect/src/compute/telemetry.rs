@@ -58,7 +58,7 @@ enum SysinfoPhase {
   /// The priming sample is being taken on a background thread.
   Priming(mpsc::Receiver<sysinfo::System>),
   /// Primed: refreshes are cheap and happen on the calling thread.
-  Ready(SysinfoState),
+  Ready(Box<SysinfoState>),
 }
 
 #[derive(Debug)]
@@ -128,13 +128,13 @@ impl SysinfoTelemetry {
     }
   }
 
-  fn ready(sys: sysinfo::System) -> SysinfoState {
+  fn ready(sys: sysinfo::System) -> Box<SysinfoState> {
     let last = Self::read(&sys, false);
-    SysinfoState {
+    Box::new(SysinfoState {
       sys,
       last_refresh: Instant::now(),
       last,
-    }
+    })
   }
 
   fn read(sys: &sysinfo::System, cpu_known: bool) -> TelemetrySnapshot {

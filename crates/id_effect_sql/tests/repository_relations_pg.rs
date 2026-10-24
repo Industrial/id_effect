@@ -72,7 +72,7 @@ mod pg {
     let config = PgPoolConfig::from_url(url.to_owned()).with_max_size(2);
     let pool = pg_pool_from_config(config)
       .await
-      .unwrap_or_else(|e| panic!("pool for {url}: {}", e.0));
+      .unwrap_or_else(|e| panic!("pool: {}", e.0));
     let client = PgSqlClient::new(pool);
     let connected = id_effect_tokio::TokioRuntime::current()
       .expect("tokio")
