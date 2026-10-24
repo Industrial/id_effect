@@ -441,3 +441,123 @@ confirmed delete:
 ```bash
 cargo run -p id_effect_admin --all-features --example admin_site -- --self-test
 ```
+
+## Generating an admin
+
+In a project `id-effect new` generated, `id-effect generate admin` writes the registration for
+you, from the fields of an entity you already have:
+
+```bash
+id-effect generate admin Document
+id-effect generate admin Invoice --read-only --permissions admin.billing_invoice
+```
+
+It finds the `#[derive(Entity)]` struct of that name in the library (`src/lib.rs` and its modules;
+it must be `pub`, with an `#[entity(id)]` field) and changes the project:
+
+| File | Change |
+|---|---|
+| `src/admin/document.rs` | new: `admin()`, the entity's `EntityAdmin`; `SLUG`, the offered `ACTIONS`, `register`, `permissions` and tests |
+| `src/admin/mod.rs` | `pub mod document;` and its lines in `site()` and `permissions()`; created with `PREFIX`, `site()`, `permissions()`, `policy()` and `router()` |
+| `src/lib.rs` | `pub mod admin;` |
+| `Cargo.toml` | `id_effect_admin` and `id_effect_kit`'s `authz` feature (and, in a `--local-workspace` project, their `[patch.crates-io]` entries) |
+
+The configuration comes from the field types: the id and up to five more fields as list columns,
+text fields in the search box, `bool` fields and status-like text fields (`status`, `state`,
+`kind`, `…_status`) as filters, non-null columns sortable. The tenant, soft-delete and version
+columns stay on the detail page, and a field whose name looks like a secret (`password_hash`,
+`api_token`, `totp_secret`) is excluded from every page. The module is yours to edit afterwards;
+running the generator again changes nothing (each line is added once) and never overwrites a module
+you edited. For the `Invoice` of the second command it writes:
+
+```rust
+use id_effect_admin::{AdminAction, AdminPermission, EntityAdmin, Filter};
+use id_effect_sql::{Entity, FromRow};
+
+#[derive(Clone, Debug, FromRow, Entity)]
+#[entity(table = "invoices")]
+pub struct Invoice {
+    #[entity(id)]
+    pub number: String,
+    pub customer: String,
+    pub amount_cents: i64,
+    pub paid: bool,
+}
+
+// src/admin/invoice.rs
+pub const SLUG: &str = "billing_invoice";
+pub const ACTIONS: &[AdminAction] = &[AdminAction::List, AdminAction::View];
+
+pub fn admin() -> EntityAdmin<Invoice> {
+    EntityAdmin::default()
+        .slug(SLUG)
+        .list(["number", "customer", "amount_cents", "paid"])
+        .search(["customer"])
+        .filter("paid", Filter::exact())
+        .sortable(["number", "customer", "amount_cents"])
+}
+
+pub fn permissions() -> Vec<AdminPermission> {
+    let info = admin().info().unwrap();
+    let offered = |p: &AdminPermission| ACTIONS.contains(&p.action());
+    info.permissions.into_iter().filter(offered).collect()
+}
+
+let names: Vec<String> = permissions().iter().map(ToString::to_string).collect();
+assert_eq!(names, ["admin.billing_invoice.list", "admin.billing_invoice.view"]);
+```
+
+**Secure by default.** No flag makes the admin public: the generated `router(guard, rbac, db)` mounts
+the site only through `.guard(guard)`, and every page checks its permission before any query. The
+generated `policy(rbac)` allows a permission only when an entity's admin offers it *and* the
+`Rbac` table grants it, so nothing is allowed until you grant it, and `--read-only` really is read
+only — the entity's `create`, `update`, `delete` and `bulk` permissions are refused even to a role
+granted `*`:
+
+```rust
+use id_effect_admin::{AdminAction, AdminPermission, RbacAdminPolicy};
+use id_effect_authz::{
+    BasicPrincipal, CurrentPrincipal, Decision, Policy, PolicyExt, Rbac, predicate,
+};
+
+// What `admin::permissions()` returns for the read-only invoice admin.
+let offered = vec![
+    AdminPermission::new("billing_invoice", AdminAction::List).unwrap(),
+    AdminPermission::new("billing_invoice", AdminAction::View).unwrap(),
+];
+// `admin::policy(rbac)`, as generated.
+let policy = |rbac: Rbac| {
+    let offered = offered.clone();
+    predicate(
+        "not offered by this admin",
+        move |_: &CurrentPrincipal, permission: &AdminPermission| offered.contains(permission),
+    )
+    .and(RbacAdminPolicy::new(rbac))
+};
+
+let root = CurrentPrincipal::new(BasicPrincipal::new("root").with_role("root"));
+let everything = policy(Rbac::builder().grant("root", ["*"]).build());
+let list = AdminPermission::new("billing_invoice", AdminAction::List).unwrap();
+let delete = AdminPermission::new("billing_invoice", AdminAction::Delete).unwrap();
+assert_eq!(everything.decide_now(&root, &list), Some(Decision::Allow));
+assert!(matches!(everything.decide_now(&root, &delete), Some(Decision::Deny(_))));
+
+// Nothing is granted: nothing is allowed.
+let nothing = policy(Rbac::default());
+assert!(matches!(nothing.decide_now(&root, &list), Some(Decision::Deny(_))));
+```
+
+`--permissions admin.<name>` names the entity's permissions `admin.<name>.<action>` and its pages
+`/admin/<name>` (by default the entity's name in snake case); any other shape is refused. Grant
+roles what `admin::permissions()` lists, then mount the router inside the application's
+authentication layer and `SecurityLayer`:
+
+```text
+let staff = admin::permissions()?.iter().map(ToString::to_string).collect::<Vec<_>>();
+let rbac = Rbac::builder().grant("staff", staff).build();
+let routes = admin::router(Guard::new("staff", require_role("staff")), rbac, db)?;
+```
+
+The generated tests check the configuration against the entity's fields, that nothing is allowed
+before a grant, that only the offered actions can be granted, and that every page sits behind the
+guard: `cargo test admin::`.

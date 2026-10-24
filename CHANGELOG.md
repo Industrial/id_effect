@@ -4,6 +4,17 @@
 
 ### Added
 
+- `id-effect generate admin <Entity> [--read-only] [--permissions admin.<name>]`
+  (r13-e1-3-generate-admin, web.admin #8): finds the `#[derive(Entity)]` struct in the project's
+  library and writes `src/admin/<entity>.rs` (an `id_effect_admin::EntityAdmin` with list columns,
+  search, filters and sortable columns from the entity's fields; secret-looking fields excluded;
+  `register`, `permissions` and tests), registers it in `src/admin/mod.rs` (`site()`,
+  `permissions()`, `policy()`, `router()`), adds `pub mod admin;`, the `id_effect_admin`
+  dependency and the kit's `authz` feature; idempotent, never overwrites an edited module.
+  Secure by default (ADR 0013 R1): the generated `router` mounts the site only with `.guard(g)`,
+  every permission is denied until granted, and `policy` refuses whatever no entity's admin offers,
+  so `--read-only` admins refuse create/update/delete/bulk even to a `*` grant. Templates under
+  `templates/generate/admin/`; book chapter 30.8 "Generating an admin".
 - Tenant resolution and one database per tenant (r13-e5-5-tenancy, D10; eco.tenancy #8):
   `id_effect_authz::TenantResolver` resolves a request's `TenantId` from the authenticated
   principal's claim by default, from the Host through `with_host_allowlist` (a host outside it

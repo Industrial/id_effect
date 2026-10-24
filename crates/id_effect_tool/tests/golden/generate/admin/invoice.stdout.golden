@@ -1,0 +1,12 @@
+Generated the admin of `Invoice` (pages /admin/billing_invoice, permissions admin.billing_invoice.<action>):
+  created  src/admin/invoice.rs: admin() (EntityAdmin<Invoice>: list number, customer, amount_cents, paid; search customer; filters paid), register, permissions and tests
+  updated  src/admin/mod.rs: pub mod invoice, invoice in site(), invoice in permissions()
+
+Offered (nobody holds them until a role is granted them):
+  admin.billing_invoice.list, admin.billing_invoice.view
+
+Next:
+  cargo test admin::invoice
+  Grant them: Rbac::builder().grant("staff", admin::invoice::permissions()?.iter().map(ToString::to_string)).build()
+  Mount it: admin::router(Guard::new("staff", require_role("staff")), rbac, AdminDatabase::new(sql_client, Dialect::Postgres))?,
+    merged into the app's router inside its authentication layer and SecurityLayer
