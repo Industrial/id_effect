@@ -51,12 +51,12 @@ pub mod vendors;
 #[cfg(feature = "cursor")]
 pub mod cursor;
 
+#[cfg(feature = "tools")]
+pub mod agent;
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
 #[cfg(feature = "mcp")]
 pub mod mcp;
-#[cfg(feature = "tools")]
-pub mod agent;
 #[cfg(feature = "tools")]
 pub mod structured;
 #[cfg(feature = "tools")]
