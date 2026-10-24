@@ -1279,6 +1279,66 @@ mod tests {
     assert!(r.admit(t0 + Duration::from_millis(500)));
   }
 
+  #[test]
+  fn origins_replace_the_policy() {
+    let app = OriginPolicy::allow(["https://app.example"]).unwrap();
+    let c = WsConfig::new().origins(app);
+    assert!(c.origin_policy().allows("https://app.example"));
+    let c = c.origins(OriginPolicy::deny_all());
+    assert!(!c.origin_policy().allows("https://app.example"));
+  }
+
+  #[test]
+  fn channel_socket_yields_its_inbox_and_ends_with_it() {
+    let exec = id_effect::TestExecutor::new();
+    let (in_tx, in_rx) = mpsc::channel(4);
+    let (out_tx, _out_rx) = mpsc::channel(4);
+    let ip = IpAddr::from([127, 0, 0, 1]);
+    let socket = WsSocket::from_channels(in_rx, out_tx, Some("p".to_owned()), Some(ip));
+    assert_eq!(socket.protocol(), Some("p"));
+    assert_eq!(socket.client_ip(), Some(ip));
+    in_tx.try_send(WsMessage::from("a")).unwrap();
+    in_tx.try_send(WsMessage::from("b")).unwrap();
+    drop(in_tx);
+    let seen: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
+    let done: Slot<()> = Arc::new(std::sync::Mutex::new(None));
+    let (incoming, _sender) = socket.into_parts::<Never, HNil>();
+    let into = Arc::clone(&seen);
+    let finished = Arc::clone(&done);
+    let run = incoming
+      .run_for_each_effect(move |msg: WsMessage| {
+        into
+          .lock()
+          .unwrap()
+          .push(msg.as_text().unwrap_or_default().to_owned());
+        succeed(())
+      })
+      .map(move |()| *finished.lock().unwrap() = Some(()));
+    drop(run.fork_root(Arc::new(exec.clone())));
+    exec.run_until_stalled();
+    assert_eq!(*seen.lock().unwrap(), ["a", "b"]);
+    assert_eq!(done.lock().unwrap().take(), Some(()), "the stream ended");
+  }
+
+  #[test]
+  fn within_gives_up_on_the_executor_clock() {
+    let exec = id_effect::TestExecutor::new();
+    let clock: Arc<dyn Executor> = Arc::new(exec.clone());
+    let slot: Slot<Option<()>> = Arc::new(std::sync::Mutex::new(None));
+    let out = Arc::clone(&slot);
+    let eff: Effect<(), Never, HNil> = from_async(move || async move {
+      let r = within(&clock, Duration::from_secs(1), std::future::pending::<()>()).await;
+      *out.lock().unwrap() = Some(r);
+      Ok(())
+    });
+    drop(eff.fork_root(Arc::new(exec.clone())));
+    exec.run_until_stalled();
+    assert!(slot.lock().unwrap().is_none(), "still waiting");
+    exec.advance(Duration::from_secs(1));
+    exec.run_until_stalled();
+    assert_eq!(slot.lock().unwrap().take(), Some(None));
+  }
+
   type Slot<T> = Arc<std::sync::Mutex<Option<T>>>;
   type Client = WebSocketStream<tokio::io::DuplexStream>;
 
