@@ -1,4 +1,4 @@
-//! The admin back office (id_effect_admin): a module per entity (its list columns, search box and
+//! The admin back office (id_effect_kit::admin): a module per entity (its list columns, search box and
 //! filters), each registered in [`site`] with its permissions listed in [`permissions`].
 //! `id-effect generate admin <Entity>` adds the module and its lines.
 //!
@@ -17,7 +17,9 @@
 pub mod document;
 pub mod invoice;
 
-use id_effect_admin::{AdminConfigError, AdminDatabase, AdminPermission, AdminSite, RbacAdminPolicy};
+use id_effect_kit::admin::{
+    AdminConfigError, AdminDatabase, AdminPermission, AdminSite, RbacAdminPolicy,
+};
 use id_effect_kit::authz::{CurrentPrincipal, Policy, PolicyExt, Rbac, predicate};
 use id_effect_kit::axum::route::{RouteGuard, Router};
 

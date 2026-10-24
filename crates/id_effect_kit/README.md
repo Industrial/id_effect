@@ -45,7 +45,15 @@ id_effect = "0.12"
 | `rpc-ws` | `rpc` + every kind over one WebSocket (resume), subscriptions and server streams over SSE | `id_effect_kit::rpc::transport` |
 | `http3` | `web` + TLS on TCP and HTTP/3 on the same port (`HostConfig::http3`, on by default), `platform::tls`; with `rpc`: RPC over HTTP/3; with `http-client`: the HTTP/3 client | `id_effect_kit::axum::server::h3` |
 | `webtransport` | `http3` + `rpc-ws` + RPC over WebTransport sessions | `id_effect_kit::rpc::transport::webtransport` |
-| `test` | `id_effect_test` (containers, isolated databases, fixtures, HTTP client) — for `[dev-dependencies]` | `id_effect_kit::test` |
+| `process` | `id_effect_process` (local processes: typed mailboxes, links, monitors, supervision trees); turned on by `cluster` | `id_effect_kit::process` |
+| `ai` | `id_effect_ai` (chat and streaming, OpenAI and Anthropic, typed tools, structured output, the bounded tool loop; prompts never logged unless `dangerous_log_prompts`) | `id_effect_kit::ai` |
+| `embeddings` | `ai` + the `Embedder` capability (OpenAI, Ollama, similarity) | `id_effect_kit::ai::embeddings` |
+| `mcp` | `ai` + `web` + `authz` + the MCP server and client (stdio, the guarded Streamable HTTP `McpEndpoint`) | `id_effect_kit::ai::mcp` |
+| `ui` | `web` + server-rendered UI (maud views, components, layouts, htmx, forms; with `i18n`: maud messages). `html!` needs `maud` as a dependency of its own | `id_effect_kit::ui` |
+| `i18n` | `id_effect_i18n` (Fluent catalogs, plurals, `CurrentLocale`, translated `Schema` messages; with `web`: the `Accept-Language` layer) | `id_effect_kit::i18n` |
+| `admin` | `ui` + `authz` + `repository` + `id_effect_admin` (the back office, mounted only behind a guard; with `audit`: the audit trail; with `i18n`: translated labels) | `id_effect_kit::admin` |
+| `tenancy` | `authz` + `repository` + one tenant for authorization and queries (`Tenancy`; with `web`: `TenancyLayer`, which sets `TenantId` and `CurrentTenant` per request) | `id_effect_kit::tenancy` |
+| `test` | `id_effect_test` (containers, isolated databases, fixtures, HTTP client; with `ai`: `ScriptedModel`; with `admin`: its request helpers) — for `[dev-dependencies]` | `id_effect_kit::test` |
 | `full` | all of the above except `test`; builds without Docker or system libraries | |
 
 Enable `test` on a `[dev-dependencies]` entry of the kit (`id_effect_kit = { version = "0.12", features = ["test"] }`), so containers and fixtures stay out of the shipped binary.

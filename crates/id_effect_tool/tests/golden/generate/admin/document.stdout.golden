@@ -2,7 +2,7 @@ Generated the admin of `Document` (pages /admin/document, permissions admin.docu
   created  src/admin/document.rs: admin() (EntityAdmin<Document>: list id, title, status, pages, reviewed, summary; search title, summary; filters status, reviewed; excluded api_token), register, permissions and tests
   created  src/admin/mod.rs: PREFIX, site(), permissions(), policy() and router() (behind a guard), pub mod document, document in site(), document in permissions()
   updated  src/lib.rs: pub mod admin
-  updated  Cargo.toml: id_effect_admin = "0.13.0", id_effect_kit feature `authz`
+  updated  Cargo.toml: id_effect_kit feature `admin`
 
 Offered (nobody holds them until a role is granted them):
   admin.document.list, admin.document.view, admin.document.create, admin.document.update, admin.document.delete, admin.document.bulk

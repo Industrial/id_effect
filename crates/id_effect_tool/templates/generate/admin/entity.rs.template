@@ -12,7 +12,9 @@
 {{/if}}
 
 {{#if filters}}
-use {{admin}}::{AdminAction, AdminConfigError, AdminPermission, AdminSite, EntityAdmin, Filter};
+use {{admin}}::{
+    AdminAction, AdminConfigError, AdminPermission, AdminSite, EntityAdmin, Filter,
+};
 {{/if}}
 {{#if !filters}}
 use {{admin}}::{AdminAction, AdminConfigError, AdminPermission, AdminSite, EntityAdmin};
@@ -90,7 +92,11 @@ mod tests {
         let root = CurrentPrincipal::new(BasicPrincipal::new("root").with_role("root"));
         for permission in admin().info().unwrap().permissions {
             let allowed = policy.decide_now(&root, &permission) == Some(Decision::Allow);
-            assert_eq!(allowed, ACTIONS.contains(&permission.action()), "{permission}");
+            assert_eq!(
+                allowed,
+                ACTIONS.contains(&permission.action()),
+                "{permission}"
+            );
         }
         assert_eq!(permissions().unwrap().len(), ACTIONS.len());
     }
@@ -103,6 +109,11 @@ mod tests {
         let report = routes.access_report();
         assert!(report.public.is_empty(), "{:?}", report.public);
         let list = format!("GET {PREFIX}/{SLUG}");
-        assert!(report.guarded.iter().any(|(route, _)| route.as_str() == list));
+        assert!(
+            report
+                .guarded
+                .iter()
+                .any(|(route, _)| route.as_str() == list)
+        );
     }
 }

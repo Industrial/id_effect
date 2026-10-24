@@ -14,7 +14,9 @@
 //! let routes = admin::router(guard, rbac, AdminDatabase::new(sql_client, Dialect::Postgres))?;
 //! ```
 
-use {{admin}}::{AdminConfigError, AdminDatabase, AdminPermission, AdminSite, RbacAdminPolicy};
+use {{admin}}::{
+    AdminConfigError, AdminDatabase, AdminPermission, AdminSite, RbacAdminPolicy,
+};
 use id_effect_kit::authz::{CurrentPrincipal, Policy, PolicyExt, Rbac, predicate};
 use id_effect_kit::axum::route::{RouteGuard, Router};
 

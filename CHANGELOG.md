@@ -4,6 +4,30 @@
 
 ### Added
 
+- Kit features for the breadth batteries (r13-w5-kit-template, ADR 0015): `ai`
+  (`id_effect_kit::ai`: chat, streaming, OpenAI and Anthropic, typed tools, the bounded tool
+  loop), `embeddings` (`ai::embeddings`, OpenAI and Ollama), `mcp` (`ai::mcp`, the guarded
+  Streamable HTTP endpoint; implies `web` and `authz`), `ui` (`id_effect_kit::ui`, id_effect_axum's
+  maud views and htmx), `i18n` (`id_effect_kit::i18n`; with `web` the `Accept-Language` layer, with
+  `ui` maud messages), `admin` (`id_effect_kit::admin`; implies `ui`, `authz`, `repository`; with
+  `audit` the audit trail, with `i18n` translated labels) and `tenancy`
+  (`id_effect_kit::tenancy`): all off by default and in `full`, each with prelude items. `tenancy`
+  bridges one `id_effect_authz::TenantResolver` to both the authorization tenant (`TenantId`, a
+  `TenantScope`) and `id_effect_sql::CurrentTenant` (D10): `Tenancy` (`resolve`, `env`,
+  `repository`, `scope` for `TenantRouter`, `check`), and with `web` one `TenancyLayer` that
+  records both per request (extensions and `RequestCaps`) and the `Tenancy` extractor, so sql and
+  authz stay independent. F55: feature `process` re-exports `id_effect_kit::process`
+  (id_effect_process; turned on by `cluster`), and the `cluster` template imports it from the kit
+  instead of depending on id_effect_process. `test` with `ai` adds `ScriptedModel`, with `admin`
+  the admin's request helpers. Posture probes "admin guarded" (`Posture::admin`, `admin_site`,
+  `admin_routes`), "mcp guarded" (`mcp`, `mcp_endpoint`, `mcp_routes`; also fails on an
+  unaccepted `dangerous_mcp_write_tools`), "prompts not logged" (`prompts_logged`, `ai_config`)
+  and "tenant not from header" (`tenant_header`, `tenant_resolver`): each fails the prod profile
+  unless its opt-out is an accepted risk (ADR 0013 R7 R10). `id-effect generate admin` now imports
+  `id_effect_kit::admin` and turns on the kit's `admin` feature instead of adding an
+  `id_effect_admin` dependency; `scripts/template-smoke.sh` runs it on a generated `service`
+  (variant `service-admin`); `scripts/check-dangerous.sh` requires `dangerous_log_prompts`,
+  `dangerous_mcp_write_tools`, `dangerous_tenant_from_header` and `dangerous_without_audit`.
 - WebTransport in the host entry points (r13-f-webtransport-host, 0.12 follow-ups F43 and F45):
   `HostConfig::webtransport` (config key `server.http3.webtransport`, `WEBTRANSPORT_KEY`; default
   `false`, ADR 0013 R9) makes `ServerHandle`, `serve_router` and `serve` serve the app's

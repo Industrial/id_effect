@@ -31,7 +31,8 @@ EXEMPT=(
 )
 
 # `path:function` of the opt-outs 0.12 introduced (ADR 0014 C4, C6, C7, C11, C12; the TLS and
-# QUIC limits). Each is also a posture probe input (id_effect_kit::posture).
+# QUIC limits) and 0.13 introduced (ADR 0015: prompts, MCP write tools, tenant header, admin
+# audit). Each is also a posture probe input (id_effect_kit::posture).
 REQUIRED=(
     "crates/id_effect_axum/src/realtime/origin.rs:dangerous_any_origin"
     "crates/id_effect_axum/src/realtime/ws.rs:dangerous_any_origin"
@@ -43,6 +44,12 @@ REQUIRED=(
     "crates/id_effect_platform/src/quic/config.rs:dangerous_raise_limits"
     "crates/id_effect_rpc/src/channels/policy.rs:dangerous_allow_all_joins"
     "crates/id_effect_rpc/src/openapi.rs:public_dangerous"
+    # 0.13 (ADR 0015, the breadth batteries): each is read by a posture probe ("prompts not
+    # logged", "mcp guarded", "tenant not from header") or by "no unaccepted opt-out".
+    "crates/id_effect_ai/src/config.rs:dangerous_log_prompts"
+    "crates/id_effect_ai/src/mcp/server.rs:dangerous_mcp_write_tools"
+    "crates/id_effect_authz/src/tenant.rs:dangerous_tenant_from_header"
+    "crates/id_effect_admin/src/audit.rs:dangerous_without_audit"
 )
 
 # Reads every file given; prints `file:line: problem` and `checked <n> <direct> <delegated>`.
@@ -357,6 +364,6 @@ if ((required)); then
         fi
     done
     ((missing == 0)) || exit 1
-    echo "check-dangerous: the ${#REQUIRED[@]} opt-outs of REQUIRED (0.12) exist and record themselves"
+    echo "check-dangerous: the ${#REQUIRED[@]} opt-outs of REQUIRED (0.12, 0.13) exist and record themselves"
 fi
 echo "check-dangerous: $checked dangerous_*/insecure_*/*_dangerous/*_insecure functions record their opt-out ($direct directly, $delegated by delegation)"

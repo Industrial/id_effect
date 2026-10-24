@@ -21,6 +21,8 @@ is escaped, and the list updates in place with htmx.
 ```toml
 [dependencies]
 id_effect_admin = "0.13"
+# or, through the kit: `id_effect_kit::admin` (with `authz`, `ui` and `repository`)
+# id_effect_kit = { version = "0.13", features = ["admin"] }
 ```
 
 ## Registering entities
@@ -460,7 +462,7 @@ it must be `pub`, with an `#[entity(id)]` field) and changes the project:
 | `src/admin/document.rs` | new: `admin()`, the entity's `EntityAdmin`; `SLUG`, the offered `ACTIONS`, `register`, `permissions` and tests |
 | `src/admin/mod.rs` | `pub mod document;` and its lines in `site()` and `permissions()`; created with `PREFIX`, `site()`, `permissions()`, `policy()` and `router()` |
 | `src/lib.rs` | `pub mod admin;` |
-| `Cargo.toml` | `id_effect_admin` and `id_effect_kit`'s `authz` feature (and, in a `--local-workspace` project, their `[patch.crates-io]` entries) |
+| `Cargo.toml` | `id_effect_kit`'s `admin` feature, so the module imports `id_effect_kit::admin` (and, in a `--local-workspace` project, the `[patch.crates-io]` entries of the crates it adds) |
 
 The configuration comes from the field types: the id and up to five more fields as list columns,
 text fields in the search box, `bool` fields and status-like text fields (`status`, `state`,
