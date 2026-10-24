@@ -1,0 +1,31 @@
+error[E0599]: no method named `router` found for struct `AdminSite` in the current scope
+  --> ui/r1_admin_site_without_guard.rs:12:28
+   |
+12 |   let _ = AdminSite::new().router::<()>(db());
+   |                            ^^^^^^ method not found in `AdminSite`
+   |
+   = note: the method was found for `AdminSite<id_effect_admin::Guarded>`
+
+error[E0277]: the trait bound `id_effect_kit::prelude::Public: RouteGuard` is not satisfied
+  --> ui/r1_admin_site_without_guard.rs:13:34
+   |
+13 |   let _ = AdminSite::new().guard(Public).router::<()>(db());
+   |                            ----- ^^^^^^ the trait `RouteGuard` is not implemented for `id_effect_kit::prelude::Public`
+   |                            |
+   |                            required by a bound introduced by this call
+   |
+help: the following other types implement trait `RouteGuard`
+  --> $WORKSPACE/crates/id_effect_authz/src/guard.rs
+   |
+   | impl RouteGuard for Guard {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^ `Guard`
+   |
+  ::: $WORKSPACE/crates/id_effect_rpc/src/transport/mesh.rs
+   |
+   | impl RouteGuard for MeshPeerGuard {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MeshPeerGuard`
+note: required by a bound in `AdminSite::guard`
+  --> $WORKSPACE/crates/id_effect_admin/src/site.rs
+   |
+   |   pub fn guard(self, guard: impl RouteGuard) -> AdminSite<Guarded> {
+   |                                  ^^^^^^^^^^ required by this bound in `AdminSite::guard`

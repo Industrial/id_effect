@@ -15,7 +15,8 @@ permissions:
 jobs:
   PR:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # fuzz-seconds (115 minutes) plus the build.
+    timeout-minutes: 150
     permissions:
       contents: read
       # Download the corpus the batch job stored as workflow artifacts.
@@ -41,8 +42,9 @@ jobs:
         uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # Split evenly across the targets: 5 minutes each for the 17 in fuzz/ (D20; 0.12 added the
-          # six rpc and SSE decoders). Add 300 per target added to fuzz/Cargo.toml.
-          fuzz-seconds: 5100
+          # Split evenly across the targets: 5 minutes each for the 23 in fuzz/ (D20; 0.12 added the
+          # six rpc and SSE decoders, 0.13 the six breadth decoders). Add 300 per target added to
+          # fuzz/Cargo.toml (and raise timeout-minutes with it).
+          fuzz-seconds: 6900
           mode: code-change
           sanitizer: ${{ matrix.sanitizer }}

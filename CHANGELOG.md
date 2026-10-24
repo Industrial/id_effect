@@ -293,6 +293,16 @@
   CSRF check of `SecurityLayer` (403 without it), each action checks its permission, and pickers,
   inline lists and submitted foreign keys stay in the request's tenant. Book: chapter 30.8
   (editing, relations, bulk actions, audit trail).
+- Security proof of the breadth batteries (r13-e-fuzz-security): six cargo-fuzz targets with
+  seed corpora for the 0.13 decoders (`i18n_accept_language`, `sql_page_cursor`,
+  `mcp_jsonrpc_message`, `ai_sse_event`, `ai_tool_arguments`, `admin_form_body`; 23 targets,
+  ClusterFuzzLite PR and batch budgets raised to 5 and 10 minutes each); compile-fail cases
+  `r1_admin_site_without_guard` and `r1_mcp_endpoint_without_access_decision`;
+  `tests/security_compile_fail/tests/surface_013.rs`, which fails when a test, case or fuzz target
+  the release spec's Security table names disappears and runs the cross-crate cases against one
+  app (admin site and MCP endpoint behind one guard layer and the locale layer); and a "B10 —
+  Breadth batteries" section in `THREAT-MODEL.md` (admin, UI, tenancy, AI tools and prompt
+  injection with its residual risk, MCP, i18n input), each threat mapped to its test.
 
 ### Changed
 
