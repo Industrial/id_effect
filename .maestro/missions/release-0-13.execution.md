@@ -139,4 +139,4 @@ Recorded during 0.13:
 
 | # | From | Follow-up | Owner (default) |
 |---|---|---|---|
-| — | — | — | — |
+| F66 | r13-e-benches (owner decision 2026-10-24) | SQLite driver per-row cost; eager pair back toward 0.25. The pair `orm/eager_100x10 / orm/n_plus_one_100x10` was raised from 0.25 to 0.45 for 0.13.0 because sqlx-sqlite's per-row cost (about 0.67 µs a row) puts even two plain reads (`orm/flat_100x10`) at 0.25–0.29 of the N+1 loop. Cut the per-row cost in `crates/id_effect_sql/src/sqlite/` (first candidate: `decode` in `value.rs` copies the storage-class name into a `String` per value) and the relation pass, then lower the limit in `docs/benchmarks/gates.toml` (README "Breadth gates (0.13)") | 0.14 (sql; `src/sqlite/` is in no 0.13 leaf's Owns) |

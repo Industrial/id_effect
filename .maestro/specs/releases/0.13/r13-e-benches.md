@@ -6,7 +6,7 @@ work_type: spec-slice
 risk_class: low
 version: 1
 acceptance_criteria:
-  - 'Benches `orm/eager_100x10` and `orm/n_plus_one_100x10` (100 parents × 10 children, SQLite in-memory, same run) in crates/id_effect_sql/benches/repository_eager.rs; `pair` gate `orm/eager_100x10 / orm/n_plus_one_100x10 ≤ 0.25` in docs/benchmarks/gates.toml.'
+  - 'Benches `orm/eager_100x10` and `orm/n_plus_one_100x10` (100 parents × 10 children, SQLite in-memory, same run) in crates/id_effect_sql/benches/repository_eager.rs; `pair` gate `orm/eager_100x10 / orm/n_plus_one_100x10 ≤ 0.45` in docs/benchmarks/gates.toml (0.45, not 0.25, by owner decision 2026-10-24: sqlx-sqlite''s per-row cost puts even two plain reads at 0.25–0.29; follow-up F66 brings it back toward 0.25).'
   - '`i18n/format_plural` (crates/id_effect_i18n/benches/format.rs) and `ui/render_list_50` (crates/id_effect_axum/benches/ui_render.rs) as `report` gates; after the first measurement on the bench runner, a `budget` gate is written for each at measured p50 × 1.5 (D15), and the owner confirms the numbers at exit.'
   - 'Every 0.12 gate (secure-stack delta ≤ 5 µs, unary RPC delta ≤ 3 µs, batch pair ≤ 0.20, h3/h2 pair) unchanged and green; the streaming group compared against v0.12 for r13-f-stream-chunking; results stored as docs/benchmarks/v0.13.json; README updated.'
   - 'Tier: integration (bench targets in three crates) and docs. Secure by default: not applicable (no surface).'
