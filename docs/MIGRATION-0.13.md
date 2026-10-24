@@ -21,6 +21,21 @@ worth knowing, the labs crate) are listed as well, so this list is a superset of
 Crates new in 0.13 (`id_effect_admin`, `id_effect_i18n`) have no 0.12 API to break;
 `id_effect_ai` was a labs crate without a semver promise, and its changes are listed anyway.
 
+The report at the exit, and where each finding is answered:
+
+| Crate | `cargo semver-checks` finding | Section |
+|---|---|---|
+| `id_effect_axum` | `constructible_struct_adds_field` `HostConfig.webtransport` | Axum: `HostConfig::webtransport` |
+| `id_effect_axum` | `auto_trait_impl_removed` `WsConfig` (`UnwindSafe`, `RefUnwindSafe`) | Axum: `WsConfig` control-frame cap |
+| `id_effect_rpc` | `enum_variant_added` `MeshRpcError::PeerSilent` | RPC / node: session pump |
+| `id_effect_rpc` | `auto_trait_impl_removed` `WsClient`, `WsCall` | RPC: `WsClient` over `wss://` |
+| `id_effect_tool` | `constructible_struct_adds_field` `CheckArgs.allow_retired` | Tool: `rpc::check::CheckArgs::allow_retired` |
+| `id_effect_ai` (against `labs/id_effect_ai` at v0.12.0) | `struct_pub_field_missing` `ChatResponse.tokens_used`, `AiConfig.anthropic_max_tokens`; `constructible_struct_adds_field` / `_adds_private_field` `AiConfig`; `struct_marked_non_exhaustive` `ChatMessage`, `ChatRequest`, `ChatResponse`; `enum_marked_non_exhaustive` `AiError`; `enum_variant_added` `ChatRole::Tool`; `derive_trait_impl_removed` `ChatResponse: Eq`; `auto_trait_impl_removed` `AiConfig` | AI: the two tables |
+
+Every other published crate reports "no semver update required"; the proc-macro crates
+(`id_effect_proc_macro`, `id_effect_rpc_macros`) have no library API the tool can check, and
+`id_effect_admin` / `id_effect_i18n` have no baseline.
+
 ## SQL: `id_effect_sql::repository` split into a module tree
 
 Owners: r13-e3-3-relations, r13-e3-3-pagination, r13-e3-3-hooks. `src/repository.rs` became
@@ -368,6 +383,8 @@ replacement):
 | `id_effect_ai::model::*`, `id_effect_ai::streaming::*`, `id_effect_ai::sse::*` (private modules, root re-exports) | `id_effect_ai::chat::*` and `id_effect_ai::stream::*`; the root re-exports are unchanged |
 | `id_effect_ai::vendors::openai::*`, `vendors::anthropic::*` | `vendors::openai::chat::*`, `vendors::anthropic::chat::*` (re-exported from `vendors::openai` / `vendors::anthropic` and the crate root as before) |
 | `AiError` (exhaustive) | `#[non_exhaustive]`, with `InvalidRequest`, `Blocked`, `LimitExceeded` and `Timeout`; HTTP 529 is `Transient` |
+| `ChatResponse: Eq` (used as a `HashSet` key, `assert_eq!` on `Eq` bounds) | `PartialEq` only (the derive no longer lists `Eq`); `==` and `assert_eq!` work unchanged. Where an `Eq` bound is needed, use the fields, which are each `Eq` (`content`, `usage`, `tool_calls`, `stop_reason`) |
+| `AiConfig: UnwindSafe + RefUnwindSafe` | no longer (it holds the platform `HttpClientConfig` and its hooks); wrap closures given to `catch_unwind` in `AssertUnwindSafe`. A struct literal is no longer possible at all (private field `log_prompts`, set by `dangerous_log_prompts()`): use `AiConfig::default().with_*` |
 | `SseParser::feed` trimmed every leading space of a value | one leading space is removed (the SSE rule); `feed_bytes` takes raw bytes |
 | streamed chunks parsed after the whole body was read | decoded incrementally, under `AiLimits::max_stream_bytes` / `max_stream_events` |
 
