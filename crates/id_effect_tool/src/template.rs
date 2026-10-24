@@ -163,6 +163,9 @@ pub static FILES: &[TemplateFile] = &[
   embed!("generate/job", "job.rs.template"),
   embed!("generate/job", "mod.rs.template"),
   embed!("generate/job", "schedule.rs.template"),
+  // `id-effect generate admin` (crate::generate), never part of a new project.
+  embed!("generate/admin", "entity.rs.template"),
+  embed!("generate/admin", "mod.rs.template"),
 ];
 
 /// The generated path of the template file `source`: the `.template` suffix is dropped and a

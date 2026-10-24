@@ -1,0 +1,65 @@
+//! The admin back office (id_effect_admin): a module per entity (its list columns, search box and
+//! filters), each registered in [`site`] with its permissions listed in [`permissions`].
+//! `id-effect generate admin <Entity>` adds the module and its lines.
+//!
+//! Secure by default: [`router`] mounts the site under [`PREFIX`] only behind a guard (there is
+//! no public admin), and every page checks its own permission, `admin.<entity>.<action>`, with
+//! [`policy`] before any query. Nobody holds one until a role is granted it, and a permission no
+//! entity's admin offers (the writes of a `--read-only` one) is refused whatever the grants say.
+//!
+//! ```text
+//! let staff = admin::permissions()?.iter().map(ToString::to_string).collect::<Vec<_>>();
+//! let rbac = Rbac::builder().grant("staff", staff).build();
+//! let guard = Guard::new("staff", require_role("staff"));
+//! let routes = admin::router(guard, rbac, AdminDatabase::new(sql_client, Dialect::Postgres))?;
+//! ```
+
+pub mod document;
+pub mod invoice;
+
+use id_effect_admin::{AdminConfigError, AdminDatabase, AdminPermission, AdminSite, RbacAdminPolicy};
+use id_effect_kit::authz::{CurrentPrincipal, Policy, PolicyExt, Rbac, predicate};
+use id_effect_kit::axum::route::{RouteGuard, Router};
+
+/// Where the admin's pages are mounted.
+pub const PREFIX: &str = "/admin";
+
+/// Every entity's admin, on a site that is not guarded yet ([`router`] guards and mounts it).
+pub fn site() -> Result<AdminSite, AdminConfigError> {
+    let site = AdminSite::new().prefix(PREFIX);
+    let site = document::register(site)?;
+    let site = invoice::register(site)?;
+    Ok(site)
+}
+
+/// The permissions the entities' admins offer: the ones a role can be granted.
+pub fn permissions() -> Result<Vec<AdminPermission>, AdminConfigError> {
+    let permissions = Vec::new();
+    let permissions = [permissions, document::permissions()?].concat();
+    let permissions = [permissions, invoice::permissions()?].concat();
+    Ok(permissions)
+}
+
+/// Decides every admin permission: allowed only when an entity's admin offers it and `rbac`
+/// grants it to the principal (through a role, or as one of the principal's own permissions).
+/// Anything else, and every permission of an anonymous principal, is denied.
+pub fn policy(rbac: Rbac) -> Result<impl Policy<AdminPermission>, AdminConfigError> {
+    let offered = permissions()?;
+    let offered = predicate(
+        "not offered by this admin",
+        move |_: &CurrentPrincipal, permission: &AdminPermission| offered.contains(permission),
+    );
+    Ok(offered.and(RbacAdminPolicy::new(rbac)))
+}
+
+/// The admin's routes under [`PREFIX`], every one behind `guard` (who may enter at all); each
+/// page then checks its permission with [`policy`] over `rbac`. Merge them into the
+/// application's router, inside its authentication and `SecurityLayer` (CSRF) layers.
+pub fn router<S: Clone + Send + Sync + 'static>(
+    guard: impl RouteGuard,
+    rbac: Rbac,
+    db: AdminDatabase,
+) -> Result<Router<S>, AdminConfigError> {
+    let site = site()?.policy(policy(rbac)?).guard(guard);
+    Ok(site.router(db))
+}
