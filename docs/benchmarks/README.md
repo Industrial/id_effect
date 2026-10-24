@@ -426,6 +426,14 @@ quarter of the N+1 loop, so no change in `relations.rs` alone can reach the limi
 in this leaf's files (the bench shape is fixed by the leaf: 100 × 10, SQLite in memory) can
 either.
 
+A fourth run on 2026-10-24 (current `release/0.13.0` tree, 1-minute load about 108, 1 s warm-up,
+3–4 s measurement) gave eager 1.244 ms, N+1 3.726 ms, flat 0.938 ms: **0.334**, floor 0.252. Two
+bench-side knobs were tried and rejected, since neither changes what the gate compares and
+neither helped: a sqlx row channel of 2,048 rows instead of 50 (`row_buffer_size`, so the
+1,000-row statement never waits on the consumer) made eager slower (1.370 ms against 3.405 ms,
+0.402), and a current-thread tokio runtime instead of the multi-thread one gave 1.191 ms against
+3.459 ms (0.344). The bench keeps the default pool and the multi-thread runtime a server uses.
+
 **Open owner decisions (0.13.0 exit, with D15).**
 
 1. *Eager pair limit.* Keep 0.25 and add a leaf for the SQLite driver's per-row cost
