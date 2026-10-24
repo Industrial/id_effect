@@ -62,6 +62,7 @@ async fn run() -> Result<(), String> {
   let node = RelayNode::start(NodeConfig {
     name: settings.node.clone(),
     bind: settings.bind,
+    mesh_bind: settings.mesh_bind,
     certificate,
     mesh: MeshTls {
       certificate: mesh_certificate,
@@ -80,6 +81,7 @@ async fn run() -> Result<(), String> {
   .await
   .map_err(|e| e.to_string())?;
   eprint!("{}", node.posture(base).check());
+  eprintln!("{} mesh on {} (UDP, idm/1)", node.name(), node.mesh_addr());
   eprintln!("{} on {} (TCP and UDP)", node.name(), node.addr());
   let join_peers = async {
     for peer in &settings.peers {

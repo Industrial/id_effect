@@ -1,15 +1,22 @@
-//! One Relay node: one port for everything (ADR 0014 D7).
+//! One Relay node: clients on one port, served by the host entry point, and the mesh on a QUIC
+//! endpoint of its own.
 //!
-//! - **UDP**: one platform QUIC endpoint routing by ALPN — `h3` (HTTP/3, and WebTransport
-//!   sessions carrying RPC streams) and `idm/1` (the mesh, mutual TLS: a client certificate is
-//!   required and must be one of the pinned node certificates).
-//! - **TCP**, the same port number: TLS with HTTP/2 and HTTP/1.1 (RPC over HTTP, the RPC
-//!   WebSocket, the web client), every response carrying `Alt-Svc: h3=":<port>"` so HTTP/3
-//!   clients upgrade and fall back to TCP when UDP is blocked.
+//! - **Clients**, one port number served by the host ([`ServerHandle`], ADR 0014 D7 for
+//!   clients): TLS on TCP with HTTP/2 and HTTP/1.1 (RPC over HTTP, the RPC WebSocket — over
+//!   HTTP/1.1 upgrades and RFC 8441 extended CONNECT on HTTP/2 —, the web client) and, on UDP,
+//!   the host's HTTP/3 endpoint ([`HostConfig::http3`]) taking WebTransport sessions that carry
+//!   RPC streams ([`HostConfig::webtransport`]). Every TCP response carries
+//!   `Alt-Svc: h3=":<port>"`, so HTTP/3 clients upgrade and fall back to TCP when UDP is blocked.
+//!   No QUIC endpoint of the node's own serves HTTP/3.
+//! - **The mesh**: a QUIC endpoint of its own ([`NodeConfig::mesh_bind`]) serving `idm/1` only,
+//!   with mutual TLS (a client certificate is required and must be one of the pinned node
+//!   certificates). The host does not hand out its endpoint, so the mesh cannot ride the client
+//!   port.
 //!
 //! Over the mesh the node runs a channels hub (each room is a topic; presence is shared by the
-//! hubs) and a mesh RPC endpoint ([`RelayPeer`](crate::api::RelayPeer)); sessions to other nodes
-//! carry both ([`attach_session_rpc`]).
+//! hubs) and a mesh RPC endpoint ([`RelayPeer`](crate::api::RelayPeer)); each session to another
+//! node runs on a node session pump that verifies every envelope before it is delivered, and
+//! carries both ([`attach_session_rpc`]).
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -20,21 +27,22 @@ use axum::response::IntoResponse;
 use id_effect::DynEnv;
 use id_effect_kit::axum::realtime::ws::WsConfig;
 use id_effect_kit::axum::route::{self, AccessLayer, RouteAccess, RouteInfo};
-use id_effect_kit::axum::server::h3::{Http3Options, serve_h3};
+use id_effect_kit::axum::server::h3::Http3Options;
 use id_effect_kit::axum::server::security::{ContentSecurityPolicy, CookieKey, SecurityLayer};
-use id_effect_kit::axum::server::webtransport::{self as wt, WebTransportConfig};
+use id_effect_kit::axum::server::webtransport::WebTransportConfig;
 use id_effect_kit::axum::server::{AltSvcLayer, ConnectionLimits, HostTls, ServerTls};
 use id_effect_kit::axum::{
-  BodyLimitLayer, HostConfig, ReadinessState, RequestIdLayer, ServerHandle, TimeoutLayer,
+  BodyLimitLayer, HostConfig, HostError, ReadinessState, RequestIdLayer, ServerHandle, TimeoutLayer,
 };
 use id_effect_kit::node::transport::quic::{QuicConfig, QuicTransport};
 use id_effect_kit::node::{
-  BehaviorRegistry, Cookie, DeliveryConfig, Listener, Mesh, NodeId, Session, Transport,
-  TransportError,
+  BehaviorRegistry, Cookie, DeliveryConfig, Listener, Mesh, NodeId, Session, SessionPumpStats,
+  Transport, TransportError,
 };
 use id_effect_kit::platform::quic::{QuicEndpoint, QuicEndpointConfig};
 use id_effect_kit::platform::tls::{Identity, NodeCertificate};
 use id_effect_kit::posture::{Posture, Surface};
+use id_effect_kit::process::{NodeName, ProcessNode};
 use id_effect_kit::rpc::RpcServer;
 use id_effect_kit::rpc::channels::{
   Channels, ChannelsConfig, HeartbeatTask, SessionLink, attach_session_rpc, register_hub,
@@ -45,8 +53,6 @@ use id_effect_kit::rpc::transport::mesh::{MeshEndpoint, MeshRpc};
 use id_effect_kit::rpc::transport::webtransport::{self, RpcWebTransportConfig};
 use id_effect_kit::rpc::transport::ws::RpcWsConfig;
 use id_effect_kit::sql::SqlClient;
-use id_effect_process::{NodeName, ProcessNode};
-use tokio::sync::oneshot;
 
 use crate::api::{ChatMessage, RelayPeerService, RelayService};
 use crate::auth::{TokenKeys, rpc_principal, token_from_query};
@@ -67,8 +73,8 @@ pub const BODY_LIMIT: usize = 1024 * 1024;
 /// How often the history tail polls the event log for new messages.
 pub const HISTORY_POLL: Duration = Duration::from_millis(50);
 
-/// How many times [`RelayNode::start`] tries a fresh port when asked for port 0 and the TCP port
-/// matching the UDP one is taken.
+/// How many times [`RelayNode::start`] tries a fresh port when asked for port 0 and the UDP port
+/// matching the TCP one the host bound is taken.
 const BIND_ATTEMPTS: usize = 16;
 
 /// The web client page.
@@ -127,8 +133,12 @@ impl MeshTls {
 pub struct NodeConfig {
   /// The node's name (`name@host`, unique in the cluster).
   pub name: String,
-  /// The address (TCP and UDP, one port; port 0 picks a free one).
+  /// The clients' address, served by the host: TLS on TCP and HTTP/3 with WebTransport on UDP,
+  /// one port number (port 0 picks a free one).
   pub bind: SocketAddr,
+  /// The mesh's address: UDP, `idm/1` only, on a QUIC endpoint of its own (port 0 picks a free
+  /// one). Peers [`connect`](RelayNode::connect) to it.
+  pub mesh_bind: SocketAddr,
   /// The certificate served to clients on TCP and HTTP/3 (a real one in production: the prod
   /// posture refuses the `id-effect dev` certificate).
   pub certificate: NodeCertificate,
@@ -166,6 +176,7 @@ impl std::fmt::Debug for NodeConfig {
     f.debug_struct("NodeConfig")
       .field("name", &self.name)
       .field("bind", &self.bind)
+      .field("mesh_bind", &self.mesh_bind)
       .field("origins", &self.origins)
       .field("connect_src", &self.connect_src)
       .finish_non_exhaustive()
@@ -188,11 +199,10 @@ impl Surfaces {
     stated(base)
       .rpc_websocket(&self.ws)
       .webtransport(&self.wt)
+      // HTTP/3 with WebTransport is the host's (`server.http3`), with the host's certificate.
       .host(&self.host)
-      // HTTP/3 is served by the node's own endpoint (shared with the mesh), not by the host:
-      // on, with the host's certificate.
-      .http3(true, self.host.tls.is_some())
       .http3_options(&self.h3)
+      // Both QUIC endpoints, the host's and the mesh's, validate client addresses.
       .quic_retry(self.retry)
       .tls_certificate(&self.certificate)
   }
@@ -202,14 +212,15 @@ impl Surfaces {
 pub struct RelayNode {
   id: NodeId,
   addr: SocketAddr,
+  mesh_addr: SocketAddr,
   state: Arc<NodeState>,
   rpc: MeshRpc,
-  endpoint: QuicEndpoint,
+  mesh_endpoint: QuicEndpoint,
   dialer: QuicTransport,
   cookie: Cookie,
   links: Arc<Mutex<Vec<SessionLink>>>,
-  tcp: ServerHandle,
-  stop_h3: Mutex<Option<oneshot::Sender<()>>>,
+  host: ServerHandle,
+  host_config: HostConfig,
   surfaces: Surfaces,
   _peer_endpoint: MeshEndpoint,
   _heartbeat: HeartbeatTask,
@@ -221,14 +232,16 @@ impl std::fmt::Debug for RelayNode {
     f.debug_struct("RelayNode")
       .field("name", &self.state.node())
       .field("addr", &self.addr)
+      .field("mesh_addr", &self.mesh_addr)
       .finish_non_exhaustive()
   }
 }
 
 impl RelayNode {
   /// Starts a node (inside a tokio runtime): the mesh, the channels hub and the mesh RPC
-  /// endpoint, then the QUIC endpoint (HTTP/3, WebTransport, `idm/1`) and TLS on TCP on the same
-  /// port. Peers are joined with [`connect`](Self::connect).
+  /// endpoint, the host ([`ServerHandle`]: TLS on TCP and HTTP/3 with WebTransport on the same
+  /// port number), then the mesh's own QUIC endpoint (`idm/1`). Peers are joined with
+  /// [`connect`](Self::connect).
   ///
   /// # Errors
   ///
@@ -271,24 +284,31 @@ impl RelayNode {
     let identity =
       Identity::from_certificate(&config.certificate).map_err(|e| start_error("tls", e))?;
     let tls = ServerTls::from_identity(&identity).map_err(|e| start_error("tls", e))?;
+    // The host serves every client surface: TLS on TCP, and HTTP/3 on UDP with the same port
+    // number taking the WebTransport sessions of `/rpc/wt` (F43). The provided TLS settings
+    // carry the certificate identity QUIC presents.
     let host = HostConfig {
       bind_host: config.bind.ip().to_string(),
       bind_port: config.bind.port(),
-      // HTTP/3 runs on the node's own endpoint, shared with the mesh (D7).
-      http3: false,
+      http3: true,
       ..HostConfig::default()
     }
-    .with_tls(HostTls::provided(tls));
+    .with_tls(HostTls::provided(tls))
+    .with_webtransport();
     let limits = ConnectionLimits::default();
-    let quic_config =
-      QuicEndpointConfig::new(identity.clone()).with_limits(wt::quic_limits(&limits));
+    // What the host's HTTP/3 endpoint runs with: the host builds it from the same identity and
+    // serves it with `Http3Options::default().webtransport()`.
+    let host_quic = QuicEndpointConfig::new(identity);
     let h3 = Http3Options::default().webtransport();
+    let mesh_identity = Identity::from_certificate(&config.mesh.certificate)
+      .map_err(|e| start_error("mesh certificate", e))?;
+    let mesh_quic = QuicEndpointConfig::new(mesh_identity);
     let surfaces = Surfaces {
       ws,
       wt: wt_config,
-      h3: h3.clone(),
+      h3,
       host: host.clone(),
-      retry: quic_config.retry(),
+      retry: host_quic.retry() && mesh_quic.retry(),
       certificate: config
         .certificate
         .chain()
@@ -304,27 +324,17 @@ impl RelayNode {
         .enforce()
         .map_err(|refused| start_error("posture", refused))?;
     }
-    let (endpoint, tcp) = bind(&config, &host, quic_config, &limits, app.clone()).await?;
-    let addr = endpoint.local_addr();
+    let (server, host) = bind(&config, host, &limits, app).await?;
+    let addr = server.local_addr();
 
-    let (stop_h3, stopped) = oneshot::channel::<()>();
-    let served = endpoint.clone();
-    let h3_options = h3.clone();
-    tokio::spawn(async move {
-      let shutdown = async move {
-        let _ = stopped.await;
-      };
-      if let Err(e) = serve_h3(&served, app, limits, h3_options, shutdown).await {
-        eprintln!("relay: http/3 stopped: {e}");
+    let (mesh_endpoint, listener, dialer) = match mesh_transport(&config, mesh_quic).await {
+      Ok(mesh) => mesh,
+      Err(e) => {
+        server.shutdown().await;
+        return Err(e);
       }
-    });
-
-    let quic = config.mesh.quic_config()?;
-    let listener = QuicTransport::on_endpoint(config.mesh.quic_config()?, &endpoint)
-      .listen("")
-      .await
-      .map_err(|e| start_error("mesh listener", e))?;
-    let dialer = QuicTransport::on_endpoint(quic, &endpoint);
+    };
+    let mesh_addr = mesh_endpoint.local_addr();
     let links = Arc::new(Mutex::new(Vec::new()));
     let accept = tokio::spawn(accept_loop(
       listener,
@@ -337,14 +347,15 @@ impl RelayNode {
     Ok(Self {
       id,
       addr,
+      mesh_addr,
       state,
       rpc,
-      endpoint,
+      mesh_endpoint,
       dialer,
       cookie: config.cookie,
       links,
-      tcp,
-      stop_h3: Mutex::new(Some(stop_h3)),
+      host: server,
+      host_config: host,
       surfaces,
       _peer_endpoint: peer_endpoint,
       _heartbeat: heartbeat,
@@ -357,9 +368,21 @@ impl RelayNode {
     self.state.node()
   }
 
-  /// The node's address: TCP and UDP on this one port.
+  /// The clients' address, served by the host: TLS on TCP and HTTP/3 with WebTransport on UDP,
+  /// this one port number.
   pub fn addr(&self) -> SocketAddr {
     self.addr
+  }
+
+  /// The mesh's address (UDP, `idm/1`): what peers [`connect`](Self::connect) to.
+  pub fn mesh_addr(&self) -> SocketAddr {
+    self.mesh_addr
+  }
+
+  /// The host settings the node serves its clients with: HTTP/3 on, WebTransport on, TLS on
+  /// TCP and UDP from the node's certificate.
+  pub fn host_config(&self) -> &HostConfig {
+    &self.host_config
   }
 
   /// The node's state (channels, history readers), for operators and tests.
@@ -372,14 +395,29 @@ impl RelayNode {
     &self.rpc
   }
 
-  /// The node's QUIC endpoint (statistics: accepted connections, refused client certificates).
-  pub fn endpoint(&self) -> &QuicEndpoint {
-    &self.endpoint
+  /// The mesh's QUIC endpoint (statistics: accepted connections, refused client certificates).
+  pub fn mesh_endpoint(&self) -> &QuicEndpoint {
+    &self.mesh_endpoint
   }
 
-  /// Joins the node at `peer` (its [`addr`](Self::addr)): a QUIC connection on `idm/1` from
-  /// this node's own port, mutual TLS, the cookie handshake, then one session carrying the
-  /// channels and mesh RPC.
+  /// What the node session pump of each open session did with the envelopes its peer sent
+  /// (delivered, refused by the mesh, dropped as unverified), by peer name.
+  pub fn sessions(&self) -> Vec<(String, SessionPumpStats)> {
+    let mut sessions: Vec<(String, SessionPumpStats)> = self
+      .links
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner)
+      .iter()
+      .filter(|l| l.is_open())
+      .map(|l| (l.peer().to_owned(), l.stats()))
+      .collect();
+    sessions.sort_by(|a, b| a.0.cmp(&b.0));
+    sessions
+  }
+
+  /// Joins the node whose mesh listens at `peer` (its [`mesh_addr`](Self::mesh_addr)): a QUIC
+  /// connection on `idm/1` from this node's mesh endpoint, mutual TLS, the cookie handshake,
+  /// then one session on a node session pump carrying the channels and mesh RPC.
   ///
   /// # Errors
   ///
@@ -422,31 +460,22 @@ impl RelayNode {
   /// What this node states about itself for the startup posture check (ADR 0013 R10), on top
   /// of `base` (the profile and its accepted risks): no console, no `/docs`, the mesh on QUIC
   /// with mutual TLS, CSRF on, every procedure of both services declared, the realtime origin
-  /// allowlists, HTTP/3 with TLS on the shared endpoint, 0-RTT off, Retry on, the served
-  /// certificate.
+  /// allowlists, the host's HTTP/3 with TLS, 0-RTT off, Retry on, the served certificate.
   pub fn posture(&self, base: Posture) -> Posture {
     self.surfaces.posture(base)
   }
 
-  /// Stops the node: the rooms' members leave, the QUIC endpoint closes (peers see the node go
-  /// down at once), HTTP/3 and TCP drain.
+  /// Stops the node: the rooms' members leave, the mesh endpoint closes (peers see the node go
+  /// down at once), then the host drains TCP and HTTP/3.
   pub async fn shutdown(&self) {
     self.state.channels().shutdown();
-    self.endpoint.close();
+    self.mesh_endpoint.close();
     self
       .links
       .lock()
       .unwrap_or_else(PoisonError::into_inner)
       .clear();
-    if let Some(stop) = self
-      .stop_h3
-      .lock()
-      .unwrap_or_else(PoisonError::into_inner)
-      .take()
-    {
-      let _ = stop.send(());
-    }
-    self.tcp.shutdown().await;
+    self.host.shutdown().await;
   }
 }
 
@@ -497,42 +526,84 @@ async fn accept_loop(
   }
 }
 
-/// Binds the QUIC endpoint and TLS on TCP on one port: the configured one, or (port 0) a free
-/// UDP port whose TCP twin is free too.
+/// Starts the host on one port number, TLS on TCP and HTTP/3 with WebTransport on UDP: the
+/// configured port, or (port 0) a free TCP port whose UDP twin is free too. Returns the running
+/// host and its settings with the bound port.
 async fn bind(
   config: &NodeConfig,
-  host: &HostConfig,
-  quic: QuicEndpointConfig,
+  host: HostConfig,
   limits: &ConnectionLimits,
   app: axum::Router,
-) -> Result<(QuicEndpoint, ServerHandle), StartError> {
+) -> Result<(ServerHandle, HostConfig), StartError> {
   let attempts = if config.bind.port() == 0 {
     BIND_ATTEMPTS
   } else {
     1
   };
-  let mut last = String::new();
+  // Another UDP port in `Alt-Svc` (a UDP load balancer in front): set on the response before
+  // the host's own layer, which keeps a header that is already there.
+  let app = match config.advertise_h3_port {
+    Some(port) => app.layer(AltSvcLayer::h3(port)),
+    None => app,
+  };
+  let mut last = StartError(String::new());
   for _ in 0..attempts {
-    let endpoint =
-      QuicEndpoint::bind(config.bind, quic.clone()).map_err(|e| start_error("quic", e))?;
-    let port = endpoint.local_addr().port();
-    let host = HostConfig {
-      bind_port: port,
-      ..host.clone()
-    };
-    let advertised = config.advertise_h3_port.unwrap_or(port);
-    let tcp_app = app.clone().layer(AltSvcLayer::h3(advertised));
-    match ServerHandle::start_with_limits(&host, tcp_app, ReadinessState::new(true), limits.clone())
-      .await
+    match ServerHandle::start_with_limits(
+      &host,
+      app.clone(),
+      ReadinessState::new(true),
+      limits.clone(),
+    )
+    .await
     {
-      Ok(tcp) => return Ok((endpoint, tcp)),
-      Err(e) => {
-        last = e.to_string();
-        endpoint.close();
+      Ok(server) => {
+        let host = HostConfig {
+          bind_port: server.local_addr().port(),
+          ..host
+        };
+        return Ok((server, host));
       }
+      Err(e) => last = host_error(&e),
     }
   }
-  Err(StartError(format!("tcp: {last}")))
+  Err(last)
+}
+
+/// A host that did not start: `quic: …` when its HTTP/3 endpoint could not bind the UDP port,
+/// `tcp: …` otherwise.
+fn host_error(e: &HostError) -> StartError {
+  let why = e.to_string();
+  if why.contains("bind udp") {
+    start_error("quic", why)
+  } else {
+    start_error("tcp", why)
+  }
+}
+
+/// The mesh's own QUIC endpoint on [`NodeConfig::mesh_bind`], its `idm/1` listener (mutual TLS
+/// against the pinned node certificates) and the dialer leaving from the same endpoint.
+async fn mesh_transport(
+  config: &NodeConfig,
+  quic: QuicEndpointConfig,
+) -> Result<(QuicEndpoint, Box<dyn Listener>, QuicTransport), StartError> {
+  let endpoint =
+    QuicEndpoint::bind(config.mesh_bind, quic).map_err(|e| start_error("mesh endpoint", e))?;
+  let ready = async {
+    let listener = QuicTransport::on_endpoint(config.mesh.quic_config()?, &endpoint)
+      .listen("")
+      .await
+      .map_err(|e| start_error("mesh listener", e))?;
+    let dialer = QuicTransport::on_endpoint(config.mesh.quic_config()?, &endpoint);
+    Ok::<_, StartError>((listener, dialer))
+  }
+  .await;
+  match ready {
+    Ok((listener, dialer)) => Ok((endpoint, listener, dialer)),
+    Err(e) => {
+      endpoint.close();
+      Err(e)
+    }
+  }
 }
 
 /// The plain routes next to the RPC routes, each declared public: the web client and the health

@@ -5216,7 +5216,6 @@ dependencies = [
  "headless_chrome",
  "id_effect",
  "id_effect_kit",
- "id_effect_process",
  "id_effect_rpc",
  "id_effect_tool",
  "serde",

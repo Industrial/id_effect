@@ -45,6 +45,7 @@ async fn relay_binary_serves_until_sigterm() {
     .env("ID_EFFECT_PROFILE", "dev")
     .env("RELAY_NODE", "a@relay")
     .env("RELAY_BIND", "127.0.0.1:0")
+    .env("RELAY_MESH_BIND", "127.0.0.1:0")
     // A peer that is not there: logged, the node serves anyway.
     .env("RELAY_PEERS", "127.0.0.1:9")
     .env("TLS_CERT_FILE", &dev.cert)
@@ -66,6 +67,7 @@ async fn relay_binary_serves_until_sigterm() {
     .expect("relay starts");
   let text = tokio::task::block_in_place(|| wait_for_log(&mut child, &log, "(TCP and UDP)"));
   assert!(text.contains("every procedure declared"), "{text}");
+  assert!(text.contains("a@relay mesh on 127.0.0.1:"), "{text}");
   let port: u16 = text
     .lines()
     .find(|l| l.contains("(TCP and UDP)"))

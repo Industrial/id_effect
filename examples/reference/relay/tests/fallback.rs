@@ -6,15 +6,17 @@
 //! Two ways to block UDP:
 //!
 //! - **CI** (`reference-relay` job): `RELAY_UDP_BLOCKED_PORT=<port>` with an iptables rule that
-//!   drops UDP to that port; the node binds it, so its real HTTP/3 port is the blocked one.
-//! - **Locally**: the node advertises (`Alt-Svc`) a UDP port bound to a socket that never
-//!   answers, and the WebTransport session dials that port: the same black hole.
+//!   drops UDP to that port; the node binds it, so the host's real HTTP/3 port is the blocked
+//!   one.
+//! - **Locally**: the node advertises (`Alt-Svc`, ahead of the host's own) a UDP port bound to a
+//!   socket that never answers, and the WebTransport session dials that port: the same black
+//!   hole.
 
 mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Bearer, Options, cluster, database, http_client, http_config, next, pump, run};
+use common::{Options, bearer_client, cluster, database, http_config, next, pump, run};
 use id_effect_kit::platform::http::{Http3Client, Origin};
 use relay::api::{JoinRoom, Outgoing};
 
@@ -56,13 +58,7 @@ async fn relay_udp_blocked_falls_back_to_tcp() {
   let client = Http3Client::from_config(&config);
   assert!(client.http3_available());
   let token = c.token("ada").await;
-  let ada = http_client(
-    &c.url(0),
-    Bearer {
-      inner: client.clone(),
-      token,
-    },
-  );
+  let ada = bearer_client(&c.url(0), client.clone(), &token);
   // The first call goes over TCP and learns `h3` on the (blocked) port from `Alt-Svc`.
   run(ada.create_room("general".to_owned())).await.unwrap();
   let origin = Origin::new(common::HOST, addr.port());

@@ -4,8 +4,9 @@
 //! | Variable | Meaning |
 //! |---|---|
 //! | `RELAY_NODE` | this node's name, `name@host` (required) |
-//! | `RELAY_BIND` | TCP and UDP address, one port (default `0.0.0.0:8443`) |
-//! | `RELAY_PEERS` | comma-separated addresses of the nodes to join (default none) |
+//! | `RELAY_BIND` | the clients' TCP and UDP address (TLS, HTTP/3, WebTransport), one port (default `0.0.0.0:8443`) |
+//! | `RELAY_MESH_BIND` | the mesh's UDP address (`idm/1`, mutual TLS) (default `0.0.0.0:8444`) |
+//! | `RELAY_PEERS` | comma-separated mesh addresses (`RELAY_MESH_BIND`) of the nodes to join (default none) |
 //! | `TLS_CERT_FILE`, `TLS_KEY_FILE` | the certificate served to clients, PEM (required) |
 //! | `RELAY_MESH_CERT_FILE`, `RELAY_MESH_KEY_FILE` | this node's mesh certificate, PEM (required) |
 //! | `RELAY_MESH_TRUSTED` | comma-separated SHA-256 (hex) of every node's mesh certificate (required) |
@@ -17,8 +18,11 @@
 
 use std::net::SocketAddr;
 
-/// The default address: every interface, port 8443 (TCP and UDP).
+/// The default clients' address: every interface, port 8443 (TCP and UDP).
 pub const DEFAULT_BIND: &str = "0.0.0.0:8443";
+
+/// The default mesh address: every interface, UDP port 8444.
+pub const DEFAULT_MESH_BIND: &str = "0.0.0.0:8444";
 
 /// The binary's settings.
 #[derive(Clone, PartialEq, Eq)]
@@ -27,6 +31,8 @@ pub struct Settings {
   pub node: String,
   /// `RELAY_BIND`.
   pub bind: SocketAddr,
+  /// `RELAY_MESH_BIND`.
+  pub mesh_bind: SocketAddr,
   /// `RELAY_PEERS`.
   pub peers: Vec<SocketAddr>,
   /// `TLS_CERT_FILE`, `TLS_KEY_FILE`.
@@ -54,6 +60,7 @@ impl std::fmt::Debug for Settings {
     f.debug_struct("Settings")
       .field("node", &self.node)
       .field("bind", &self.bind)
+      .field("mesh_bind", &self.mesh_bind)
       .field("peers", &self.peers)
       .field("origins", &self.origins)
       .field("connect_src", &self.connect_src)
@@ -92,11 +99,15 @@ impl Settings {
         .map(str::to_owned)
         .collect()
     };
-    let bind = lookup("RELAY_BIND").unwrap_or_else(|| DEFAULT_BIND.to_owned());
-    let bind = bind
-      .trim()
-      .parse()
-      .map_err(|e| format!("RELAY_BIND: {e}"))?;
+    let address = |name: &str, default: &str| -> Result<SocketAddr, String> {
+      lookup(name)
+        .unwrap_or_else(|| default.to_owned())
+        .trim()
+        .parse()
+        .map_err(|e| format!("{name}: {e}"))
+    };
+    let bind = address("RELAY_BIND", DEFAULT_BIND)?;
+    let mesh_bind = address("RELAY_MESH_BIND", DEFAULT_MESH_BIND)?;
     let peers = list("RELAY_PEERS")
       .iter()
       .map(|p| p.parse().map_err(|e| format!("RELAY_PEERS: {p}: {e}")))
@@ -111,6 +122,7 @@ impl Settings {
     Ok(Self {
       node: required("RELAY_NODE")?,
       bind,
+      mesh_bind,
       peers,
       tls: (required("TLS_CERT_FILE")?, required("TLS_KEY_FILE")?),
       mesh_tls: (
@@ -178,6 +190,7 @@ mod tests {
     let settings = load(&complete()).unwrap();
     assert_eq!(settings.node, "a@relay");
     assert_eq!(settings.bind, DEFAULT_BIND.parse().unwrap());
+    assert_eq!(settings.mesh_bind, DEFAULT_MESH_BIND.parse().unwrap());
     assert_eq!(settings.peers.len(), 2);
     assert_eq!(settings.mesh_trusted[0], [0xab; 32]);
     assert_eq!(settings.origins, ["https://chat.example"]);
@@ -200,6 +213,11 @@ mod tests {
     let mut vars = complete();
     vars.insert("RELAY_BIND", "nowhere".to_owned());
     assert!(load(&vars).unwrap_err().starts_with("RELAY_BIND"));
+    let mut vars = complete();
+    vars.insert("RELAY_MESH_BIND", "nowhere".to_owned());
+    assert!(load(&vars).unwrap_err().starts_with("RELAY_MESH_BIND"));
+    vars.insert("RELAY_MESH_BIND", " 127.0.0.1:9444 ".to_owned());
+    assert_eq!(load(&vars).unwrap().mesh_bind.port(), 9444);
     let mut vars = complete();
     vars.insert("RELAY_PEERS", "x".to_owned());
     assert!(load(&vars).unwrap_err().starts_with("RELAY_PEERS"));

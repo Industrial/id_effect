@@ -150,7 +150,10 @@ async fn relay_refuses_a_mesh_peer_it_does_not_pin() {
   ))
   .await
   .unwrap();
-  let refused = a.connect(b.addr()).await.expect_err("an unpinned peer");
+  let refused = a
+    .connect(b.mesh_addr())
+    .await
+    .expect_err("an unpinned peer");
   assert!(refused.0.starts_with("mesh"), "{refused}");
   assert!(a.connected_peers().is_empty());
   assert!(b.connected_peers().is_empty());
@@ -184,6 +187,20 @@ async fn relay_refuses_a_taken_port() {
   let refused = RelayNode::start(config).await.expect_err("UDP taken");
   assert!(refused.0.starts_with("quic"), "{refused}");
   assert!(refused.to_string().starts_with("relay: quic"));
+  // The mesh's UDP port taken: the host it had started stops, the node does not start.
+  let mut config = node_config(
+    0,
+    &no_db(),
+    &certificate,
+    mesh_pki(1).remove(0),
+    &Options {
+      nodes: 1,
+      ..Options::default()
+    },
+  );
+  config.mesh_bind = udp.local_addr().unwrap();
+  let refused = RelayNode::start(config).await.expect_err("mesh UDP taken");
+  assert!(refused.0.starts_with("mesh endpoint"), "{refused}");
 }
 
 /// The URL's `(scheme, host, port)`, the port defaulted by scheme.
