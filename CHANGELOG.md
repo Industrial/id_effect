@@ -350,6 +350,11 @@
 
 ### Changed
 
+- `SysinfoTelemetry` takes its first (priming) sample on a background thread (0.12 follow-up F64):
+  `ComputeFabric::tick` and `TelemetryEngine::snapshot` no longer block the caller ~350 ms on
+  Windows; until the sample lands they report `TelemetrySnapshot::NEUTRAL` (new), and the new
+  `SysinfoTelemetry::is_primed` tells when real readings start. The 50 ms non-blocking bound
+  holds on every platform again.
 - `id_effect_ai` and `id_effect_i18n` move to tier `platform` (r13-w6-pipeline, ADR 0012 check P):
   the Pipeline reference app depends on them and runs them in CI.
 - `id_effect_admin` moves to tier `platform` (r13-w7-pipeline-backoffice, ADR 0012 check P): the
