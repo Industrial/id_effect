@@ -329,18 +329,22 @@ fn offered_codec(headers: &HeaderMap) -> Option<CodecId> {
   )
 }
 
-fn is_upgrade(headers: &HeaderMap) -> bool {
-  headers
-    .get_all(header::UPGRADE)
-    .iter()
-    .filter_map(|v| v.to_str().ok())
-    .any(|v| v.trim().eq_ignore_ascii_case("websocket"))
+/// Whether `parts` opens a socket: an HTTP/1.1 upgrade, or an HTTP/2 extended `CONNECT`
+/// (RFC 8441; the route takes no other `CONNECT`).
+fn is_upgrade(parts: &Parts) -> bool {
+  parts.method == axum::http::Method::CONNECT
+    || parts
+      .headers
+      .get_all(header::UPGRADE)
+      .iter()
+      .filter_map(|v| v.to_str().ok())
+      .any(|v| v.trim().eq_ignore_ascii_case("websocket"))
 }
 
 /// Refuses an upgrade that offers no codec, and records the request head for the calls' guards.
 async fn admit(request: Request, next: Next) -> Response {
   let (mut parts, body) = request.into_parts();
-  if is_upgrade(&parts.headers) && offered_codec(&parts.headers).is_none() {
+  if is_upgrade(&parts) && offered_codec(&parts.headers).is_none() {
     let offer = subprotocols().collect::<Vec<_>>().join(", ");
     return Problem::new(StatusCode::UNSUPPORTED_MEDIA_TYPE)
       .with_title("Unsupported subprotocol")
@@ -1481,17 +1485,30 @@ mod tests {
     assert_eq!((a.principal(), b.principal()), (Some("ada"), None));
   }
 
+  /// The head of a `method` request carrying `headers`.
+  fn head(method: axum::http::Method, headers: &HeaderMap) -> Parts {
+    let mut req = axum::http::Request::builder()
+      .method(method)
+      .body(())
+      .unwrap();
+    *req.headers_mut() = headers.clone();
+    req.into_parts().0
+  }
+
   #[test]
   fn subprotocols_are_negotiated_from_headers() {
+    use axum::http::Method;
     let mut headers = HeaderMap::new();
     assert_eq!(offered_codec(&headers), None);
-    assert!(!is_upgrade(&headers));
+    assert!(!is_upgrade(&head(Method::GET, &headers)));
+    // An HTTP/2 extended CONNECT opens a socket without an `Upgrade` header (RFC 8441).
+    assert!(is_upgrade(&head(Method::CONNECT, &headers)));
     headers.append(header::UPGRADE, "WebSocket".parse().unwrap());
     headers.append(
       SEC_WEBSOCKET_PROTOCOL,
       "chat, idrpc.json.v1".parse().unwrap(),
     );
-    assert!(is_upgrade(&headers));
+    assert!(is_upgrade(&head(Method::GET, &headers)));
     assert_eq!(offered_codec(&headers), Some(CodecId::Json));
     let offered = subprotocols().collect::<Vec<_>>();
     assert_eq!(offered[0], "idrpc.json.v1");

@@ -293,6 +293,18 @@
   CSRF check of `SecurityLayer` (403 without it), each action checks its permission, and pickers,
   inline lists and submitted foreign keys stay in the request's tenant. Book: chapter 30.8
   (editing, relations, bulk actions, audit trail).
+- WebSockets over TLS HTTP/2 (r13-f-ext-connect, 0.12 follow-up F15; ADR 0013 R4, R9): the TLS
+  host's HTTP/2 connections enable the extended `CONNECT` protocol of RFC 8441
+  (`SETTINGS_ENABLE_CONNECT_PROTOCOL`), and every `realtime::ws::endpoint` route serves the
+  HTTP/2 `CONNECT :protocol websocket` (answered `200`) beside the HTTP/1.1 upgrade (`101`), at the
+  same path, registered once as `GET`. The guards and `Authenticate` run on the opening request,
+  and the Origin allowlist, the socket caps (429), the frame and message sizes, the message and
+  control-frame rates, the idle timeout and the heartbeat apply to HTTP/2 sockets exactly as to
+  HTTP/1.1 ones; each socket is one stream under `ConnectionLimits::max_concurrent_streams`. An
+  HTTP/2 `GET`, or an extended `CONNECT` for another protocol, is refused `426` without an
+  `Upgrade` header. The route access check admits `CONNECT` where it admits `GET` (other `GET`
+  routes still answer `405`), and `id_effect_rpc`'s WebSocket transport takes the same openings,
+  so RPC sockets run over HTTP/2 too.
 - Security proof of the breadth batteries (r13-e-fuzz-security): six cargo-fuzz targets with
   seed corpora for the 0.13 decoders (`i18n_accept_language`, `sql_page_cursor`,
   `mcp_jsonrpc_message`, `ai_sse_event`, `ai_tool_arguments`, `admin_form_body`; 23 targets,

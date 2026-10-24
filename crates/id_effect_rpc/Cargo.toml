@@ -115,6 +115,8 @@ rustls-platform-verifier = { version = "=0.7.1", optional = true }
 [dev-dependencies]
 # Path-only dev-dependencies (cargo publish resolves path+version dev-deps on crates.io).
 id_effect_events = { path = "../id_effect_events", features = ["pg"] }
+# `tls`: tests/ws_h2.rs serves the RPC WebSocket over TLS HTTP/2 (RFC 8441, r13-f-ext-connect).
+id_effect_axum = { path = "../id_effect_axum", features = ["tls"] }
 # tests/channels_three_nodes.rs: three nodes on QUIC with mutual TLS (r12-e12-2-channels).
 id_effect_node = { path = "../id_effect_node", features = ["quic"] }
 id_effect_opentelemetry = { path = "../id_effect_opentelemetry" }

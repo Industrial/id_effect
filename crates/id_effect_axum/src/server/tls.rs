@@ -8,6 +8,8 @@
 //! [`HostConfig::tls`](crate::server::HostConfig::tls) and every host entry point serves TLS.
 //! The [`ConnectionLimits`](crate::server::ConnectionLimits) apply to TLS connections as to
 //! plain ones, plus a TLS handshake timeout and, on HTTP/2, a cap on concurrent streams.
+//! HTTP/2 connections accept the extended `CONNECT` of RFC 8441, so WebSocket endpoints
+//! (feature `ws`) serve `h2` clients as well as `http/1.1` ones.
 //!
 //! ```rust
 //! use id_effect_axum::server::tls::{ALPN_H2, ALPN_HTTP11, ServerTls};

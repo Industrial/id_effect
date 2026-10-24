@@ -40,6 +40,19 @@ faster. The rpc WebSocket transport installs `transport::ws::classify_frame`, so
 `ping` frames no longer count against the data rate; a custom `WsConfig` passed to the rpc
 transport gets the same classifier.
 
+## Axum: WebSockets over HTTP/2 (RFC 8441)
+
+Owner: r13-f-ext-connect. No signature break; two behaviour changes on the TLS host. Its HTTP/2
+connections now advertise `SETTINGS_ENABLE_CONNECT_PROTOCOL`, so an `h2` client (browsers among
+them) may open a `ws::endpoint` route with an extended `CONNECT` instead of falling back to a
+separate HTTP/1.1 connection; the socket is one stream, so `ConnectionLimits::max_concurrent_streams`
+now also bounds the sockets of one connection. And `AccessLayer::admits` admits `CONNECT` wherever
+it admits `GET` (as it already did `HEAD`): a typed `GET` route that is not a WebSocket endpoint
+still answers `405` to a `CONNECT`. Guards, `Authenticate`, the Origin allowlist and every
+`WsConfig` limit apply to the HTTP/2 opening unchanged, so no configuration change is needed; a
+reverse proxy in front of the host that terminates HTTP/2 must forward extended `CONNECT` (or
+keep speaking HTTP/1.1 upstream, which is unchanged).
+
 ## Axum / platform: `Http3Options` early-data and congestion settings
 
 Owner: r13-f-h3-settings. No signature breaks (new items only; `Refusal` and `EndpointStats`
