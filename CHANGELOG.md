@@ -465,6 +465,24 @@
   in headless Chromium; CI job `recipe-leptos` (not in `ci-pass` until green twice). Book:
   chapter 29.11.
 
+- Security and DX KPIs for 0.13 (r13-w8-kpis). `scripts/security-kpis.sh 0.13.0` gains the 0.13
+  targets (fuzz targets ≥ 22 with ≥ 5 new, compile-fail cases ≥ 0.12 + 2 including
+  `r1_admin_site_without_guard` and `r1_mcp_endpoint_without_access_decision`, the 0.13 Security
+  table) and two KPIs: `unary_rpc` (`rpc/unary_json − rpc/axum_json_handler ≤ 3000 ns`) and
+  `fuzz_local_crashes` (crash inputs under `fuzz/artifacts`); the secure-stack and unary deltas
+  read `docs/benchmarks/v0.13.json`. The Security-table check counts fuzz targets and treats a
+  `dangerous_*` test as a test. `docs/security/kpis-0.13.json`: 0 open highs, ADR 0013 10/10, 23
+  fuzz targets (6 new), 21 compile-fail cases, secure stack +2698 ns, unary RPC +1768 ns, the 54
+  Security-table names present, their 47 tests (52 cases with the SQLite and PostgreSQL variants)
+  and the compile-fail suite green; it fails on two online KPIs: the scheduled ClusterFuzzLite
+  batch run of 2026-10-24 found a crash in the 0.12 target `rpc_duplex_frame` (a JSON payload key
+  `$serde_json::private::RawValue` does not survive a decode/encode/decode round trip; reproduced
+  on this branch, owner `id_effect_rpc`), and the OpenSSF Scorecard is 6.6 (target 7.5;
+  repository settings). `docs/benchmarks/dx-kpis-0.13.json`:
+  K1 24.8 s, K2 1.47 s, K3 634 lines, K4 17/20, K5 90.9 %, K6 31.9 s (budget 120 s); cold release
+  build delta on the `service` template per kit feature: `ai` −0.1 s, `admin` +3.9 s, `ui` +1.3 s,
+  `i18n` +3.3 s (baseline 30.8 s).
+
 ### Performance
 
 - Breadth bench gates (r13-e-benches, `docs/benchmarks/README.md` "Breadth gates (0.13)"): benches
