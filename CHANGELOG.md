@@ -479,11 +479,12 @@
   batch run of 2026-10-24 found a crash in the 0.12 target `rpc_duplex_frame` (a JSON payload key
   `$serde_json::private::RawValue` does not survive a decode/encode/decode round trip; reproduced
   on this branch, owner `id_effect_rpc`); the OpenSSF Scorecard is 6.6 (target 7.5; repository
-  settings); and the 0.12.0 release fix merged from main (#118, publish with the registry token
-  from any pushed tag) brings back `CARGO_REGISTRY_TOKEN` under `.github` (`registry_token`, S3)
-  and drops the signed-tag check, so the register's S6 test `s6_release_requires_signed_tag` no
-  longer exists (`open_highs` register problem; owner decision: restore S3/S6 or record them as
-  accepted). `docs/benchmarks/dx-kpis-0.13.json`:
+  settings); and the owner's release-flow decision merged from main (#118: publish from any
+  pushed tag with the registry token, as in 0.10.1) brings back `CARGO_REGISTRY_TOKEN` under
+  `.github` (`registry_token`, S3) and drops the signed-tag check, so the register's S6 test
+  `s6_release_requires_signed_tag` no longer exists (`open_highs` register problem). The KPI file
+  records the decision; `docs/security/findings.json` and SECURITY.md "Supply chain" still
+  describe the 0.11 flow. `docs/benchmarks/dx-kpis-0.13.json`:
   K1 24.8 s, K2 1.47 s, K3 634 lines, K4 17/20, K5 90.9 %, K6 31.9 s (budget 120 s); cold release
   build delta on the `service` template per kit feature: `ai` −0.1 s, `admin` +3.9 s, `ui` +1.3 s,
   `i18n` +3.3 s (baseline 30.8 s).
