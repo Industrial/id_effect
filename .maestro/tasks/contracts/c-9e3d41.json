@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 2,
+  "id": "c-9e3d41",
+  "taskId": "tsk-mvhf59ri-fjrbf4",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-24T11:43:23.289Z",
+  "lockedAt": "2026-10-24T11:43:23.289Z",
+  "intent": "W8: level audit of the nine rows",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-69b58d",
+      "text": "For data.orm (#3 #7 plus the kept #1 #2 #5 #6 #8), web.ui (#1 #2 #6 #8, margin #5), web.admin (#1 #2 #3 #8, margin #4 #5 #6), ai.llm (#1–#7, margin #8), eco.i18n (#1 #2 #3 #5 #7) and eco.tenancy (#1 #2 #3 #5 #6 #7, margin #8): every planned check id maps to an existing path at HEAD, a named test that passes, a book chapter and a runnable example (METHOD §7.2); level production is evidenced by the reference-pipeline CI job; the evidence map is attached to the leaf evidence.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-11941d",
+      "text": "web.rpc, web.realtime and dist.tls are re-checked after the T12 carry leaves (h3 settings, WebSocket changes, mesh session pump, Relay on the host): no check lost; level production still evidenced by reference-relay and reference-ledger.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-498299",
+      "text": "Every gap becomes a Maestro task before exit; no file is edited by this leaf.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-49cf40",
+      "text": "Tier: read-only audit.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-51c2ef",
+      "text": "Gate: `jq -r '.rows[] | select(.id==\"data.orm\" or .id==\"web.ui\" or .id==\"web.admin\" or .id==\"ai.llm\" or .id==\"eco.i18n\" or .id==\"eco.tenancy\" or .id==\"web.rpc\" or .id==\"web.realtime\" or .id==\"dist.tls\") | .checks[].id' docs/scorecard/scorecard.json` → each id present in the evidence map with a path that exists (`test -e`) and a test that passes (`cargo nextest run -E 'test(<name>)'`)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-cd335e",
+      "text": "Owns: none (read-only)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r13-w8-level-audit",
+  "lockedBy": "r13-w8-level-audit",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "missionId": "pln-mvhf4op9-yl99n0",
+  "riskClass": "low"
+}

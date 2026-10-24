@@ -1,0 +1,9 @@
+{
+  "id": "hnd-mvmbyhm1-jrio3w",
+  "task_id": "tsk-mvhf59ri-fjrbf4",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-24T11:43:23.305Z",
+  "agent_id": "r13-w8-level-audit",
+  "spec_path": ".maestro/specs/releases/0.13/r13-w8-level-audit.md",
+  "to_agent": "claude-code"
+}
