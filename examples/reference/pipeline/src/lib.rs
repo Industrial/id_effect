@@ -17,9 +17,12 @@
 //! | [`ai`] | structured extraction, the bounded classification loop, embeddings, MCP enrichment |
 //! | [`rpc`] | `Intake`, the RPC surface (mutations, queries, the status subscription) |
 //! | [`mcp`] | one guarded, Origin-checked MCP endpoint per tenant |
+//! | [`admin`] | the generated admin of `Source`, `Document` and `Label`, one site per tenant |
+//! | [`ui`] | the htmx + maud review queue in English or German, and the app's prod posture |
 //!
-//! [`router`] puts them on one Axum router: every route declares its access (only `/health` is
-//! public), bearer JWTs authenticate, and the tenant of every request comes from its principal.
+//! [`router`] puts them on one Axum router: every route declares its access (only `/health` and
+//! the htmx script are public), bearer JWTs authenticate, and the tenant of every request comes
+//! from its principal.
 //!
 //! ```
 //! use pipeline::{Stage, stages};
@@ -32,12 +35,14 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod admin;
 pub mod ai;
 pub mod domain;
 pub mod mcp;
 pub mod rpc;
 pub mod stages;
 pub mod tenancy;
+pub mod ui;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -254,6 +259,12 @@ pub async fn migrate(tenants: &Tenants, main_url: &str) -> Result<(), String> {
       .await
       .into_result()
       .map_err(|cause| format!("migrations: {cause:?}"))?;
+    // The audit log of admin changes (its own tracking table), in every tenant's database.
+    let audit = id_effect_kit::sql::audit::migrator().run_on(Arc::clone(&db));
+    run_with_env(HNil, move |_| audit)
+      .await
+      .into_result()
+      .map_err(|cause| format!("audit migrations: {cause:?}"))?;
     let close = db.close();
     let _ = run_with_env(HNil, move |_| close).await;
   }
@@ -365,9 +376,10 @@ pub fn routes(app: &Arc<App>, mcp: &McpSettings) -> Result<Router<DynEnv>, Strin
   Ok(rpc::server(Arc::clone(app)).mount(typed))
 }
 
-/// The application: [`routes`] behind the deny-by-default layer, the tenancy layer (the tenant of
-/// each request from its principal), bearer authentication, the body limit, the request timeout
-/// and request ids.
+/// The application: [`routes`] and the back office ([`ui::backoffice`]: the admin and the review
+/// queue, behind their CSRF and locale layers) behind the deny-by-default layer, the tenancy
+/// layer (the tenant of each request from its principal), bearer JWT authentication, the body
+/// limit, the request timeout and request ids.
 ///
 /// # Errors
 ///
@@ -378,6 +390,7 @@ pub fn router(app: &Arc<App>, keys: &TokenKeys, mcp: &McpSettings) -> Result<axu
     typed
       .with_state::<()>(DynEnv::new())
       .into_axum()
+      .merge(ui::backoffice(app)?)
       .layer(TenancyLayer::new(&TenantResolver::new()))
       .layer(keys.layer())
       .layer(BodyLimitLayer::new(BODY_LIMIT))

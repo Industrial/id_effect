@@ -28,8 +28,8 @@ path = "examples/010_stages.rs"
 # PostgreSQL (`sql-pg`, `migrate`), entities with relations, keyset pages and hooks
 # (`repository`), the outbox (`messaging`), one job per stage (`jobs`), uploads (`storage`),
 # bearer JWTs (`auth`), guards (`authz`), one tenant for both (`tenancy`), the AI stages (`ai`,
-# `embeddings`), the MCP server and client (`mcp`, `http-client`), the RPC surface (`rpc`) and the
-# en/de messages (`i18n`).
+# `embeddings`), the MCP server and client (`mcp`, `http-client`), the RPC surface (`rpc`), the
+# en/de messages (`i18n`) and the back office (`admin`, `audit`, `ui`).
 id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", features = [
   "web",
   "sql-pg",
@@ -49,7 +49,14 @@ id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", fe
   # The `Intake.status` subscription as server-sent events (and every kind over a WebSocket).
   "rpc-ws",
   "i18n",
+  # The back office (r13-w7-pipeline-backoffice): the generated admin (`admin`, its changes in
+  # the hash-chained audit log with `audit`) and the htmx + maud review queue (`ui`).
+  "admin",
+  "audit",
+  "ui",
 ] }
+# `html!` expands to `extern crate maud;`: the pin of id_effect_axum's `ui` (pre-1.0, exact).
+maud = "=0.27.0"
 # The derive macros expand to `::id_effect::` paths and `#[rpc::service]` to `::id_effect_rpc::`
 # paths: both crates are named too (the kit picks their features).
 id_effect = { path = "../../../crates/id_effect", version = "0.12.0" }

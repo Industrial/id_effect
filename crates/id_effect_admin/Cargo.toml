@@ -98,6 +98,7 @@ required-features = ["test-util"]
 all-features = true
 
 [package.metadata.id_effect]
-# ADR 0010 crate tier (Amendment 9) — checked by scripts/tier-conformance.sh. Moves to `platform`
-# when the Pipeline reference app depends on it (check P).
-tier = "integration"
+# ADR 0010 crate tier (Amendment 9) — checked by scripts/tier-conformance.sh. `platform` (ADR 0012
+# rule 4): the Pipeline reference app's back office depends on it (check P,
+# r13-w7-pipeline-backoffice).
+tier = "platform"
