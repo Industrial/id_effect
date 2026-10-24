@@ -7,7 +7,7 @@
 //! - a [`Localizer`] in the request extensions, which is also an extractor, for views
 //!   (`t(&localizer, "id", args)` with the `maud` feature);
 //! - a [`CurrentLocale`] override in the request's
-//!   [`RequestCaps`](id_effect_axum::RequestCaps): handlers run through
+//!   [`RequestCaps`]: handlers run through
 //!   [`execute_with_request_caps`](id_effect_axum::execute_with_request_caps) find the negotiated
 //!   locale in their [`DynEnv`](id_effect::DynEnv) environment; typed environments call
 //!   [`Localizer::scope`];

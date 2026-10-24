@@ -119,7 +119,7 @@ enum Conn {
   Http(HttpConn),
 }
 
-/// An MCP client (see the [module docs](self)). Clones share the connection.
+/// An MCP client (see the module docs). Clones share the connection.
 ///
 /// ```no_run
 /// use id_effect_ai::mcp::McpClient;

@@ -12,7 +12,7 @@
 //!    registered as guarded, to merge into the application's router.
 //!
 //! Inside the guard, every page checks the entity × action permission
-//! ([`AdminPermission`](crate::AdminPermission)) through the site's `id_effect_authz` policy
+//! ([`AdminPermission`]) through the site's `id_effect_authz` policy
 //! before any query, and reads rows through a repository bound to the request's
 //! `CurrentTenant` (a tenant-scoped entity without a tenant is refused, never read unscoped).
 //!

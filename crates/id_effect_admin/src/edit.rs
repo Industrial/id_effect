@@ -12,7 +12,7 @@
 //!
 //! - **Fields.** The forms bind the entity's editable fields (`#[entity(editable)]`), or the
 //!   subset [`EntityAdmin::form`] lists; the primary key, the version, tenant and soft-delete
-//!   columns are never bound (see [`forms`](crate::forms) for the mass-assignment guard). A
+//!   columns are never bound (see [`forms`] for the mass-assignment guard). A
 //!   create form also asks for the primary key when the database does not generate it. The other
 //!   fields of a new record come from [`EntityAdmin::new_record`], else NULL (nullable fields) or
 //!   the column's zero (generated id, version); an entity with a required field that is neither

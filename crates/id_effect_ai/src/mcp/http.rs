@@ -109,7 +109,7 @@ impl RouteGuard for SharedGuard {
   }
 }
 
-/// An MCP server mounted as a Streamable HTTP route (see the [module docs](self)).
+/// An MCP server mounted as a Streamable HTTP route (see the module docs).
 ///
 /// ```
 /// use id_effect_ai::mcp::{McpEndpoint, McpServer};

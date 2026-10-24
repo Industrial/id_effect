@@ -2,7 +2,7 @@
 //!
 //! [`HtmlForm<T>`] reads an `application/x-www-form-urlencoded` body (the query string for
 //! `GET`), decodes it through `T`'s schema exactly like
-//! [`ValidForm`](crate::route::ValidForm), and **does not reject** input that fails: it keeps the
+//! [`ValidForm`], and **does not reject** input that fails: it keeps the
 //! submitted values and every issue bound to its field in a [`FormState`], so the handler
 //! re-renders the form with what the user typed and what is wrong with it (answer `422`; the
 //! htmx config of [`htmx_head`](super::htmx::htmx_head) swaps `422` responses in). Axum's own

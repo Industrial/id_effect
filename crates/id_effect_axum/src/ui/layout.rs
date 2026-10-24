@@ -14,7 +14,7 @@
 //! fills (install it **outside** the `LayoutLayer`, i.e. with a later `.layer` call).
 //! [`BasicLayout`] puts the masked token in `<body hx-headers='{"x-csrf-token": …}'>`, so every
 //! htmx request carries it (ADR 0013 R9), and loads htmx through
-//! [`htmx_head`](super::htmx::htmx_head).
+//! [`htmx_head`].
 //!
 //! ```rust
 //! use axum::Router;
