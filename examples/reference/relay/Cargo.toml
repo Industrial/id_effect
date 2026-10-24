@@ -21,9 +21,11 @@ path = "src/main.rs"
 
 [dependencies]
 # Every id_effect battery comes through the kit, one feature each: RPC (`rpc`, every kind over
-# WebSocket `rpc-ws`, HTTP/3 `http3`, WebTransport `webtransport`), the mesh with channels and
-# mesh RPC (`cluster`, QUIC with mutual TLS `mesh-mtls`), room history on an event log
-# (`events`) in PostgreSQL (`sql-pg`), bearer JWTs (`auth`) and principals (`authz`).
+# WebSocket `rpc-ws`, HTTP/3 `http3`, WebTransport on the host's HTTP/3 endpoint
+# `webtransport`), the mesh with channels and mesh RPC (`cluster`, which turns on the kit's
+# `process` re-export of the local process layer; QUIC with mutual TLS `mesh-mtls`), room
+# history on an event log (`events`) in PostgreSQL (`sql-pg`), bearer JWTs (`auth`) and
+# principals (`authz`). `tests/manifest.rs` (`relay_depends_on_kit_only`) holds it to that.
 id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", features = [
   "web",
   "rpc",
@@ -38,12 +40,10 @@ id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", fe
   "authz",
 ] }
 # The derive and `effect!` macros expand to `::id_effect::` paths, `#[rpc::service]` to
-# `::id_effect_rpc::` paths: keep both crates (the kit picks their features).
+# `::id_effect_rpc::` paths: keep both crates, with no feature of their own (the kit picks
+# their features).
 id_effect = { path = "../../../crates/id_effect", version = "0.12.0" }
 id_effect_rpc = { path = "../../../crates/id_effect_rpc", version = "0.12.0" }
-# `ProcessNode` and `NodeName`: the local process layer the mesh distributes (the kit does not
-# re-export it; the cluster template names it the same way).
-id_effect_process = { path = "../../../crates/id_effect_process", version = "0.12.0" }
 axum = "0.8.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -65,8 +65,9 @@ id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", fe
 id_effect_tool = { path = "../../../crates/id_effect_tool" }
 # tests/browser.rs (D12): Chromium over CDP, the driver id_effect_rpc's browser test uses.
 headless_chrome = "=1.0.22"
-# tests/common: the Rust client's `wss://` socket (`WsClient::over` a TLS stream) carrying an
-# Authorization header; the versions already in the tree.
+# tests/common: the rustls client config of the WebTransport sessions, and the upgrade request
+# carrying an Authorization header that `WsClient::connect_with` dials over `wss://`; the
+# versions already in the tree.
 tokio-rustls = { version = "=0.26.6", default-features = false, features = [
   "logging",
   "tls12",

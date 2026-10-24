@@ -1,5 +1,6 @@
-//! Three Relay nodes on real QUIC and TLS on loopback, joined into one mesh on their shared
-//! endpoints (ADR 0014 D7), PostgreSQL in its own container: a room with members on every node,
+//! Three Relay nodes on real QUIC and TLS on loopback (clients on the host's TCP and HTTP/3
+//! port, the mesh on each node's `idm/1` endpoint, every session on a node session pump),
+//! PostgreSQL in its own container: a room with members on every node,
 //! messages over two-way streams, presence that converges when a node is lost, history that
 //! resumes after a reconnect with no gap, and joins refused without membership.
 
@@ -144,9 +145,21 @@ async fn relay_three_nodes_chat_over_http3() {
     assert_eq!(node.rooms[0].room, ROOM);
     assert_eq!(node.rooms[0].present, 1);
   }
-  // Clients and peers reached every node on its one UDP port.
+  // The peers reached every node on its mesh endpoint (node i accepts the i nodes before it):
+  // the clients' HTTP/3 and WebTransport above went to the host's endpoint instead.
+  for (i, node) in c.nodes.iter().enumerate() {
+    let stats = node.mesh_endpoint().stats();
+    assert!(stats.accepted >= i as u64, "{:?}: {stats:?}", node.name());
+  }
+  // Every session runs on a node session pump that verified each envelope it delivered:
+  // the channels and mesh RPC above crossed them, and nothing was dropped as unverified.
   for node in &c.nodes {
-    assert!(node.endpoint().stats().accepted >= 2, "{:?}", node.name());
+    let pumps = node.sessions();
+    assert_eq!(pumps.len(), 2, "{:?}", node.name());
+    for (peer, stats) in pumps {
+      assert!(stats.delivered > 0, "{} <- {peer}: {stats:?}", node.name());
+      assert_eq!(stats.unverified, 0, "{} <- {peer}: {stats:?}", node.name());
+    }
   }
   for wt in &sessions {
     wt.close();
@@ -449,14 +462,12 @@ async fn relay_join_denied_without_membership() {
       .is_err()
   );
   // A bad token is refused at the door (401 before any route).
-  let forged = common::http_client(
+  let forged = common::bearer_client(
     &c.url(0),
-    common::Bearer {
-      inner: id_effect_kit::platform::http::ReqwestHttpClient::from_config(&common::http_config(
-        &c.certificate,
-      )),
-      token: "not.a.token".to_owned(),
-    },
+    id_effect_kit::platform::http::ReqwestHttpClient::from_config(&common::http_config(
+      &c.certificate,
+    )),
+    "not.a.token",
   );
   assert!(run_typed(forged.cluster()).await.is_err());
 

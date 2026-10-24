@@ -1,7 +1,8 @@
 //! The Relay test fixture: PostgreSQL in this test binary's own container, three (or more)
 //! nodes on real QUIC and TLS on loopback joined into a mesh, signed-in users, and every client
-//! the Relay serves — the generated Rust client over HTTP/1.1–2 (TCP), over HTTP/3 only, and
-//! over the RPC WebSocket (`wss://`), and WebTransport sessions carrying RPC frames.
+//! the Relay serves — the generated Rust client over HTTP/1.1–2 (TCP) and over HTTP/3 only,
+//! signed in with `HttpTransport::with_bearer`, over the RPC WebSocket it dials itself
+//! (`wss://`), and WebTransport sessions carrying RPC frames on the host's HTTP/3 endpoint.
 //!
 //! PostgreSQL tests print `SKIP` without Docker, unless `ID_EFFECT_REQUIRE_DOCKER=1` (or
 //! `ID_EFFECT_REQUIRE_PG=1`), which turns a missing Docker into a failure.
@@ -20,6 +21,7 @@ use id_effect_kit::axum::server::webtransport::WebTransportStream;
 use id_effect_kit::axum::server::webtransport::client::{
   self as wt_client, ConnectError, ConnectRequest, WebTransportClient,
 };
+use id_effect_kit::config::SecretString;
 use id_effect_kit::node::Cookie;
 use id_effect_kit::platform::error::HttpError;
 use id_effect_kit::platform::http::{
@@ -29,7 +31,7 @@ use id_effect_kit::platform::http::{
 use id_effect_kit::platform::tls::{NodeCertificate, provider};
 use id_effect_kit::rpc::RpcClient;
 use id_effect_kit::rpc::channels::ChannelsConfig;
-use id_effect_kit::rpc::client::ws::WsClient;
+use id_effect_kit::rpc::client::ws::{WsClient, WsClientConfig};
 use id_effect_kit::rpc::codec::postcard::{encode_record, split_record};
 use id_effect_kit::rpc::service::HttpTransport;
 use id_effect_kit::sql::SqlClient;
@@ -210,6 +212,7 @@ pub fn node_config(
   NodeConfig {
     name: node_name(i),
     bind: SocketAddr::new(HOST.parse().expect("ip"), options.port),
+    mesh_bind: SocketAddr::new(HOST.parse().expect("ip"), 0),
     certificate: certificate.clone(),
     mesh,
     cookie: Cookie::new("relay-test-mesh-cookie-of-at-least-32-bytes"),
@@ -239,7 +242,10 @@ pub async fn cluster(db: Arc<dyn SqlClient>, options: Options) -> Cluster {
   }
   for i in 0..nodes.len() {
     for j in i + 1..nodes.len() {
-      let peer = nodes[i].connect(nodes[j].addr()).await.expect("mesh join");
+      let peer = nodes[i]
+        .connect(nodes[j].mesh_addr())
+        .await
+        .expect("mesh join");
       assert_eq!(peer, node_name(j));
     }
   }
@@ -295,7 +301,7 @@ impl Cluster {
     let config = http_config(&self.certificate);
     let tcp = ReqwestHttpClient::from_config(&config);
     let token = self.token(user).await;
-    http_client(&self.url(i), Bearer { inner: tcp, token })
+    bearer_client(&self.url(i), tcp, &token)
   }
 
   /// The generated client of node `i` over HTTP/3 only (no `Alt-Svc`, no TCP fallback: a call
@@ -309,7 +315,7 @@ impl Cluster {
       client,
       port: self.nodes[i].addr().port(),
     };
-    http_client(&self.url(i), Bearer { inner: only, token })
+    bearer_client(&self.url(i), only, &token)
   }
 
   /// The generated client of node `i` over the RPC WebSocket (`wss://`), signed in as `user`.
@@ -366,31 +372,6 @@ pub fn http_config(certificate: &NodeCertificate) -> HttpClientConfig {
   config
 }
 
-/// Adds `Authorization: Bearer <token>` to every request (the generated HTTP client takes its
-/// headers from the HTTP client it runs on).
-pub struct Bearer<C> {
-  /// The client.
-  pub inner: C,
-  /// The token.
-  pub token: String,
-}
-
-impl<C: HttpClient> HttpClient for Bearer<C> {
-  fn execute(&self, mut req: HttpRequest) -> Effect<HttpResponse, HttpError> {
-    req
-      .headers
-      .push(("authorization".to_owned(), format!("Bearer {}", self.token)));
-    self.inner.execute(req)
-  }
-
-  fn execute_stream(&self, mut req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError> {
-    req
-      .headers
-      .push(("authorization".to_owned(), format!("Bearer {}", self.token)));
-    self.inner.execute_stream(req)
-  }
-}
-
 /// The platform's HTTP/3 client sending every request over HTTP/3 to one port.
 pub struct Http3Only {
   /// The client.
@@ -409,12 +390,22 @@ impl HttpClient for Http3Only {
   }
 }
 
-/// The generated client of `url` over `http`.
+/// The generated client of `url` over `http`, anonymous.
 pub fn http_client(url: &str, http: impl HttpClient) -> RelayClient<HttpTransport> {
-  RelayService::client(HttpTransport::new(
-    RpcClient::new(url),
-    HttpClientService::new(http),
-  ))
+  RelayService::client(transport(url, http))
+}
+
+/// The generated client of `url` over `http`, signed in with `token`: the transport's own
+/// bearer header (F56, `HttpTransport::with_bearer`; the token stays a `Secret`).
+pub fn bearer_client(url: &str, http: impl HttpClient, token: &str) -> RelayClient<HttpTransport> {
+  let transport = transport(url, http)
+    .with_bearer(SecretString::new(token.to_owned()))
+    .expect("a token is a valid header value");
+  RelayService::client(transport)
+}
+
+fn transport(url: &str, http: impl HttpClient) -> HttpTransport {
+  HttpTransport::new(RpcClient::new(url), HttpClientService::new(http))
 }
 
 /// A rustls client config trusting only `certificate` (TLS 1.3).
@@ -430,38 +421,26 @@ pub fn client_tls(certificate: &NodeCertificate) -> rustls::ClientConfig {
     .with_no_client_auth()
 }
 
-/// The RPC WebSocket of the node at `addr` over TLS, with `Authorization: Bearer <token>`.
+/// The RPC WebSocket of the node at `addr`, dialled by the Rust client itself over `wss://`
+/// (F40: rustls with the platform roots plus `certificate`'s anchor, the server name checked, no
+/// way to accept an untrusted certificate), the upgrade carrying the user's bearer token.
 pub async fn wss(
   addr: SocketAddr,
   certificate: &NodeCertificate,
   token: &str,
 ) -> Result<WsClient, String> {
-  let tcp = tokio::net::TcpStream::connect(addr)
-    .await
-    .map_err(|e| e.to_string())?;
-  let mut tls = client_tls(certificate);
-  tls.alpn_protocols = vec![b"http/1.1".to_vec()];
-  let name = rustls::pki_types::ServerName::try_from(HOST.to_owned()).map_err(|e| e.to_string())?;
-  let stream = tokio_rustls::TlsConnector::from(Arc::new(tls))
-    .connect(name, tcp)
-    .await
-    .map_err(|e| e.to_string())?;
   let mut request = format!("wss://{HOST}:{}/rpc/ws", addr.port())
     .into_client_request()
     .map_err(|e| e.to_string())?;
-  let headers = request.headers_mut();
-  headers.insert(
-    "sec-websocket-protocol",
-    HeaderValue::from_static("idrpc.json.v1"),
-  );
-  headers.insert(
+  let authorization = format!("Bearer {token}");
+  request.headers_mut().insert(
     "authorization",
-    HeaderValue::from_str(&format!("Bearer {token}")).map_err(|e| e.to_string())?,
+    HeaderValue::from_str(&authorization).map_err(|e| e.to_string())?,
   );
-  let (socket, _) = tokio_tungstenite::client_async(request, stream)
+  let config = WsClientConfig::new().add_root_certificate_der(anchor(certificate).to_vec());
+  WsClient::connect_with(request, &config)
     .await
-    .map_err(|e| e.to_string())?;
-  WsClient::over(socket).await.map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())
 }
 
 /// Pumps `stream` into a channel on its own task (aborting the task drops the stream: the call

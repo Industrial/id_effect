@@ -497,12 +497,14 @@ jobs:
           cargo test --locked -p id_effect_ai -p id_effect_admin -p id_effect_i18n -p pipeline --doc --all-features
   # ──────────────────────────────────────────────────────────────────────────
   # Relay reference app (0.12 §6 KPI, never cut): three nodes on real QUIC and TLS on
-  # loopback, the mesh (mutual TLS, `idm/1`) on the endpoint that serves HTTP/3 and
-  # WebTransport (ADR 0014 D7), PostgreSQL in the tests' own container; the Rust client over
-  # HTTP/1.1-2, HTTP/3 and WebSocket, the generated TypeScript client under Deno, Chromium over
-  # CDP (WebTransport, then WebSocket); the prod posture with zero accepted risks; `id-effect rpc
-  # check` against the last release tag; then once more with UDP dropped by iptables, to prove
-  # the TCP fallback.
+  # loopback, HTTP/3 and WebTransport served by the host entry point (0.13 F59: no endpoint of
+  # the Relay's own), the mesh (mutual TLS, `idm/1`) on its own endpoint with every session on
+  # a node session pump, PostgreSQL in the tests' own container; the Rust client over
+  # HTTP/1.1-2 and HTTP/3 (`HttpTransport::with_bearer`) and its own `wss://` WebSocket, the
+  # generated TypeScript client under Deno, Chromium over CDP (WebTransport, then WebSocket);
+  # the prod posture with zero accepted risks; the manifest on the kit only (cargo metadata);
+  # `id-effect rpc check` against the last release tag; then once more with UDP dropped by
+  # iptables, to prove the TCP fallback.
   # ──────────────────────────────────────────────────────────────────────────
   reference-relay:
     name: Reference app (Relay)
@@ -546,7 +548,7 @@ jobs:
         run: |
           cargo fmt -p relay --check
           cargo clippy -p relay --all-targets --locked -- -D warnings
-      - name: Relay KPI (3 nodes over HTTP/3 and WebSocket, presence, resume, membership, browser, TypeScript, prod posture, contract)
+      - name: Relay KPI (3 nodes over HTTP/3 and WebSocket, host WebTransport, kit-only manifest, presence, resume, membership, browser, TypeScript, prod posture, contract)
         run: cargo nextest run --locked -p relay
       - name: id-effect rpc check against the last release tag
         run: |

@@ -417,6 +417,19 @@
   cancelled, without waiting for `peer_down` (`MeshRpc::with_liveness`, `MeshRpc::heartbeat`;
   interval and deadline clamped finite). New `MeshRpcError` variant: see
   [MIGRATION-0.13.md](docs/MIGRATION-0.13.md).
+- The Relay on the host (r13-f-relay-host, 0.12 follow-ups F59 0.13 part, F55, F56; example
+  tier): `examples/reference/relay` serves HTTP/3 and WebTransport from the host entry point
+  (`ServerHandle` with `server.http3` and `server.http3.webtransport` on) instead of a
+  `serve_h3` endpoint of its own; the mesh (`idm/1`, mutual TLS) moves to a QUIC endpoint of its
+  own (`NodeConfig::mesh_bind`, `RELAY_MESH_BIND`, default `0.0.0.0:8444`; `RELAY_PEERS` now
+  lists mesh addresses; `RelayNode::mesh_addr`, `mesh_endpoint`, `sessions`, `host_config`),
+  since the host does not hand out its endpoint. The Relay depends on `id_effect_kit` only (the
+  `id_effect_process` dependency is gone; `id_effect_kit::process`), its tests sign in with
+  `HttpTransport::with_bearer` instead of a wrapping HTTP client, dial `wss://` with
+  `WsClient::connect_with`, and check that every mesh session runs on a node session pump. New
+  tests `relay_uses_host_webtransport`, `relay_depends_on_kit_only` (cargo metadata). Exercising
+  server and client streams, SSE, postcard, batching and WebSocket session resume in the Relay
+  is 0.14 E13.2.
 
 ### Documentation
 
