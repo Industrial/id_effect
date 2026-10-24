@@ -92,7 +92,9 @@
 #                        pinned by a 40-character commit SHA (or a docker @sha256 digest). The
 #                        slsa-github-generator reusable workflow is the documented tag-pinned
 #                        exception (scripts/check-workflows.sh); any other unpinned one FAILs.
-#   registry_token       s3_no_registry_token_in_workflows: no CARGO_REGISTRY_TOKEN under .github.
+#   registry_token       s3_no_registry_token_in_workflows: no CARGO_REGISTRY_TOKEN under .github,
+#                        unless docs/security/findings.json records S3 as accepted (an owner
+#                        decision; the KPI passes with `accepted` and the register's note).
 #
 # Online and owner KPIs (GitHub and crates.io, read-only; they exist only after the release is
 # pushed and published). Not reachable or not there yet: "pending" with the reason (reported, not
@@ -773,14 +775,22 @@ kpi_sha_pinned_actions() {
 }
 
 # S3: no workflow reads a long-lived crates.io token.
+# A finding the register (docs/security/findings.json) records as accepted keeps its files: the
+# KPI passes with `accepted` and the register's reason (owner decision; 0.13: #118, publishing
+# with the registry token again).
 s3_no_registry_token_in_workflows() {
-    local root="$1" hits
+    local root="$1" hits accepted
     hits="$(grep -rln CARGO_REGISTRY_TOKEN "${root}/.github" 2>/dev/null || true)"
-    jq -n --arg hits "${hits//"${root}"\//}" '
+    accepted="$(jq -c '[.findings[]? | select(.id == "S3" and .status == "accepted") | .note][0]' \
+        "${root}/docs/security/findings.json" 2>/dev/null || echo null)"
+    jq -n --arg hits "${hits//"${root}"\//}" --argjson acc "${accepted:-null}" '
         ($hits | split("\n") | map(select(. != ""))) as $h
         | {value: ($h | length), target: 0, files: $h,
-           status: (if ($h | length) == 0 then "pass" else "fail" end),
-           summary: "\($h | length) files under .github mention CARGO_REGISTRY_TOKEN"}'
+           summary: "\($h | length) files under .github mention CARGO_REGISTRY_TOKEN"}
+        + if ($h | length) == 0 then {status: "pass"}
+          elif $acc != null then {status: "pass", accepted: true, reason: $acc,
+               summary: "\($h | length) files under .github mention CARGO_REGISTRY_TOKEN; S3 accepted in the register: \($acc)"}
+          else {status: "fail"} end'
 }
 
 # --- online KPIs -----------------------------------------------------------------------------
@@ -1277,6 +1287,13 @@ env:
 YML
     s3_no_registry_token_in_workflows "${fx}" >"${tmp}/r.json"
     expect s3_no_registry_token_in_workflows "${tmp}/r.json" '.status == "fail" and .files == [".github/workflows/c.yml"]'
+    register | jq '(.findings[] | select(.id == "S3")) |= (.status = "accepted" | .note = "owner decision")' \
+        >"${fx}/docs/security/findings.json"
+    s3_no_registry_token_in_workflows "${fx}" >"${tmp}/r.json"
+    expect s3_no_registry_token_in_workflows "${tmp}/r.json" '.status == "pass" and .accepted == true and .reason == "owner decision" and .value == 1'
+    rm "${fx}/docs/security/findings.json"
+    s3_no_registry_token_in_workflows "${fx}" >"${tmp}/r.json"
+    expect s3_no_registry_token_in_workflows "${tmp}/r.json" '.status == "fail" and .value == 1'
 
     # ── kpi_fuzz_targets_new (0.12) ──────────────────────────────────────────────────────────
     jq -n '{kpis: {fuzz_targets: {targets: ["alpha"]}}}' >"${tmp}/base.json"
