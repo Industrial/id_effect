@@ -1,532 +1,590 @@
 {
-	"schema": 1,
-	"baseline": "v0.13",
-	"sha": "1a7dcb24aab235c2dbb3c810de11f76178b9dd8e",
-	"created": "2026-10-22T00:45:59Z",
-	"machine": {
-		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
-		"cpus": "32",
-		"governor": "performance",
-		"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
-		"kernel": "Linux 6.18.55"
-	},
-	"benches": {
-		"coord/channel_spsc_10k": {
-			"mean": 935899.1074855844,
-			"median": 865442.3464285715,
-			"std_dev": 201163.6243235197,
-			"mean_ci": [
-				899808.8651037617,
-				978115.7399197535
-			],
-			"median_ci": [
-				855937.8012820513,
-				876965.1388888889
-			]
-		},
-		"coord/queue_bounded_10k": {
-			"mean": 1087688.633274591,
-			"median": 958046.9017049666,
-			"std_dev": 371653.41074133856,
-			"mean_ci": [
-				1018836.2168710417,
-				1162804.734988661
-			],
-			"median_ci": [
-				888251.1906693712,
-				1057074.4341211969
-			]
-		},
-		"gate/async_bind_64": {
-			"mean": 1400.1198553905228,
-			"median": 1398.4248688317725,
-			"std_dev": 17.12488492615705,
-			"mean_ci": [
-				1396.8773974807111,
-				1403.4611301559003
-			],
-			"median_ci": [
-				1392.6208261547297,
-				1403.9310836213692
-			]
-		},
-		"gate/axum_request_bare": {
-			"mean": 959.082677225043,
-			"median": 949.6364694789859,
-			"std_dev": 56.46511044870602,
-			"mean_ci": [
-				949.1142043310053,
-				971.0654316635226
-			],
-			"median_ci": [
-				948.4886317313881,
-				952.9793016194332
-			]
-		},
-		"gate/axum_request_caps": {
-			"mean": 1293.067865929174,
-			"median": 1288.404467805519,
-			"std_dev": 30.34767154796738,
-			"mean_ci": [
-				1287.5539959585922,
-				1299.392400388789
-			],
-			"median_ci": [
-				1282.8643619077066,
-				1294.821352671112
-			]
-		},
-		"gate/axum_request_oneshot": {
-			"mean": 843.4155925544187,
-			"median": 805.7090584492676,
-			"std_dev": 142.02355395242384,
-			"mean_ci": [
-				819.9463805741501,
-				874.5260364731943
-			],
-			"median_ci": [
-				801.6224028906956,
-				809.2726178726646
-			]
-		},
-		"gate/axum_request_secure_stack": {
-			"mean": 3692.9194594686355,
-			"median": 3708.429188203101,
-			"std_dev": 95.84054272025183,
-			"mean_ci": [
-				3675.3157771714555,
-				3712.852794047094
-			],
-			"median_ci": [
-				3674.4646464646466,
-				3724.2133705911574
-			]
-		},
-		"gate/flat_map_depth_10k": {
-			"mean": 194246.4495911808,
-			"median": 194024.52102941176,
-			"std_dev": 2619.8706800269842,
-			"mean_ci": [
-				193759.8255326723,
-				194772.62094001702
-			],
-			"median_ci": [
-				193265.365,
-				194350.03225806452
-			]
-		},
-		"gate/sleep_1k_x_1ms": {
-			"mean": 3264734.967096774,
-			"median": 3263956.0774193546,
-			"std_dev": 71762.91447774223,
-			"mean_ci": [
-				3223871.669677419,
-				3307896.3393548387
-			],
-			"median_ci": [
-				3211208.067741935,
-				3308693.5096774194
-			]
-		},
-		"gate/sleep_cpu_1k_x_1ms": {
-			"mean": 12188718.502614379,
-			"median": 12210636.928104576,
-			"std_dev": 373917.0655291323,
-			"mean_ci": [
-				11975468.550980393,
-				12416230.55359477
-			],
-			"median_ci": [
-				11882644.470588235,
-				12402935.091503268
-			]
-		},
-		"gate/spawn_join_10k": {
-			"mean": 13904197.858823532,
-			"median": 13889736.19117647,
-			"std_dev": 3562021.633354002,
-			"mean_ci": [
-				11802936.2,
-				15906057.694117647
-			],
-			"median_ci": [
-				10815551.838235293,
-				16813719.94117647
-			]
-		},
-		"h3_loss/h2_p50": {
-			"mean": 255938674.66666666,
-			"median": 255998062.0,
-			"std_dev": 762631.5336011808,
-			"mean_ci": [
-				254976369.0,
-				256841593.0
-			],
-			"median_ci": [
-				254976369.0,
-				256841593.0
-			]
-		},
-		"h3_loss/h2_p99": {
-			"mean": 612139930.3333334,
-			"median": 612466390.0,
-			"std_dev": 2072670.5322313583,
-			"mean_ci": [
-				609454001.0,
-				614499400.0
-			],
-			"median_ci": [
-				609454001.0,
-				614499400.0
-			]
-		},
-		"h3_loss/h3_p50": {
-			"mean": 15771379.333333334,
-			"median": 15838301.0,
-			"std_dev": 337716.062062332,
-			"mean_ci": [
-				15328383.0,
-				16147454.0
-			],
-			"median_ci": [
-				15328383.0,
-				16147454.0
-			]
-		},
-		"h3_loss/h3_p99": {
-			"mean": 36122994.333333336,
-			"median": 38559657.0,
-			"std_dev": 5230181.95470421,
-			"mean_ci": [
-				28856588.0,
-				40952738.0
-			],
-			"median_ci": [
-				28856588.0,
-				40952738.0
-			]
-		},
-		"i18n/empty_iter": {
-			"mean": 0.18762227202645249,
-			"median": 0.1873208990097694,
-			"std_dev": 0.00288431444294444,
-			"mean_ci": [
-				0.18708943659761784,
-				0.18820742473770985
-			],
-			"median_ci": [
-				0.18647514068206214,
-				0.18808617809093794
-			]
-		},
-		"i18n/format_plural": {
-			"mean": 331.0437400184552,
-			"median": 330.8975278885934,
-			"std_dev": 4.564427899902567,
-			"mean_ci": [
-				330.16376476542024,
-				331.95315170811693
-			],
-			"median_ci": [
-				329.79888256983156,
-				332.0581606942889
-			]
-		},
-		"orm/eager_100x10": {
-			"mean": 1223001.4573752685,
-			"median": 1192265.1314935065,
-			"std_dev": 97456.17531850164,
-			"mean_ci": [
-				1205407.6700108743,
-				1243095.9585554458
-			],
-			"median_ci": [
-				1188439.6103896103,
-				1198184.0
-			]
-		},
-		"orm/flat_100x10": {
-			"mean": 1225599.612234889,
-			"median": 924606.061247576,
-			"std_dev": 820468.3848717365,
-			"mean_ci": [
-				1079525.2238351516,
-				1397090.344385735
-			],
-			"median_ci": [
-				859186.6235294117,
-				1010889.6923076923
-			]
-		},
-		"orm/n_plus_one_100x10": {
-			"mean": 3299278.2113333307,
-			"median": 3186100.9000000004,
-			"std_dev": 314851.96115358785,
-			"mean_ci": [
-				3242858.9606666667,
-				3363943.0869666664
-			],
-			"median_ci": [
-				3164320.466666667,
-				3219629.2
-			]
-		},
-		"phase0/bench_effect_flat_map_chain": {
-			"mean": 53.62966897911946,
-			"median": 53.523914028268955,
-			"std_dev": 0.671334420119389,
-			"mean_ci": [
-				53.504648171180705,
-				53.76612496375031
-			],
-			"median_ci": [
-				53.42589769955039,
-				53.71417243435208
-			]
-		},
-		"phase0/bench_effect_map_chain": {
-			"mean": 53.24262675742296,
-			"median": 53.039062722745975,
-			"std_dev": 0.9120778693122089,
-			"mean_ci": [
-				53.08676226383229,
-				53.43883890558241
-			],
-			"median_ci": [
-				52.913768353507734,
-				53.21707026081901
-			]
-		},
-		"phase0/bench_env_insert_overhead": {
-			"mean": 34.19097271592337,
-			"median": 34.19523758175068,
-			"std_dev": 0.2323878539960651,
-			"mean_ci": [
-				34.14595582778223,
-				34.23663242077402
-			],
-			"median_ci": [
-				34.16908939686082,
-				34.26332883366216
-			]
-		},
-		"phase0/bench_schedule_retry_overhead": {
-			"mean": 136.15711176054702,
-			"median": 136.15337838619814,
-			"std_dev": 1.0201139234853962,
-			"mean_ci": [
-				135.96159606672737,
-				136.35717814618513
-			],
-			"median_ci": [
-				135.9936185618082,
-				136.4541041178901
-			]
-		},
-		"phase0/bench_stream_throughput_collect": {
-			"mean": 1396.7705559669578,
-			"median": 1391.7002781641168,
-			"std_dev": 33.220696950417704,
-			"mean_ci": [
-				1391.0203793654823,
-				1403.9274106035139
-			],
-			"median_ci": [
-				1389.4226617656798,
-				1393.941585535466
-			]
-		},
-		"rpc/axum_json_handler": {
-			"mean": 967.2083549286696,
-			"median": 963.9622751626483,
-			"std_dev": 13.5972851569618,
-			"mean_ci": [
-				964.6125090262175,
-				969.8909653195026
-			],
-			"median_ci": [
-				962.2885492766432,
-				968.3734867330016
-			]
-		},
-		"rpc/batch_50": {
-			"mean": 150657.14906745282,
-			"median": 148596.1700619642,
-			"std_dev": 9648.937265278104,
-			"mean_ci": [
-				148843.30624370734,
-				152591.79591386812
-			],
-			"median_ci": [
-				147050.87894111997,
-				150365.84375
-			]
-		},
-		"rpc/sequential_50": {
-			"mean": 1637790.5012813231,
-			"median": 1611264.3115530303,
-			"std_dev": 123188.27277774384,
-			"mean_ci": [
-				1614264.6133793914,
-				1662450.954525049
-			],
-			"median_ci": [
-				1589418.4032258065,
-				1634655.924206349
-			]
-		},
-		"rpc/unary_json": {
-			"mean": 2746.089480435918,
-			"median": 2745.668035470264,
-			"std_dev": 27.681058153419187,
-			"mean_ci": [
-				2740.8370464027485,
-				2751.4808864181527
-			],
-			"median_ci": [
-				2740.6205878684573,
-				2749.6665879797933
-			]
-		},
-		"rpc/unary_postcard": {
-			"mean": 3309.006016841329,
-			"median": 3304.8396042363433,
-			"std_dev": 28.411048518785034,
-			"mean_ci": [
-				3303.687101994265,
-				3314.779592052484
-			],
-			"median_ci": [
-				3301.3016403885968,
-				3309.2291341508735
-			]
-		},
-		"stream/map_effect_1k": {
-			"mean": 44713.67680164118,
-			"median": 44602.33209647496,
-			"std_dev": 481.43028886230013,
-			"mean_ci": [
-				44620.90449092387,
-				44807.78775574238
-			],
-			"median_ci": [
-				44461.09961315281,
-				44687.486363636366
-			]
-		},
-		"stream/pull_map_10k": {
-			"mean": 9875.985313463818,
-			"median": 9837.78215407977,
-			"std_dev": 117.86291726037611,
-			"mean_ci": [
-				9853.37284768833,
-				9899.295494270124
-			],
-			"median_ci": [
-				9804.944837340878,
-				9869.862147753236
-			]
-		},
-		"ui/empty_iter": {
-			"mean": 0.18597165800055418,
-			"median": 0.18526392258837154,
-			"std_dev": 0.0025990656848046997,
-			"mean_ci": [
-				0.18551864438654295,
-				0.18652429268487813
-			],
-			"median_ci": [
-				0.18503690784825655,
-				0.18550322258544677
-			]
-		},
-		"ui/render_list_50": {
-			"mean": 9819.256429848143,
-			"median": 9807.074166666667,
-			"std_dev": 97.10357930290083,
-			"mean_ci": [
-				9800.5177044638,
-				9838.220553461799
-			],
-			"median_ci": [
-				9779.26,
-				9827.909861111111
-			]
-		}
-	},
-	"session": {
-		"leaf": "r13-e-benches",
-		"command": "bash scripts/bench-run.sh --baseline v0.13 && bash scripts/bench-export.sh v0.13 OUT && bash scripts/bench-compare.sh docs/benchmarks/v0.12.json OUT",
-		"tree": "1a7dcb24 (release/0.13.0) plus the r13-e-benches benches",
-		"started": "2026-10-22T00:13:03Z",
-		"finished": "2026-10-22T00:45:38Z",
-		"load_1min": {
-			"at_start": 35.98,
-			"at_end": 19.88,
-			"range_seen": "15-170 (shared with other agents compiling)"
-		},
-		"note": "criterion defaults, performance governor; one session on the reference machine, other agents building concurrently (load is not the idle-machine figure the leaf asks for)",
-		"gates_vs_v0_12": {
-			"budget": "7/7 PASS (max coord/queue_bounded_10k 1.225)",
-			"delta": {
-				"secure_stack": "+2759 ns PASS",
-				"unary_rpc": "+1782 ns PASS"
-			},
-			"pair": {
-				"rpc_batch_50": "0.092 PASS",
-				"h3_loss_p99": "0.063 PASS (userspace proxies)",
-				"orm_eager_100x10": "0.374 FAIL (limit 0.25)"
-			},
-			"improve": "spawn_join 0.856 PASS; sleep_cpu 0.978, axum_request_oneshot 1.031 FAIL by construction (must improve on v0.6)",
-			"streaming_vs_v0_12": {
-				"stream/pull_map_10k": 0.998,
-				"stream/map_effect_1k": 0.997,
-				"phase0/bench_stream_throughput_collect": 1.017
-			}
-		},
-		"eager_pair": {
-			"eager_100x10_ns": 1192265,
-			"n_plus_one_100x10_ns": 3186100,
-			"flat_100x10_ns": 924606,
-			"ratio": 0.374,
-			"floor_ratio_flat_over_n_plus_one": 0.290,
-			"quick_runs_ratio": [
-				0.36,
-				0.36
-			],
-			"diagnosis": "sqlx-sqlite fetch_all of 1000 rows costs ~670 us (0.67 us/row) and one small query ~30 us, so even with no relation work (orm/flat_100x10) the ratio is 0.29; eager loading adds ~270 us over flat (owner key rendered to a String per row, HashMap grouping, extra key column)",
-			"rerun_ratio": 0.349,
-			"rerun_floor_ratio": 0.29
-		},
-		"d15_budgets": {
-			"i18n/format_plural": {
-				"median_ns": 330.9,
-				"budget_ns": 496,
-				"gate": "delta over i18n/empty_iter (gates.toml)"
-			},
-			"ui/render_list_50": {
-				"median_ns": 9807.1,
-				"budget_ns": 14710,
-				"gate": "delta over ui/empty_iter (gates.toml)"
-			},
-			"status": "written as delta gates in gates.toml (median x 1.5 over an empty iteration, read from the new export only), enforced by the release gate and bench.yml; owner confirms at the 0.13.0 exit (D15)",
-			"rerun": {
-				"baseline": "v0_13_d15",
-				"sha": "ed8c17efb78cdb555b031e6f551253a815db2a6a",
-				"created": "2026-10-22T01:19:38Z",
-				"command": "bash scripts/bench-run.sh --baseline v0_13_d15 --only id_effect_i18n:format --only id_effect_axum:ui_render --only id_effect_sql:repository_eager",
-				"load_1min": "29-145 (other agents compiling)",
-				"note": "the two empty_iter entries in .benches come from this run; the gated medians are the first measurement",
-				"medians_ns": {
-					"i18n/empty_iter": 0.1873208990097694,
-					"i18n/format_plural": 321.76272377718965,
-					"orm/eager_100x10": 1128498.5308953342,
-					"orm/flat_100x10": 936852.77,
-					"orm/n_plus_one_100x10": 3233859.15625,
-					"ui/empty_iter": 0.18526392258837154,
-					"ui/render_list_50": 10135.84864192161
-				}
-			}
-		}
-	}
+  "schema": 1,
+  "baseline": "v0_13_r3",
+  "sha": "f57f10bade780779111893a91dfa6c9d014347eb",
+  "created": "2026-10-24T08:11:03Z",
+  "machine": {
+    "cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+    "cpus": "32",
+    "governor": "performance",
+    "rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+    "kernel": "Linux 6.18.55"
+  },
+  "benches": {
+    "coord/channel_spsc_10k": {
+      "mean": 925194.7709653905,
+      "median": 876363.3480243161,
+      "std_dev": 209244.13385803066,
+      "mean_ci": [
+        889784.6117235126,
+        970976.3459075359
+      ],
+      "median_ci": [
+        873710.9814814815,
+        883009.4791666667
+      ]
+    },
+    "coord/queue_bounded_10k": {
+      "mean": 1007841.2700341496,
+      "median": 846098.8627340824,
+      "std_dev": 396163.3680179134,
+      "mean_ci": [
+        934245.159704005,
+        1089346.3468839473
+      ],
+      "median_ci": [
+        811752.512195122,
+        886320.3790322581
+      ]
+    },
+    "gate/async_bind_64": {
+      "mean": 1393.0418588139155,
+      "median": 1393.2506273674244,
+      "std_dev": 12.746898486213066,
+      "mean_ci": [
+        1390.5683179344287,
+        1395.543449312771
+      ],
+      "median_ci": [
+        1384.1912439986716,
+        1397.348418051426
+      ]
+    },
+    "gate/axum_request_bare": {
+      "mean": 958.5142380085515,
+      "median": 957.7322456349096,
+      "std_dev": 17.51765174133814,
+      "mean_ci": [
+        955.6964735162205,
+        962.386149349543
+      ],
+      "median_ci": [
+        954.6340486625359,
+        959.0183729898857
+      ]
+    },
+    "gate/axum_request_caps": {
+      "mean": 1260.3912379949645,
+      "median": 1256.037465850367,
+      "std_dev": 45.508671710074935,
+      "mean_ci": [
+        1252.8784770861157,
+        1270.39190261814
+      ],
+      "median_ci": [
+        1249.0177150192555,
+        1263.9956120900922
+      ]
+    },
+    "gate/axum_request_oneshot": {
+      "mean": 814.4953955279477,
+      "median": 812.8027149016438,
+      "std_dev": 13.05880694524646,
+      "mean_ci": [
+        812.4058347221838,
+        817.4220873621729
+      ],
+      "median_ci": [
+        811.7933330163108,
+        814.3793569060256
+      ]
+    },
+    "gate/axum_request_secure_stack": {
+      "mean": 3629.524322926277,
+      "median": 3616.8933508177365,
+      "std_dev": 56.926020306163025,
+      "mean_ci": [
+        3620.019789861759,
+        3642.121214011362
+      ],
+      "median_ci": [
+        3612.282608695652,
+        3624.9220629047177
+      ]
+    },
+    "gate/flat_map_depth_10k": {
+      "mean": 201482.50922383365,
+      "median": 199980.6473607038,
+      "std_dev": 7077.768489345398,
+      "mean_ci": [
+        200282.47826891264,
+        203022.4404672356
+      ],
+      "median_ci": [
+        199577.89315068492,
+        200984.87407407406
+      ]
+    },
+    "gate/sleep_1k_x_1ms": {
+      "mean": 3361417.8418918923,
+      "median": 3356559.8006756757,
+      "std_dev": 49947.70276071792,
+      "mean_ci": [
+        3332756.9280743245,
+        3390854.6761148646
+      ],
+      "median_ci": [
+        3313247.2972972975,
+        3413715.0878378376
+      ]
+    },
+    "gate/sleep_cpu_1k_x_1ms": {
+      "mean": 12643683.005194806,
+      "median": 12671968.256493507,
+      "std_dev": 176055.69110895338,
+      "mean_ci": [
+        12534975.973376622,
+        12742807.285714287
+      ],
+      "median_ci": [
+        12510974.097402597,
+        12783912.607142858
+      ]
+    },
+    "gate/spawn_join_10k": {
+      "mean": 15746482.326666668,
+      "median": 15513525.75,
+      "std_dev": 2418509.749055214,
+      "mean_ci": [
+        14292254.233833332,
+        17179671.12666667
+      ],
+      "median_ci": [
+        14391349.8,
+        17238425.983333334
+      ]
+    },
+    "h3_loss/h2_p50": {
+      "mean": 255048812.33333334,
+      "median": 255207319.0,
+      "std_dev": 410647.71697269776,
+      "mean_ci": [
+        254485716.0,
+        255453402.0
+      ],
+      "median_ci": [
+        254485716.0,
+        255453402.0
+      ]
+    },
+    "h3_loss/h2_p99": {
+      "mean": 604954781.0,
+      "median": 607478989.0,
+      "std_dev": 5619601.912883688,
+      "mean_ci": [
+        597166486.0,
+        610218868.0
+      ],
+      "median_ci": [
+        597166486.0,
+        610218868.0
+      ]
+    },
+    "h3_loss/h3_p50": {
+      "mean": 15882734.666666666,
+      "median": 15432527.0,
+      "std_dev": 749929.4327043192,
+      "mean_ci": [
+        15276228.0,
+        16939449.0
+      ],
+      "median_ci": [
+        15276228.0,
+        16939449.0
+      ]
+    },
+    "h3_loss/h3_p99": {
+      "mean": 32508956.333333332,
+      "median": 28688384.0,
+      "std_dev": 5427915.2452432625,
+      "mean_ci": [
+        28653324.0,
+        40185161.0
+      ],
+      "median_ci": [
+        28653324.0,
+        40185161.0
+      ]
+    },
+    "i18n/empty_iter": {
+      "mean": 0.18996041639072495,
+      "median": 0.18941175815124484,
+      "std_dev": 0.0016959440486376343,
+      "mean_ci": [
+        0.1896509809490665,
+        0.19031107307230619
+      ],
+      "median_ci": [
+        0.1892645496740424,
+        0.18963938758495735
+      ]
+    },
+    "i18n/format_plural": {
+      "mean": 329.77983848115196,
+      "median": 329.2728657231468,
+      "std_dev": 4.065604028740452,
+      "mean_ci": [
+        329.084331595373,
+        330.6289168798602
+      ],
+      "median_ci": [
+        329.0864783858603,
+        329.597528786355
+      ]
+    },
+    "orm/eager_100x10": {
+      "mean": 1765173.2616846894,
+      "median": 1330199.8111904762,
+      "std_dev": 1256473.568955541,
+      "mean_ci": [
+        1542685.4456149638,
+        2024236.2564373352
+      ],
+      "median_ci": [
+        1273755.4102564103,
+        1443414.6842105263
+      ]
+    },
+    "orm/flat_100x10": {
+      "mean": 1182468.5837466794,
+      "median": 936418.2315705128,
+      "std_dev": 575940.0602579848,
+      "mean_ci": [
+        1079185.955794463,
+        1303089.424716436
+      ],
+      "median_ci": [
+        925999.6517857143,
+        958950.5769230769
+      ]
+    },
+    "orm/n_plus_one_100x10": {
+      "mean": 3261345.198461538,
+      "median": 3194624.0,
+      "std_dev": 224250.08628954896,
+      "mean_ci": [
+        3220347.8109807693,
+        3307909.9409807674
+      ],
+      "median_ci": [
+        3151378.0384615385,
+        3223773.5384615385
+      ]
+    },
+    "phase0/bench_effect_flat_map_chain": {
+      "mean": 54.63238789183175,
+      "median": 54.619768078378826,
+      "std_dev": 0.7873574593458303,
+      "mean_ci": [
+        54.4981611860086,
+        54.8054741174693
+      ],
+      "median_ci": [
+        54.49246610676386,
+        54.75484378205487
+      ]
+    },
+    "phase0/bench_effect_map_chain": {
+      "mean": 54.168669228408255,
+      "median": 54.059998735965706,
+      "std_dev": 0.5767302466524403,
+      "mean_ci": [
+        54.07179776800129,
+        54.29435745578342
+      ],
+      "median_ci": [
+        54.02731694686419,
+        54.17002020927029
+      ]
+    },
+    "phase0/bench_env_insert_overhead": {
+      "mean": 35.22870598288513,
+      "median": 35.15628880631382,
+      "std_dev": 0.4686069840749409,
+      "mean_ci": [
+        35.15289721346093,
+        35.33335013329872
+      ],
+      "median_ci": [
+        35.12839555822927,
+        35.20083057574125
+      ]
+    },
+    "phase0/bench_schedule_retry_overhead": {
+      "mean": 137.70979146136224,
+      "median": 137.54525280870922,
+      "std_dev": 1.9041167782047064,
+      "mean_ci": [
+        137.40997516156335,
+        138.13734263316067
+      ],
+      "median_ci": [
+        137.26521623655438,
+        137.69073651327648
+      ]
+    },
+    "phase0/bench_stream_throughput_collect": {
+      "mean": 1521.1520792307344,
+      "median": 1437.1075,
+      "std_dev": 171.90427311122048,
+      "mean_ci": [
+        1489.1460061285518,
+        1556.0296666503345
+      ],
+      "median_ci": [
+        1423.0207156308852,
+        1465.0125311623208
+      ]
+    },
+    "rpc/axum_json_handler": {
+      "mean": 971.6424962020005,
+      "median": 968.9571966750223,
+      "std_dev": 11.455635838671865,
+      "mean_ci": [
+        969.4684268138728,
+        973.9219038569462
+      ],
+      "median_ci": [
+        967.5947349610204,
+        970.4145129224652
+      ]
+    },
+    "rpc/batch_50": {
+      "mean": 139883.18557360047,
+      "median": 137466.50941915228,
+      "std_dev": 7359.421510400291,
+      "mean_ci": [
+        138537.19644859506,
+        141408.27312941838
+      ],
+      "median_ci": [
+        137034.39727126807,
+        138694.38743116293
+      ]
+    },
+    "rpc/sequential_50": {
+      "mean": 1704650.0917312852,
+      "median": 1683154.948700488,
+      "std_dev": 123421.14970063954,
+      "mean_ci": [
+        1681189.224905308,
+        1729413.4884687332
+      ],
+      "median_ci": [
+        1662347.2456876456,
+        1699347.956521739
+      ]
+    },
+    "rpc/unary_json": {
+      "mean": 2857.0621154311866,
+      "median": 2781.3465778401123,
+      "std_dev": 268.74888965367285,
+      "mean_ci": [
+        2810.1449855791657,
+        2915.5122593630394
+      ],
+      "median_ci": [
+        2774.4605901868345,
+        2783.970569044482
+      ]
+    },
+    "rpc/unary_postcard": {
+      "mean": 3315.8876706364954,
+      "median": 3308.609509731461,
+      "std_dev": 36.72136504644369,
+      "mean_ci": [
+        3309.043457542273,
+        3323.4522961021694
+      ],
+      "median_ci": [
+        3305.495751162418,
+        3313.894781144781
+      ]
+    },
+    "stream/map_effect_1k": {
+      "mean": 45300.291414907166,
+      "median": 45272.865998093795,
+      "std_dev": 253.76371328992514,
+      "mean_ci": [
+        45253.15312784793,
+        45351.97641568963
+      ],
+      "median_ci": [
+        45230.58433014354,
+        45346.64772727273
+      ]
+    },
+    "stream/pull_map_10k": {
+      "mean": 9928.761588497518,
+      "median": 9913.566513043479,
+      "std_dev": 220.35907490798752,
+      "mean_ci": [
+        9896.868916913054,
+        9978.626142135643
+      ],
+      "median_ci": [
+        9894.272439024391,
+        9931.696
+      ]
+    },
+    "ui/empty_iter": {
+      "mean": 0.19677762427556808,
+      "median": 0.18921783136541226,
+      "std_dev": 0.0230876992948952,
+      "mean_ci": [
+        0.19264901233723733,
+        0.20164202544328752
+      ],
+      "median_ci": [
+        0.18864421668916131,
+        0.19086465922245913
+      ]
+    },
+    "ui/render_list_50": {
+      "mean": 10120.815206472653,
+      "median": 10090.925039711015,
+      "std_dev": 134.19061601507676,
+      "mean_ci": [
+        10095.283578668641,
+        10147.60512936117
+      ],
+      "median_ci": [
+        10066.243784622795,
+        10148.29598308668
+      ]
+    }
+  },
+  "session": {
+    "leaf": "r13-e-benches",
+    "command": "bash scripts/bench-run.sh --baseline v0_13_r3 && bash scripts/bench-export.sh v0_13_r3 OUT && bash scripts/bench-compare.sh docs/benchmarks/v0.12.json OUT",
+    "tree": "f57f10ba (release/0.13.0, every wave-4 leaf merged so far)",
+    "started": "2026-10-24T07:48:06Z",
+    "finished": "2026-10-24T08:11:03Z",
+    "load_1min": {
+      "at_start": 78.80,
+      "at_end": 76.14,
+      "range_seen": "20.7-180.0 (sampled every 30 s; other agents compiling the workspace)"
+    },
+    "note": "the leaf Gate command end to end in one session, criterion defaults, performance governor, reference machine; not idle: other agents share the machine during the 0.13.0 build-out and the 1-minute load never fell below 20",
+    "bench_compare_exit": 1,
+    "gates_vs_v0_12": {
+      "budget": "7/7 PASS (max coord/queue_bounded_10k 1.082)",
+      "delta": {
+        "secure_stack": "+2659 ns PASS",
+        "unary_rpc": "+1812 ns PASS",
+        "i18n/format_plural": "+329 ns PASS (limit 496)",
+        "ui/render_list_50": "+10091 ns PASS (limit 14710)"
+      },
+      "pair": {
+        "rpc_batch_50": "0.082 PASS",
+        "h3_loss_p99": "0.047 PASS (userspace proxies)",
+        "orm_eager_100x10": "0.416 FAIL (limit 0.25)"
+      },
+      "improve": "spawn_join 0.956, sleep_cpu 1.014, axum_request_oneshot 1.040 FAIL by construction (must improve on v0.6; 0.12 already has the improvement)",
+      "streaming_vs_v0_12": {
+        "stream/pull_map_10k": 1.005,
+        "stream/map_effect_1k": 1.012,
+        "phase0/bench_stream_throughput_collect": 1.050
+      }
+    },
+    "eager_pair": {
+      "eager_100x10_ns": 1330199.8111904762,
+      "n_plus_one_100x10_ns": 3194624.0,
+      "flat_100x10_ns": 936418.2315705128,
+      "ratio": 0.41638697110848605,
+      "floor_ratio_flat_over_n_plus_one": 0.2931231442481221,
+      "status": "FAIL against 0.25: blocked on owner decision 1 in docs/benchmarks/README.md (Breadth gates (0.13)); SqliteSqlClient::query is sqlx fetch_all plus decode_rows, so the per-row floor is the sqlx-sqlite driver"
+    },
+    "d15_budgets": {
+      "i18n/format_plural": {
+        "median_ns": 329.2728657231468,
+        "budget_ns": 496
+      },
+      "ui/render_list_50": {
+        "median_ns": 10090.925039711015,
+        "budget_ns": 14710
+      },
+      "status": "budgets written from the first run (2026-10-22, below) as delta gates over */empty_iter; this run passes both; owner confirms at the 0.13.0 exit (D15)"
+    },
+    "earlier": [
+      {
+        "leaf": "r13-e-benches",
+        "command": "bash scripts/bench-run.sh --baseline v0.13 && bash scripts/bench-export.sh v0.13 OUT && bash scripts/bench-compare.sh docs/benchmarks/v0.12.json OUT",
+        "tree": "1a7dcb24 (release/0.13.0) plus the r13-e-benches benches",
+        "started": "2026-10-22T00:13:03Z",
+        "finished": "2026-10-22T00:45:38Z",
+        "load_1min": {
+          "at_start": 35.98,
+          "at_end": 19.88,
+          "range_seen": "15-170 (shared with other agents compiling)"
+        },
+        "note": "criterion defaults, performance governor; one session on the reference machine, other agents building concurrently (load is not the idle-machine figure the leaf asks for)",
+        "gates_vs_v0_12": {
+          "budget": "7/7 PASS (max coord/queue_bounded_10k 1.225)",
+          "delta": {
+            "secure_stack": "+2759 ns PASS",
+            "unary_rpc": "+1782 ns PASS"
+          },
+          "pair": {
+            "rpc_batch_50": "0.092 PASS",
+            "h3_loss_p99": "0.063 PASS (userspace proxies)",
+            "orm_eager_100x10": "0.374 FAIL (limit 0.25)"
+          },
+          "improve": "spawn_join 0.856 PASS; sleep_cpu 0.978, axum_request_oneshot 1.031 FAIL by construction (must improve on v0.6)",
+          "streaming_vs_v0_12": {
+            "stream/pull_map_10k": 0.998,
+            "stream/map_effect_1k": 0.997,
+            "phase0/bench_stream_throughput_collect": 1.017
+          }
+        },
+        "eager_pair": {
+          "eager_100x10_ns": 1192265,
+          "n_plus_one_100x10_ns": 3186100,
+          "flat_100x10_ns": 924606,
+          "ratio": 0.374,
+          "floor_ratio_flat_over_n_plus_one": 0.290,
+          "quick_runs_ratio": [
+            0.36,
+            0.36
+          ],
+          "diagnosis": "sqlx-sqlite fetch_all of 1000 rows costs ~670 us (0.67 us/row) and one small query ~30 us, so even with no relation work (orm/flat_100x10) the ratio is 0.29; eager loading adds ~270 us over flat (owner key rendered to a String per row, HashMap grouping, extra key column)",
+          "rerun_ratio": 0.349,
+          "rerun_floor_ratio": 0.29
+        },
+        "d15_budgets": {
+          "i18n/format_plural": {
+            "median_ns": 330.9,
+            "budget_ns": 496,
+            "gate": "delta over i18n/empty_iter (gates.toml)"
+          },
+          "ui/render_list_50": {
+            "median_ns": 9807.1,
+            "budget_ns": 14710,
+            "gate": "delta over ui/empty_iter (gates.toml)"
+          },
+          "status": "written as delta gates in gates.toml (median x 1.5 over an empty iteration, read from the new export only), enforced by the release gate and bench.yml; owner confirms at the 0.13.0 exit (D15)",
+          "rerun": {
+            "baseline": "v0_13_d15",
+            "sha": "ed8c17efb78cdb555b031e6f551253a815db2a6a",
+            "created": "2026-10-22T01:19:38Z",
+            "command": "bash scripts/bench-run.sh --baseline v0_13_d15 --only id_effect_i18n:format --only id_effect_axum:ui_render --only id_effect_sql:repository_eager",
+            "load_1min": "29-145 (other agents compiling)",
+            "note": "the two empty_iter entries in .benches come from this run; the gated medians are the first measurement",
+            "medians_ns": {
+              "i18n/empty_iter": 0.1873208990097694,
+              "i18n/format_plural": 321.76272377718965,
+              "orm/eager_100x10": 1128498.5308953342,
+              "orm/flat_100x10": 936852.77,
+              "orm/n_plus_one_100x10": 3233859.15625,
+              "ui/empty_iter": 0.18526392258837154,
+              "ui/render_list_50": 10135.84864192161
+            }
+          }
+        },
+        "baseline": "v0.13",
+        "sha": "1a7dcb24aab235c2dbb3c810de11f76178b9dd8e",
+        "created": "2026-10-22T00:45:59Z"
+      }
+    ]
+  }
 }
