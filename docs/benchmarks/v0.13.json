@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "baseline": "v0_13_r3",
-  "sha": "f57f10bade780779111893a91dfa6c9d014347eb",
-  "created": "2026-10-24T08:11:03Z",
+  "baseline": "v0_13_r4",
+  "sha": "70f407ade9ef35b17f41490feee03232e29b8ee3",
+  "created": "2026-10-24T08:43:02Z",
   "machine": {
     "cpu": "AMD Ryzen 9 7950X 16-Core Processor",
     "cpus": "32",
@@ -12,501 +12,566 @@
   },
   "benches": {
     "coord/channel_spsc_10k": {
-      "mean": 925194.7709653905,
-      "median": 876363.3480243161,
-      "std_dev": 209244.13385803066,
+      "mean": 967912.8308710167,
+      "median": 939850.0831070889,
+      "std_dev": 277497.52506122534,
       "mean_ci": [
-        889784.6117235126,
-        970976.3459075359
+        928923.05457093,
+        1030031.5591261892
       ],
       "median_ci": [
-        873710.9814814815,
-        883009.4791666667
+        904087.7806372549,
+        948302.2561423506
       ]
     },
     "coord/queue_bounded_10k": {
-      "mean": 1007841.2700341496,
-      "median": 846098.8627340824,
-      "std_dev": 396163.3680179134,
+      "mean": 887515.5798260908,
+      "median": 822826.9979651163,
+      "std_dev": 192442.57363430486,
       "mean_ci": [
-        934245.159704005,
-        1089346.3468839473
+        852664.920468869,
+        927712.7320251189
       ],
       "median_ci": [
-        811752.512195122,
-        886320.3790322581
+        804520.2027777778,
+        856183.9166666666
       ]
     },
     "gate/async_bind_64": {
-      "mean": 1393.0418588139155,
-      "median": 1393.2506273674244,
-      "std_dev": 12.746898486213066,
+      "mean": 1428.50794714551,
+      "median": 1429.8257097101023,
+      "std_dev": 15.533310814173875,
       "mean_ci": [
-        1390.5683179344287,
-        1395.543449312771
+        1425.5639713635296,
+        1431.596884840647
       ],
       "median_ci": [
-        1384.1912439986716,
-        1397.348418051426
+        1425.1404987869273,
+        1433.1897883907661
       ]
     },
     "gate/axum_request_bare": {
-      "mean": 958.5142380085515,
-      "median": 957.7322456349096,
-      "std_dev": 17.51765174133814,
+      "mean": 923.9446820983223,
+      "median": 923.3909730195178,
+      "std_dev": 4.225990195394081,
       "mean_ci": [
-        955.6964735162205,
-        962.386149349543
+        923.145818184422,
+        924.8033250374943
       ],
       "median_ci": [
-        954.6340486625359,
-        959.0183729898857
+        922.812743348475,
+        924.3319268614574
       ]
     },
     "gate/axum_request_caps": {
-      "mean": 1260.3912379949645,
-      "median": 1256.037465850367,
-      "std_dev": 45.508671710074935,
+      "mean": 1220.4085473809116,
+      "median": 1224.374386343518,
+      "std_dev": 19.009566054364786,
       "mean_ci": [
-        1252.8784770861157,
-        1270.39190261814
+        1216.6748220452819,
+        1224.0897448405788
       ],
       "median_ci": [
-        1249.0177150192555,
-        1263.9956120900922
+        1218.8194280553007,
+        1225.8362604864506
       ]
     },
     "gate/axum_request_oneshot": {
-      "mean": 814.4953955279477,
-      "median": 812.8027149016438,
-      "std_dev": 13.05880694524646,
+      "mean": 773.5116054691373,
+      "median": 773.6375517348395,
+      "std_dev": 3.3395658772319288,
       "mean_ci": [
-        812.4058347221838,
-        817.4220873621729
+        772.8552683325775,
+        774.1576308936158
       ],
       "median_ci": [
-        811.7933330163108,
-        814.3793569060256
+        772.7800157232705,
+        774.4820630585899
       ]
     },
     "gate/axum_request_secure_stack": {
-      "mean": 3629.524322926277,
-      "median": 3616.8933508177365,
-      "std_dev": 56.926020306163025,
+      "mean": 3622.1290735710622,
+      "median": 3621.2477566422644,
+      "std_dev": 26.42377054968183,
       "mean_ci": [
-        3620.019789861759,
-        3642.121214011362
+        3617.1111672108896,
+        3627.3814039891377
       ],
       "median_ci": [
-        3612.282608695652,
-        3624.9220629047177
+        3613.384791371609,
+        3625.7153610531805
       ]
     },
     "gate/flat_map_depth_10k": {
-      "mean": 201482.50922383365,
-      "median": 199980.6473607038,
-      "std_dev": 7077.768489345398,
+      "mean": 199403.13333421267,
+      "median": 199334.96515265264,
+      "std_dev": 1890.408113373635,
       "mean_ci": [
-        200282.47826891264,
-        203022.4404672356
+        199035.94827209585,
+        199775.8929714934
       ],
       "median_ci": [
-        199577.89315068492,
-        200984.87407407406
+        198964.38124999998,
+        199932.7655316607
       ]
     },
     "gate/sleep_1k_x_1ms": {
-      "mean": 3361417.8418918923,
-      "median": 3356559.8006756757,
-      "std_dev": 49947.70276071792,
+      "mean": 3378751.8385135136,
+      "median": 3386951.510135135,
+      "std_dev": 54390.05686422018,
       "mean_ci": [
-        3332756.9280743245,
-        3390854.6761148646
+        3346262.9871621625,
+        3409898.0440878375
       ],
       "median_ci": [
-        3313247.2972972975,
-        3413715.0878378376
+        3335618.8817567565,
+        3423293.641891892
       ]
     },
     "gate/sleep_cpu_1k_x_1ms": {
-      "mean": 12643683.005194806,
-      "median": 12671968.256493507,
-      "std_dev": 176055.69110895338,
+      "mean": 12238083.991558442,
+      "median": 12291009.75,
+      "std_dev": 144278.66679765843,
       "mean_ci": [
-        12534975.973376622,
-        12742807.285714287
+        12147742.309090909,
+        12317746.012288962
       ],
       "median_ci": [
-        12510974.097402597,
-        12783912.607142858
+        12126944.92857143,
+        12344116.17207792
       ]
     },
     "gate/spawn_join_10k": {
-      "mean": 15746482.326666668,
-      "median": 15513525.75,
-      "std_dev": 2418509.749055214,
+      "mean": 17782946.894117646,
+      "median": 17905369.75,
+      "std_dev": 1098508.172332542,
       "mean_ci": [
-        14292254.233833332,
-        17179671.12666667
+        17149608.83507353,
+        18435984.30294118
       ],
       "median_ci": [
-        14391349.8,
-        17238425.983333334
+        16905001.79411765,
+        18333446.279411763
       ]
     },
     "h3_loss/h2_p50": {
-      "mean": 255048812.33333334,
-      "median": 255207319.0,
-      "std_dev": 410647.71697269776,
+      "mean": 249089650.0,
+      "median": 246207549.0,
+      "std_dev": 5270510.155247023,
       "mean_ci": [
-        254485716.0,
-        255453402.0
+        244577757.0,
+        256483644.0
       ],
       "median_ci": [
-        254485716.0,
-        255453402.0
+        244577757.0,
+        256483644.0
       ]
     },
     "h3_loss/h2_p99": {
-      "mean": 604954781.0,
-      "median": 607478989.0,
-      "std_dev": 5619601.912883688,
+      "mean": 601509383.6666666,
+      "median": 597171085.0,
+      "std_dev": 6441757.129131271,
       "mean_ci": [
-        597166486.0,
-        610218868.0
+        596741046.0,
+        610616020.0
       ],
       "median_ci": [
-        597166486.0,
-        610218868.0
+        596741046.0,
+        610616020.0
       ]
     },
     "h3_loss/h3_p50": {
-      "mean": 15882734.666666666,
-      "median": 15432527.0,
-      "std_dev": 749929.4327043192,
+      "mean": 15897769.666666666,
+      "median": 16002988.0,
+      "std_dev": 444972.99408266216,
       "mean_ci": [
-        15276228.0,
-        16939449.0
+        15307854.0,
+        16382467.0
       ],
       "median_ci": [
-        15276228.0,
-        16939449.0
+        15307854.0,
+        16382467.0
       ]
     },
     "h3_loss/h3_p99": {
-      "mean": 32508956.333333332,
-      "median": 28688384.0,
-      "std_dev": 5427915.2452432625,
+      "mean": 35006147.0,
+      "median": 38277495.0,
+      "std_dev": 4645575.346303692,
       "mean_ci": [
-        28653324.0,
-        40185161.0
+        28436330.0,
+        38304616.0
       ],
       "median_ci": [
-        28653324.0,
-        40185161.0
+        28436330.0,
+        38304616.0
       ]
     },
     "i18n/empty_iter": {
-      "mean": 0.18996041639072495,
-      "median": 0.18941175815124484,
-      "std_dev": 0.0016959440486376343,
+      "mean": 0.3032339428713091,
+      "median": 0.26367827591051657,
+      "std_dev": 0.17081988700028086,
       "mean_ci": [
-        0.1896509809490665,
-        0.19031107307230619
+        0.27293606211634347,
+        0.33967838347872664
       ],
       "median_ci": [
-        0.1892645496740424,
-        0.18963938758495735
+        0.23826753305650994,
+        0.2901668508226089
       ]
     },
     "i18n/format_plural": {
-      "mean": 329.77983848115196,
-      "median": 329.2728657231468,
-      "std_dev": 4.065604028740452,
+      "mean": 329.4796277457735,
+      "median": 326.8271355223666,
+      "std_dev": 5.087974285290184,
       "mean_ci": [
-        329.084331595373,
-        330.6289168798602
+        328.52715596738443,
+        330.5247070538444
       ],
       "median_ci": [
-        329.0864783858603,
-        329.597528786355
+        326.5130530050084,
+        327.36507267875083
       ]
     },
     "orm/eager_100x10": {
-      "mean": 1765173.2616846894,
-      "median": 1330199.8111904762,
-      "std_dev": 1256473.568955541,
+      "mean": 1200324.4616448577,
+      "median": 1159628.184624018,
+      "std_dev": 113987.44712260217,
       "mean_ci": [
-        1542685.4456149638,
-        2024236.2564373352
+        1179339.3524710676,
+        1223805.992406375
       ],
       "median_ci": [
-        1273755.4102564103,
-        1443414.6842105263
+        1148231.6744186047,
+        1176917.0161290322
       ]
     },
     "orm/flat_100x10": {
-      "mean": 1182468.5837466794,
-      "median": 936418.2315705128,
-      "std_dev": 575940.0602579848,
+      "mean": 899609.4223113644,
+      "median": 837578.6454344625,
+      "std_dev": 176368.14959133608,
       "mean_ci": [
-        1079185.955794463,
-        1303089.424716436
+        868428.8701810543,
+        936882.8683274911
       ],
       "median_ci": [
-        925999.6517857143,
-        958950.5769230769
+        833796.8285751702,
+        843726.6666666666
       ]
     },
     "orm/n_plus_one_100x10": {
-      "mean": 3261345.198461538,
-      "median": 3194624.0,
-      "std_dev": 224250.08628954896,
+      "mean": 3496845.85,
+      "median": 3332539.15625,
+      "std_dev": 445094.9686343807,
       "mean_ci": [
-        3220347.8109807693,
-        3307909.9409807674
+        3413534.49346875,
+        3586430.05375
       ],
       "median_ci": [
-        3151378.0384615385,
-        3223773.5384615385
+        3274913.1875,
+        3431685.3125
       ]
     },
     "phase0/bench_effect_flat_map_chain": {
-      "mean": 54.63238789183175,
-      "median": 54.619768078378826,
-      "std_dev": 0.7873574593458303,
+      "mean": 55.4807430335005,
+      "median": 54.84205885560306,
+      "std_dev": 2.1032214062101935,
       "mean_ci": [
-        54.4981611860086,
-        54.8054741174693
+        55.10729022827793,
+        55.92027234016042
       ],
       "median_ci": [
-        54.49246610676386,
-        54.75484378205487
+        54.58986396085249,
+        55.07559751535029
       ]
     },
     "phase0/bench_effect_map_chain": {
-      "mean": 54.168669228408255,
-      "median": 54.059998735965706,
-      "std_dev": 0.5767302466524403,
+      "mean": 53.63483679654227,
+      "median": 53.666613143634635,
+      "std_dev": 0.25278968930953827,
       "mean_ci": [
-        54.07179776800129,
-        54.29435745578342
+        53.585802316707415,
+        53.683818323092915
       ],
       "median_ci": [
-        54.02731694686419,
-        54.17002020927029
+        53.548965658196344,
+        53.723690206209056
       ]
     },
     "phase0/bench_env_insert_overhead": {
-      "mean": 35.22870598288513,
-      "median": 35.15628880631382,
-      "std_dev": 0.4686069840749409,
+      "mean": 33.80762439573446,
+      "median": 33.70891577874841,
+      "std_dev": 0.34474532441261857,
       "mean_ci": [
-        35.15289721346093,
-        35.33335013329872
+        33.742349818799404,
+        33.87638548453682
       ],
       "median_ci": [
-        35.12839555822927,
-        35.20083057574125
+        33.64829311160959,
+        33.79239861781383
       ]
     },
     "phase0/bench_schedule_retry_overhead": {
-      "mean": 137.70979146136224,
-      "median": 137.54525280870922,
-      "std_dev": 1.9041167782047064,
+      "mean": 136.92260615219823,
+      "median": 136.7587239757596,
+      "std_dev": 2.160844991383096,
       "mean_ci": [
-        137.40997516156335,
-        138.13734263316067
+        136.54233774368294,
+        137.37867587119322
       ],
       "median_ci": [
-        137.26521623655438,
-        137.69073651327648
+        136.4567431817805,
+        137.11694512539077
       ]
     },
     "phase0/bench_stream_throughput_collect": {
-      "mean": 1521.1520792307344,
-      "median": 1437.1075,
-      "std_dev": 171.90427311122048,
+      "mean": 1380.908706547657,
+      "median": 1378.745457252492,
+      "std_dev": 9.335263097016874,
       "mean_ci": [
-        1489.1460061285518,
-        1556.0296666503345
+        1379.1315466106169,
+        1382.7609155800892
       ],
       "median_ci": [
-        1423.0207156308852,
-        1465.0125311623208
+        1376.9863434619324,
+        1380.2987270155586
       ]
     },
     "rpc/axum_json_handler": {
-      "mean": 971.6424962020005,
-      "median": 968.9571966750223,
-      "std_dev": 11.455635838671865,
+      "mean": 966.5451031642108,
+      "median": 969.4598269690736,
+      "std_dev": 9.014778657044364,
       "mean_ci": [
-        969.4684268138728,
-        973.9219038569462
+        964.7648333832335,
+        968.2493199791381
       ],
       "median_ci": [
-        967.5947349610204,
-        970.4145129224652
+        966.0334218618955,
+        970.296881647239
       ]
     },
     "rpc/batch_50": {
-      "mean": 139883.18557360047,
-      "median": 137466.50941915228,
-      "std_dev": 7359.421510400291,
+      "mean": 139113.3497177437,
+      "median": 137076.41604965157,
+      "std_dev": 6675.227345893428,
       "mean_ci": [
-        138537.19644859506,
-        141408.27312941838
+        137856.0623183588,
+        140472.19345641485
       ],
       "median_ci": [
-        137034.39727126807,
-        138694.38743116293
+        136259.72502118643,
+        137434.52110191638
       ]
     },
     "rpc/sequential_50": {
-      "mean": 1704650.0917312852,
-      "median": 1683154.948700488,
-      "std_dev": 123421.14970063954,
+      "mean": 1608751.083246876,
+      "median": 1598202.461111111,
+      "std_dev": 80162.3242892575,
       "mean_ci": [
-        1681189.224905308,
-        1729413.4884687332
+        1593513.5388244959,
+        1624802.4779779313
       ],
       "median_ci": [
-        1662347.2456876456,
-        1699347.956521739
+        1578959.6297773346,
+        1614460.6081081082
       ]
     },
     "rpc/unary_json": {
-      "mean": 2857.0621154311866,
-      "median": 2781.3465778401123,
-      "std_dev": 268.74888965367285,
+      "mean": 2740.926544102607,
+      "median": 2737.1773922340476,
+      "std_dev": 18.08204318736189,
       "mean_ci": [
-        2810.1449855791657,
-        2915.5122593630394
+        2737.750217688353,
+        2744.770064313061
       ],
       "median_ci": [
-        2774.4605901868345,
-        2783.970569044482
+        2733.700609226802,
+        2741.7347645429363
       ]
     },
     "rpc/unary_postcard": {
-      "mean": 3315.8876706364954,
-      "median": 3308.609509731461,
-      "std_dev": 36.72136504644369,
+      "mean": 3301.6103739202185,
+      "median": 3300.8552549702054,
+      "std_dev": 28.71300622487131,
       "mean_ci": [
-        3309.043457542273,
-        3323.4522961021694
+        3297.018157731352,
+        3308.017604868815
       ],
       "median_ci": [
-        3305.495751162418,
-        3313.894781144781
+        3296.313791426951,
+        3304.400573565318
       ]
     },
     "stream/map_effect_1k": {
-      "mean": 45300.291414907166,
-      "median": 45272.865998093795,
-      "std_dev": 253.76371328992514,
+      "mean": 52842.908016518944,
+      "median": 46895.565145502645,
+      "std_dev": 22795.439109294322,
       "mean_ci": [
-        45253.15312784793,
-        45351.97641568963
+        48977.334941955785,
+        57816.84861924229
       ],
       "median_ci": [
-        45230.58433014354,
-        45346.64772727273
+        46721.04646640361,
+        47286.6843537415
       ]
     },
     "stream/pull_map_10k": {
-      "mean": 9928.761588497518,
-      "median": 9913.566513043479,
-      "std_dev": 220.35907490798752,
+      "mean": 9925.107801332631,
+      "median": 9915.570851370852,
+      "std_dev": 47.50786284104425,
       "mean_ci": [
-        9896.868916913054,
-        9978.626142135643
+        9915.855697649878,
+        9934.48084309154
       ],
       "median_ci": [
-        9894.272439024391,
-        9931.696
+        9910.656565656565,
+        9922.154882154882
       ]
     },
     "ui/empty_iter": {
-      "mean": 0.19677762427556808,
-      "median": 0.18921783136541226,
-      "std_dev": 0.0230876992948952,
+      "mean": 0.19041187485618483,
+      "median": 0.18963964198832414,
+      "std_dev": 0.0028383955419156682,
       "mean_ci": [
-        0.19264901233723733,
-        0.20164202544328752
+        0.1899015253765563,
+        0.1910123095095657
       ],
       "median_ci": [
-        0.18864421668916131,
-        0.19086465922245913
+        0.1893077133028508,
+        0.19033709967648246
       ]
     },
     "ui/render_list_50": {
-      "mean": 10120.815206472653,
-      "median": 10090.925039711015,
-      "std_dev": 134.19061601507676,
+      "mean": 10164.93560772324,
+      "median": 10118.420112781954,
+      "std_dev": 175.99715655424808,
       "mean_ci": [
-        10095.283578668641,
-        10147.60512936117
+        10132.283072060467,
+        10199.789525678105
       ],
       "median_ci": [
-        10066.243784622795,
-        10148.29598308668
+        10086.262166405024,
+        10148.452767470624
       ]
     }
   },
   "session": {
     "leaf": "r13-e-benches",
-    "command": "bash scripts/bench-run.sh --baseline v0_13_r3 && bash scripts/bench-export.sh v0_13_r3 OUT && bash scripts/bench-compare.sh docs/benchmarks/v0.12.json OUT",
-    "tree": "f57f10ba (release/0.13.0, every wave-4 leaf merged so far)",
-    "started": "2026-10-24T07:48:06Z",
-    "finished": "2026-10-24T08:11:03Z",
+    "command": "bash scripts/bench-run.sh --baseline v0_13_r4 && bash scripts/bench-export.sh v0_13_r4 OUT && bash scripts/bench-compare.sh docs/benchmarks/v0.12.json OUT",
+    "tree": "70f407ad (release/0.13.0) plus uncommitted work of other leaves in crates/id_effect_axum and crates/id_effect_rpc (none in the benched paths of id_effect_sql, id_effect_i18n or the ui feature)",
+    "started": "2026-10-24T08:26:45Z",
+    "finished": "2026-10-24T08:43:02Z",
     "load_1min": {
-      "at_start": 78.80,
-      "at_end": 76.14,
-      "range_seen": "20.7-180.0 (sampled every 30 s; other agents compiling the workspace)"
+      "at_start": 11.80,
+      "at_end": 18.31,
+      "range_seen": "9.1-20.0 outside 08:36-08:39 UTC, when this run's own h3_loss build and proxies took it to 47-103 (sampled every 30 s); 11-20 during orm/*, i18n/* and ui/*",
+      "during_orm": "10.95-20.00"
     },
-    "note": "the leaf Gate command end to end in one session, criterion defaults, performance governor, reference machine; not idle: other agents share the machine during the 0.13.0 build-out and the 1-minute load never fell below 20",
+    "note": "the quietest gate run so far: criterion defaults, performance governor, reference machine, the other agents mostly between builds; still not an idle machine (two unrelated single-thread processes at 100 % CPU and the 1-minute load 9-20 on 32 threads). An idle-machine or BENCH_RUNNER run is still owed at the 0.13.0 exit.",
     "bench_compare_exit": 1,
     "gates_vs_v0_12": {
-      "budget": "7/7 PASS (max coord/queue_bounded_10k 1.082)",
+      "budget": "7/7 PASS (max coord/queue_bounded_10k 1.052; coord/channel_spsc_10k 1.116)",
       "delta": {
-        "secure_stack": "+2659 ns PASS",
-        "unary_rpc": "+1812 ns PASS",
-        "i18n/format_plural": "+329 ns PASS (limit 496)",
-        "ui/render_list_50": "+10091 ns PASS (limit 14710)"
+        "secure_stack": "+2698 ns PASS",
+        "unary_rpc": "+1768 ns PASS",
+        "i18n/format_plural": "+327 ns PASS (limit 496)",
+        "ui/render_list_50": "+10118 ns PASS (limit 14710)"
       },
       "pair": {
-        "rpc_batch_50": "0.082 PASS",
-        "h3_loss_p99": "0.047 PASS (userspace proxies)",
-        "orm_eager_100x10": "0.416 FAIL (limit 0.25)"
+        "rpc_batch_50": "0.086 PASS",
+        "h3_loss_p99": "0.064 PASS (userspace proxies)",
+        "orm_eager_100x10": "0.348 FAIL (limit 0.25)"
       },
-      "improve": "spawn_join 0.956, sleep_cpu 1.014, axum_request_oneshot 1.040 FAIL by construction (must improve on v0.6; 0.12 already has the improvement)",
+      "improve": "spawn_join 1.103, sleep_cpu 0.984, axum_request_oneshot 0.990 FAIL by construction (must improve on v0.6; 0.12 already has the improvement)",
       "streaming_vs_v0_12": {
         "stream/pull_map_10k": 1.005,
-        "stream/map_effect_1k": 1.012,
-        "phase0/bench_stream_throughput_collect": 1.050
+        "stream/map_effect_1k": 1.049,
+        "phase0/bench_stream_throughput_collect": 1.007
       }
     },
     "eager_pair": {
-      "eager_100x10_ns": 1330199.8111904762,
-      "n_plus_one_100x10_ns": 3194624.0,
-      "flat_100x10_ns": 936418.2315705128,
-      "ratio": 0.41638697110848605,
-      "floor_ratio_flat_over_n_plus_one": 0.2931231442481221,
-      "status": "FAIL against 0.25: blocked on owner decision 1 in docs/benchmarks/README.md (Breadth gates (0.13)); SqliteSqlClient::query is sqlx fetch_all plus decode_rows, so the per-row floor is the sqlx-sqlite driver"
+      "eager_100x10_ns": 1159628.184624018,
+      "n_plus_one_100x10_ns": 3332539.15625,
+      "flat_100x10_ns": 837578.6454344625,
+      "ratio": 0.34797136065129103,
+      "floor_ratio_flat_over_n_plus_one": 0.25133347461608313,
+      "quick_run_same_morning": {
+        "at": "2026-10-24T08:25:36Z",
+        "load_1min": "10-14",
+        "eager_ms": 1.196,
+        "n_plus_one_ms": 3.823,
+        "flat_ms": 1.013,
+        "ratio": 0.313
+      },
+      "status": "FAIL against 0.25: blocked on owner decision 1 in docs/benchmarks/README.md (Breadth gates (0.13)). Every run reads 0.31-0.42 and the no-relation floor (flat / n_plus_one) 0.25-0.29, so no change in this leaf's files reaches 0.25 on the 100 x 10 SQLite shape"
     },
     "d15_budgets": {
       "i18n/format_plural": {
-        "median_ns": 329.2728657231468,
+        "median_ns": 326.8271355223666,
         "budget_ns": 496
       },
       "ui/render_list_50": {
-        "median_ns": 10090.925039711015,
+        "median_ns": 10118.420112781954,
         "budget_ns": 14710
       },
-      "status": "budgets written from the first run (2026-10-22, below) as delta gates over */empty_iter; this run passes both; owner confirms at the 0.13.0 exit (D15)"
+      "status": "budgets written from the first run (2026-10-22) as delta gates over */empty_iter; this run passes both; the owner confirms the numbers and the delta kind at the 0.13.0 exit (D15, release spec owner item 8)"
     },
     "earlier": [
+      {
+        "leaf": "r13-e-benches",
+        "command": "bash scripts/bench-run.sh --baseline v0_13_r3 && bash scripts/bench-export.sh v0_13_r3 OUT && bash scripts/bench-compare.sh docs/benchmarks/v0.12.json OUT",
+        "tree": "f57f10ba (release/0.13.0, every wave-4 leaf merged so far)",
+        "started": "2026-10-24T07:48:06Z",
+        "finished": "2026-10-24T08:11:03Z",
+        "load_1min": {
+          "at_start": 78.80,
+          "at_end": 76.14,
+          "range_seen": "20.7-180.0 (sampled every 30 s; other agents compiling the workspace)"
+        },
+        "note": "the leaf Gate command end to end in one session, criterion defaults, performance governor, reference machine; not idle: other agents share the machine during the 0.13.0 build-out and the 1-minute load never fell below 20",
+        "bench_compare_exit": 1,
+        "gates_vs_v0_12": {
+          "budget": "7/7 PASS (max coord/queue_bounded_10k 1.082)",
+          "delta": {
+            "secure_stack": "+2659 ns PASS",
+            "unary_rpc": "+1812 ns PASS",
+            "i18n/format_plural": "+329 ns PASS (limit 496)",
+            "ui/render_list_50": "+10091 ns PASS (limit 14710)"
+          },
+          "pair": {
+            "rpc_batch_50": "0.082 PASS",
+            "h3_loss_p99": "0.047 PASS (userspace proxies)",
+            "orm_eager_100x10": "0.416 FAIL (limit 0.25)"
+          },
+          "improve": "spawn_join 0.956, sleep_cpu 1.014, axum_request_oneshot 1.040 FAIL by construction (must improve on v0.6; 0.12 already has the improvement)",
+          "streaming_vs_v0_12": {
+            "stream/pull_map_10k": 1.005,
+            "stream/map_effect_1k": 1.012,
+            "phase0/bench_stream_throughput_collect": 1.050
+          }
+        },
+        "eager_pair": {
+          "eager_100x10_ns": 1330199.8111904762,
+          "n_plus_one_100x10_ns": 3194624.0,
+          "flat_100x10_ns": 936418.2315705128,
+          "ratio": 0.41638697110848605,
+          "floor_ratio_flat_over_n_plus_one": 0.2931231442481221,
+          "status": "FAIL against 0.25: blocked on owner decision 1 in docs/benchmarks/README.md (Breadth gates (0.13)); SqliteSqlClient::query is sqlx fetch_all plus decode_rows, so the per-row floor is the sqlx-sqlite driver"
+        },
+        "d15_budgets": {
+          "i18n/format_plural": {
+            "median_ns": 329.2728657231468,
+            "budget_ns": 496
+          },
+          "ui/render_list_50": {
+            "median_ns": 10090.925039711015,
+            "budget_ns": 14710
+          },
+          "status": "budgets written from the first run (2026-10-22, below) as delta gates over */empty_iter; this run passes both; owner confirms at the 0.13.0 exit (D15)"
+        },
+        "baseline": "v0_13_r3",
+        "sha": "f57f10bade780779111893a91dfa6c9d014347eb",
+        "created": "2026-10-24T08:11:03Z"
+      },
       {
         "leaf": "r13-e-benches",
         "command": "bash scripts/bench-run.sh --baseline v0.13 && bash scripts/bench-export.sh v0.13 OUT && bash scripts/bench-compare.sh docs/benchmarks/v0.12.json OUT",
