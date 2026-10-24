@@ -1009,10 +1009,10 @@ mod tests {
 
   #[test]
   fn other_send_faults_are_transport_errors() {
-    assert!(matches!(
+    assert_eq!(
       send_error("Pc", RemoteFault::MailboxFull),
-      MeshRpcError::Transport(_)
-    ));
+      MeshRpcError::Transport("mailbox full".to_owned())
+    );
   }
 
   #[test]
@@ -1037,7 +1037,47 @@ mod tests {
 
   #[test]
   fn an_exit_without_a_payload_is_a_protocol_error() {
-    assert!(matches!(exit_value(None), Err(MeshRpcError::Transport(_))));
+    assert_eq!(
+      exit_value(None),
+      Err(MeshRpcError::Transport(
+        "an exit without a payload".to_owned()
+      ))
+    );
+    let garbage = exit_value(Some(&[0xff, 0xff, 0xff]));
+    assert_eq!(
+      garbage.map_err(|e| e.to_string().starts_with("codec")),
+      Err(true)
+    );
+  }
+
+  #[test]
+  fn events_that_end_a_call_are_typed_errors() {
+    assert_eq!(
+      event_error(
+        "Pc",
+        ClientEvent::Silent {
+          node: "b@x".to_owned(),
+          silent_for: Duration::from_secs(4),
+        }
+      ),
+      MeshRpcError::PeerSilent {
+        node: "b@x".to_owned(),
+        silent_for: Duration::from_secs(4),
+      }
+    );
+    assert_eq!(
+      event_error("Pc", ClientEvent::Down(ExitReason::NoConnection)),
+      MeshRpcError::NodeDown
+    );
+    assert_eq!(
+      event_error("Pc", ClientEvent::Violation("v")),
+      MeshRpcError::Transport("v".to_owned())
+    );
+    let frame = Frame::new(CallId::new(1).unwrap(), FrameKind::Item);
+    assert_eq!(
+      event_error("Pc", ClientEvent::Frame(frame)),
+      MeshRpcError::Transport("an unexpected frame".to_owned())
+    );
   }
 
   #[test]

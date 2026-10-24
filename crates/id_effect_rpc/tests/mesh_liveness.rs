@@ -264,6 +264,51 @@ async fn mesh_liveness_runs_in_the_background() {
   );
 }
 
+/// The status of a transport refusal, `0` for an I/O failure.
+fn transport_failure<T>(result: Result<T, id_effect_rpc::service::TransportError>) -> Option<u16> {
+  use id_effect_rpc::service::TransportError;
+  match result {
+    Err(TransportError::Refused { status, .. }) => Some(status),
+    Err(TransportError::Io(_)) => Some(0),
+    _ => None,
+  }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mesh_stream_calls_without_an_endpoint_fail_typed() {
+  use id_effect_rpc::contract::ProcedureKind;
+  use id_effect_rpc::service::{RpcTransport as _, TransportCall};
+
+  let p = pair();
+  let nobody = p.a.rpc.client("Nobody");
+  let gone = MeshRpcError::NoEndpoint("Nobody".to_owned());
+  let feed = nobody.subscribe::<_, i64, ()>("Nobody.feed", &1_i64, None);
+  assert_eq!(run(feed).await.unwrap_err(), gone);
+  let sum = nobody.client_stream::<i64, i64, ()>("Nobody.sum");
+  assert_eq!(run(sum).await.unwrap_err(), gone);
+  let echo = nobody.bidi::<i64, i64, ()>("Nobody.echo");
+  assert_eq!(run(echo).await.unwrap_err(), gone);
+
+  // Through a generated client's transport: no endpoint is an I/O failure, a procedure the
+  // schemas lack a 404, for every stream kind.
+  let transport = MeshTransport::new(nobody, group());
+  let call = |tag: &str, kind| TransportCall {
+    tag: tag.to_owned(),
+    version: 1,
+    kind,
+    payload: serde_json::json!(1),
+  };
+  let items = || tokio::sync::mpsc::channel(1).1;
+  for (tag, expected) in [("Lv.count", Some(0)), ("Lv.nope", Some(404))] {
+    let streamed = transport.client_stream(call(tag, ProcedureKind::ClientStream), items());
+    assert_eq!(transport_failure(streamed.await), expected, "{tag}");
+    let both = transport.bidi(call(tag, ProcedureKind::Bidi), items());
+    assert_eq!(transport_failure(both.await), expected, "{tag}");
+    let fed = transport.subscribe(call(tag, ProcedureKind::Subscription), None);
+    assert_eq!(transport_failure(fed.await), expected, "{tag}");
+  }
+}
+
 #[test]
 fn mesh_liveness_is_finite_and_explicit() {
   let default = MeshLiveness::default();
