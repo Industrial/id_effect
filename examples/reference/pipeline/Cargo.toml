@@ -15,17 +15,68 @@ unsafe_code = "forbid"
 [lib]
 path = "src/lib.rs"
 
-[dependencies]
-# Every id_effect battery comes through the kit, one feature each (like the Ledger and the Relay);
-# r13-w6-pipeline and r13-w7-pipeline-backoffice add the features the app uses.
-id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0" }
+[[bin]]
+name = "pipeline"
+path = "src/main.rs"
 
 [[example]]
 name = "010_stages"
 path = "examples/010_stages.rs"
 
+[dependencies]
+# Every id_effect battery comes through the kit, one feature each (like the Ledger and the Relay):
+# PostgreSQL (`sql-pg`, `migrate`), entities with relations, keyset pages and hooks
+# (`repository`), the outbox (`messaging`), one job per stage (`jobs`), uploads (`storage`),
+# bearer JWTs (`auth`), guards (`authz`), one tenant for both (`tenancy`), the AI stages (`ai`,
+# `embeddings`), the MCP server and client (`mcp`, `http-client`), the RPC surface (`rpc`) and the
+# en/de messages (`i18n`).
+id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", features = [
+  "web",
+  "sql-pg",
+  "migrate",
+  "repository",
+  "messaging",
+  "jobs",
+  "storage",
+  "auth",
+  "authz",
+  "tenancy",
+  "ai",
+  "embeddings",
+  "mcp",
+  "http-client",
+  "rpc",
+  # The `Intake.status` subscription as server-sent events (and every kind over a WebSocket).
+  "rpc-ws",
+  "i18n",
+] }
+# The derive macros expand to `::id_effect::` paths and `#[rpc::service]` to `::id_effect_rpc::`
+# paths: both crates are named too (the kit picks their features).
+id_effect = { path = "../../../crates/id_effect", version = "0.12.0" }
+id_effect_rpc = { path = "../../../crates/id_effect_rpc", version = "0.12.0", default-features = false }
+axum = "0.8.9"
+serde_json = "1"
+tokio = { version = "1", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "sync",
+  "time",
+  "signal",
+] }
+
+[dev-dependencies]
+# Containers (PostgreSQL in the tests' own container), the in-process HTTP client, and the
+# scripted model (`id_effect_ai/test-util`) through the kit's `test` feature.
+id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", features = [
+  "test",
+] }
+# tests/ai.rs: the OpenAI and Anthropic adapters against recorded fixtures (D8: no vendor call).
+wiremock = "0.6"
+tokio = { version = "1", features = ["io-util"] }
+
 [package.metadata.id_effect]
 # ADR 0010 crate tier (Amendment 9) — checked by scripts/tier-conformance.sh. The Pipeline is the
-# CI-tested consumer that moves id_effect_ai, id_effect_admin and id_effect_i18n to tier `platform`
-# (check P) once it depends on them.
+# CI-tested consumer that moves id_effect_ai and id_effect_i18n (r13-w6-pipeline) and
+# id_effect_admin (r13-w7-pipeline-backoffice) to tier `platform` (check P).
 tier = "example"

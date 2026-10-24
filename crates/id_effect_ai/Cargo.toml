@@ -148,6 +148,7 @@ required-features = ["cursor"]
 
 [package.metadata.id_effect]
 # ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Amendment 9 (0.13): moved out of
-# labs/ by r13-t0-skeletons and promoted to `integration` by r13-e9-1-promote; it moves to
-# `platform` when the Pipeline reference app depends on it (r13-w6-pipeline, check P).
-tier = "integration"
+# labs/ by r13-t0-skeletons, promoted to `integration` by r13-e9-1-promote and to `platform` by
+# r13-w6-pipeline: the Pipeline reference app depends on it (kit features `ai`, `embeddings`,
+# `mcp`) and runs it in CI (job `reference-pipeline`; ADR 0012 rule 4, check P).
+tier = "platform"

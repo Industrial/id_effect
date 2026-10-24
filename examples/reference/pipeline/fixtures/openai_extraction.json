@@ -1,0 +1,20 @@
+{
+	"id": "chatcmpl-fixture-extraction",
+	"object": "chat.completion",
+	"model": "gpt-4o-mini",
+	"choices": [
+		{
+			"index": 0,
+			"message": {
+				"role": "assistant",
+				"content": "{\"title\": \"Invoice INV-7\", \"summary\": \"An invoice from Acme Corp for 12.50 EUR.\", \"language\": \"en\", \"organization\": \"Acme Corp\"}"
+			},
+			"finish_reason": "stop"
+		}
+	],
+	"usage": {
+		"prompt_tokens": 120,
+		"completion_tokens": 40,
+		"total_tokens": 160
+	}
+}

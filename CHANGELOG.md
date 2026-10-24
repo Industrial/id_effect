@@ -339,9 +339,24 @@
   app (admin site and MCP endpoint behind one guard layer and the locale layer); and a "B10 —
   Breadth batteries" section in `THREAT-MODEL.md` (admin, UI, tenancy, AI tools and prompt
   injection with its residual risk, MCP, i18n input), each threat mapped to its test.
+- The Pipeline reference app, core (r13-w6-pipeline, D1 stages 1–4, 6, 7):
+  `examples/reference/pipeline`, a multi-tenant document-intake pipeline built only through
+  `id_effect_kit` on PostgreSQL. Ingest by RPC mutation (`Intake.ingest`) or upload (object
+  storage); one job per stage; extraction by structured output into a typed record, enriched from
+  an outside MCP tool server; classification by a bounded tool loop over two read-only tools
+  (`lookup_source`, `list_labels`); near-duplicates by embeddings over a bounded candidate set of
+  the tenant; publication through an `after_update` hook that stages `DocumentPublished` in the
+  outbox in the update's transaction; live status as an RPC subscription; one guarded,
+  Origin-checked MCP server per tenant (`search_documents`, `get_document`, described in en/de).
+  `Source` 1:N `Document` N:M `Label`, `Document` 1:N `Extraction`, all tenant-scoped, read with
+  eager loading and keyset pages; tenant `acme` on the main database, `globex` on its own through
+  `TenantRouter`. Deterministic AI only in CI (`ScriptedModel` and recorded OpenAI / Anthropic
+  fixtures). CI job `reference-pipeline`.
 
 ### Changed
 
+- `id_effect_ai` and `id_effect_i18n` move to tier `platform` (r13-w6-pipeline, ADR 0012 check P):
+  the Pipeline reference app depends on them and runs them in CI.
 - One rcgen (r13-f-rcgen, 0.12 follow-up F5): `id_effect_platform`, `id_effect_node`,
   `id_effect_axum`, `id_effect_sql`, `id_effect_tool` and `id_effect_kit` move from rcgen 0.13 to
   0.14 (the version instant-acme already brought), so `cargo tree -d` lists rcgen once and the

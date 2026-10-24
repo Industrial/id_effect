@@ -83,6 +83,8 @@ tower = { version = "0.5.3", features = ["util"] }
 all-features = true
 
 [package.metadata.id_effect]
-# ADR 0010 crate tier (Amendment 9) — checked by scripts/tier-conformance.sh. Moves to `platform`
-# when the Pipeline reference app depends on it (check P).
-tier = "integration"
+# ADR 0010 crate tier (Amendment 9) — checked by scripts/tier-conformance.sh. Promoted to
+# `platform` by r13-w6-pipeline: the Pipeline reference app depends on it (kit feature `i18n`, the
+# extraction labels and MCP tool descriptions in en/de) and runs it in CI (job
+# `reference-pipeline`; ADR 0012 rule 4, check P).
+tier = "platform"
