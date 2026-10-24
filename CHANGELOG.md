@@ -63,20 +63,6 @@
   keeps at most 64 tenant clients open (LRU, `with_max_pools`) and composes with
   `RoutingSqlClient` replicas. Book: chapter 30.7 "Resolving the tenant" and "One database per
   tenant".
-- Relations and eager loading in `id_effect_sql` (r13-e3-3-relations, data.orm #3):
-  `#[entity(belongs_to(..))]`, `has_many(..)` and `many_to_many(.., through = "..")` generate
-  `Relation<P, C>` constructors (`Order::lines()`); `Repository::with(rel)` returns an
-  `EagerRepository` whose `find` / `find_all` / `find_by` / `find_page` / `load` return `Loaded<T>`
-  values, loading each relation in one `IN (…)` query per relation per level (no N+1; keys
-  deduplicated, chunked at 1 000), nested with `Relation::with` at most `MAX_EAGER_DEPTH` (3)
-  levels, on PostgreSQL, MySQL and SQLite. Secure by default (ADR 0013 R1): children are read
-  with the child entity's tenant, soft-delete and custom filters (inside the join for N:M), so a
-  relation never returns another tenant's row, and a tenant-scoped child without a tenant fails
-  closed before any query. `Entity::FIELDS` (`FieldMeta`: column, type, nullable,
-  `#[entity(editable)]`, `#[entity(label = "..")]`, relation), `Entity::RELATIONS`
-  (`RelationMeta`) and `Entity::LABEL`, all defaulted so hand-written impls compile unchanged.
-  `repository.rs` becomes `repository/{mod,relations}.rs`; every public path is kept. Book:
-  chapter 28.6.
 - Keyset (cursor) pagination in `id_effect_sql` (r13-e3-3-pagination, E3.3 "pagination", D11):
   `Repository::find_after(&Keyset, Option<PageCursor>)` / `find_before` (also on
   `BoundRepository` and, with the relations loaded, `EagerRepository`) return
@@ -483,6 +469,87 @@
   build delta on the `service` template per kit feature: `ai` −0.1 s, `admin` +3.9 s, `ui` +1.3 s,
   `i18n` +3.3 s (baseline 30.8 s).
 
+### Security
+
+- Breadth defaults (ADR 0015 B1–B23, ADR 0013 applied to the 0.13 surfaces; each with its
+  enforcement point, all green in `docs/security/kpis-0.13.json` "security_table"):
+  - B1 the admin mounts only through `AdminSite::guard` (compile-fail
+    `r1_admin_site_without_guard`, `admin_denied_without_permission`, posture probe "admin
+    guarded"); B2 every entity × action is a permission, denied by default
+    (`admin_action_requires_entity_permission`).
+  - B3 only fields declared editable are bound (`admin_form_ignores_undeclared_fields`); B4 at most
+    100 ids per bulk action and 64 KiB per form (`r4_admin_bulk_action_over_cap_rejected`,
+    `r4_admin_form_over_cap_413`, fuzz `admin_form_body`).
+  - B5 masked CSRF tokens on every admin and htmx post (`r9_admin_post_without_csrf_token_refused`,
+    `r9_htmx_requests_carry_masked_token`); B6 views escape by default, raw HTML only through
+    `ui::trusted_html` (`ui_escapes_untrusted_by_default`, `no_preescaped_outside_trusted_module`).
+  - B7 every admin create, update, delete and bulk action writes the hash-chained audit log
+    (`admin_change_written_to_audit_log`).
+  - B8 eager loads and joins re-apply the child's tenant and soft-delete filters
+    (`m19_eager_loaded_children_scoped_to_tenant`, `relation_join_cannot_cross_tenant`); B9 page
+    cursors are at most 1 KiB, bound to their filter, pages at most 500
+    (`r4_page_cursor_over_limit_rejected`, `cursor_with_other_filter_refused`, `r4_page_size_capped`,
+    fuzz `sql_page_cursor`).
+  - B10 the tenant comes from the principal's claim, a header only through
+    `dangerous_tenant_from_header` (`tenant_resolved_from_principal_by_default`,
+    `dangerous_tenant_from_header_is_recorded`); B11 an unknown tenant has no connection and tenant
+    pools are bounded (64, LRU) (`unknown_tenant_has_no_connection`,
+    `r4_tenant_pool_count_bounded`).
+  - B12 an agent runs registered tools only, with Schema-decoded arguments, write tools only under
+    `allow_writes`, in a bounded loop (`ai_unregistered_tool_call_refused`,
+    `ai_tool_arguments_schema_decoded`, `ai_write_tool_denied_without_policy`,
+    `ai_tool_loop_step_budget_enforced`, fuzz `ai_tool_arguments`); B13 finite `max_tokens`,
+    timeouts, response, stream and tool-output caps (`r4_ai_max_tokens_finite_by_default`,
+    `r4_ai_stream_over_cap_closed`, fuzz `ai_sse_event`); B14 API keys are `Secret`, prompts and
+    completions are not logged (`ai_api_key_redacted_in_debug`, `ai_prompts_not_logged_by_default`,
+    `dangerous_log_prompts_is_recorded`); B15 provider base URLs and the MCP client obey the
+    platform SSRF policy (`ai_base_url_obeys_ssrf_policy`, `mcp_client_obeys_ssrf_policy`).
+  - B16 the MCP HTTP endpoint needs an access decision and an allowed Origin, its session ids are
+    128-bit random and bound to the principal, messages are at most 1 MiB, and it is closed in prod
+    unless guarded (compile-fail `r1_mcp_endpoint_without_access_decision`,
+    `r9_mcp_foreign_origin_refused`, `mcp_session_bound_to_principal`,
+    `r4_mcp_message_over_cap_rejected`, `dangerous_mcp_write_tools_is_recorded`, posture probe "mcp
+    guarded", fuzz `mcp_jsonrpc_message`).
+  - B17 `Accept-Language` parsing is bounded and only allowlisted locales load
+    (`r4_accept_language_over_limit_ignored`, `locale_outside_allowlist_falls_back`, fuzz
+    `i18n_accept_language`); B18 message arguments are escaped and bidi-isolated
+    (`i18n_args_escaped_in_html`, `i18n_bidi_isolation_on_by_default`).
+  - B19 the Origin allowlist and every 0.12 WebSocket limit apply to RFC 8441 extended `CONNECT`
+    (`r9_h2_extended_connect_foreign_origin_refused`, `h2_websocket_limits_match_h1`); B20 0-RTT
+    stays off, its opt-out admits safe methods on the `h3` route only, never `idm/1`
+    (`zero_rtt_admits_only_safe_methods`, `zero_rtt_mutation_gets_425`,
+    `mesh_route_never_accepts_early_data`, `zero_rtt_off_by_default`); B21 WebSocket control frames
+    have their own finite cap (`r4_control_frames_have_own_cap`,
+    `credit_frames_do_not_throttle_data`); B22 `WsClient` trusts the platform roots and has no
+    "accept invalid certificates" API (`ws_client_rejects_untrusted_server_cert`); B23 generated
+    clients validate header names and values and cannot override `x-rpc` or `content-type`
+    (`http_transport_rejects_invalid_header`, `http_transport_cannot_override_rpc_header`).
+- New `dangerous_*` opt-outs (ADR 0013 R10; each calls `posture::record_dangerous`, is listed by
+  `scripts/check-dangerous.sh`, 51 functions at 0.13 against 46 at 0.12, and fails the prod
+  posture unless it is an accepted risk). Each reopens one finding:
+  - `AiConfig::dangerous_log_prompts` (`DANGEROUS_LOG_PROMPTS`) reopens B14: prompts and
+    completions reach logs and spans (probe "prompts not logged").
+  - `McpServer::dangerous_mcp_write_tools` (`DANGEROUS_MCP_WRITE_TOOLS`) reopens B12/B16: write
+    tools are listed and run for MCP clients (probe "mcp guarded").
+  - `TenantResolver::dangerous_tenant_from_header` reopens B10: a client-supplied header names the
+    tenant (probe "tenant not from header").
+  - `AdminSite::dangerous_without_audit` (`id_effect_admin`) reopens B7: admin changes are not
+    written to the audit log ("no unaccepted opt-out").
+  - `Route::dangerous_allow_early_data` (`id_effect_platform::quic`) reopens B20 at the transport:
+    the route accepts 0-RTT data, which an attacker can replay; refused on `idm/1` and on routes
+    that require a client certificate. `Http3Options::dangerous_allow_zero_rtt_for_queries` (0.12)
+    now turns it on for the `h3` route and admits only `GET` / `HEAD` early ("no unaccepted
+    opt-out").
+- Proof (r13-e-fuzz-security, r13-w8-kpis): 23 cargo-fuzz targets (6 new: `admin_form_body`,
+  `ai_sse_event`, `ai_tool_arguments`, `i18n_accept_language`, `mcp_jsonrpc_message`,
+  `sql_page_cursor`), 21 compile-fail cases (2 new: `r1_admin_site_without_guard`,
+  `r1_mcp_endpoint_without_access_decision`), `surface_013.rs` keeps every Security-table name
+  present, THREAT-MODEL.md boundary B10. 0 open highs (41 findings: 40 closed, 1 accepted), ADR
+  0013 10/10 rules enforced, secure stack +2,698 ns over bare (budget 5,000 ns), unary RPC
+  +1,768 ns (budget 3,000 ns). Open: the scheduled ClusterFuzzLite batch crash in the 0.12 target
+  `rpc_duplex_frame` (a `$serde_json::private::RawValue` payload key does not round-trip; owner
+  `id_effect_rpc`, carried) and the OpenSSF Scorecard 6.6 (target 7.5, repository settings).
+
 ### Performance
 
 - Breadth bench gates (r13-e-benches, `docs/benchmarks/README.md` "Breadth gates (0.13)"): benches
@@ -500,6 +567,64 @@
   `ui/render_list_50` ≤ 14,710 ns (9,807 ns measured). Against `v0.12.json` every 0.12 budget,
   delta and pair gate passes (secure stack +2.76 µs, unary RPC +1.78 µs, batch 0.092, h3/h2
   0.063) and the streaming group is unchanged (0.997–1.017).
+
+### Scorecard
+
+Planned (`bash scripts/scorecard.sh --targets 0.13.0`, METHOD 2.2, competitor snapshot
+2026-10-14, on the measured 0.12.0 baseline) against measured. The measured column is the blind
+re-score of `r13-x-rescore` (`docs/scorecard/results/v0.13.0.json`, `REPORT-0.13.0.md`); a cell
+reading "re-score" is not measured yet and is filled from that report before the tag.
+
+| Index | 0.12.0 measured | 0.13.0 planned | 0.13.0 measured |
+|---|---|---|---|
+| Universal (U) | 82.3 (#1) | 85.4 (#1) | re-score |
+| Enterprise (E) | 81.5 (#1) | 85.2 (#1), gate 84.2 | re-score |
+| Runtime (RT) | 85.9 (#1) | 87.8 (#1) | re-score |
+| Rows < 40 | 7 | ≤ 3 | re-score |
+| Rows ≥ 80 | 59 | 60 | re-score |
+
+| Row | 0.12.0 measured | 0.13.0 planned (checks) | Evidence | 0.13.0 measured |
+|---|---|---|---|---|
+| `data.orm` | 63 | 88 (#3 relations + eager loading, #7 lifecycle hooks) | r13-e3-3-relations, r13-e3-3-hooks, r13-e3-3-pagination; Pipeline | re-score |
+| `web.ui` | 1 | 67 (#1 #2 #6 #8; margin #5) | r13-e9-5-views, r13-e9-4-i18n-web; Pipeline back office | re-score |
+| `web.admin` | 1 | 50 (#1 #2 #3 #8; margin #4 #5 #6) | r13-e9-3-admin-core, r13-e9-3-admin-edit, r13-e1-3-generate-admin | re-score |
+| `ai.llm` | 38 | 75 (#3 #5 #6; margin #4 #8) | r13-e9-1-promote, -tools, -embeddings, -mcp; Pipeline | re-score |
+| `eco.i18n` | 1 | 63 (#1 #2 #3 #5 #7) | r13-e9-4-i18n-core, r13-e9-4-i18n-web; Pipeline en/de | re-score |
+| `eco.tenancy` | 75 | 75 kept (margin #8) | r13-e5-5-tenancy, kit `tenancy`; Pipeline `globex` database | re-score |
+| `web.rpc` | 100 | 100 kept | T12 carry leaves; Relay, Ledger | re-score |
+| `web.realtime` | 100 | 100 kept | r13-f-ws-credit, r13-f-ext-connect, r13-f-webtransport-host | re-score |
+| `dist.tls` | 100 | 100 kept | r13-f-rcgen, r13-f-h3-settings, r13-f-mesh-session | re-score |
+| `sec.supply` | 88 | 100 (carried from 0.12: `sec.supply#7`, a published GHSA) | owner step below | re-score |
+
+DX KPIs (`docs/benchmarks/dx-kpis-0.13.json`): K1 24.8 s (≤ 180), K2 1.47 s (≤ 8), K3 634 lines,
+K4 17/20 (≥ 17), K5 90.9 % (≥ 80 %), K6 31.9 s (budget 120 s); kit-feature cold-build deltas
+`ai` −0.1 s, `admin` +3.9 s, `ui` +1.3 s, `i18n` +3.3 s. Bench gates: eager pair 0.348 (limit 0.45
+by owner decision, F66), i18n and UI budgets met, every 0.12 gate unchanged.
+
+0.12 follow-ups: F5, F15, F21, F25, F27, F30, F34, F36, F39, F40, F43, F45, F46, F52, F55, F56 and
+F57 are closed by their leaves (lines above). Carried: F59's feature exercise in the Relay
+(server and client streams, SSE, postcard, batching, WebSocket resume) to 0.14 E13.2 (the 0.13
+part is closed by r13-f-relay-host); F53 (two Postgres idempotency stores) to 0.14; F62 (h3spec
+findings in the `server/h3.rs` adapter, `http3-conformance` outside `ci-pass`), F63 and F65 (the
+MySQL conformance test `dropped_streams_release_their_connections` in CI) and F64 (the first
+sysinfo sample blocking on Windows) to 0.14; F66 (sqlx-sqlite per-row cost behind the eager pair)
+recorded in 0.13 for 0.14.
+
+### Owner steps
+
+Not done by the release automation:
+
+- Accept ADR 0015 "Breadth batteries" (D16); it is Proposed, and the exit gate needs Accepted.
+  Review the defaults of D1–D15 and the nine open questions of the release spec.
+- Publish: push the `v0.13.0` tag. `publish.yml` publishes every crate in dependency order with
+  the `CARGO_REGISTRY_TOKEN` secret, including the first publication of `id_effect_ai`,
+  `id_effect_admin` and `id_effect_i18n` (crates.io creates them on first publish; no name
+  reservation step).
+- Fix or triage the `rpc_duplex_frame` ClusterFuzzLite crash (owner `id_effect_rpc`) so the
+  "no open crash" KPI passes on the tag.
+- Still open from earlier releases: publish the 0.10.1 GitHub Security Advisories
+  (`sec.supply#7`), accept ADR 0013 (0.11 D22), register the OpenSSF Best Practices badge (0.11
+  D16), allow `sudo tc` (netem) on the bench runner (0.12 D16).
 
 ## 0.12.0 — 2026-10-20 — One call surface
 

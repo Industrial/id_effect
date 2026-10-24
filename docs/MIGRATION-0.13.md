@@ -13,21 +13,110 @@ in [STABILITY.md](STABILITY.md).
 (`id_effect_admin`), server-rendered UI (`id_effect_axum` feature `ui`), i18n (`id_effect_i18n`),
 ORM relations, keyset pagination and lifecycle hooks, and tenancy helpers.
 
-Each section below names the leaf that owns it; the leaf writes its body when it lands, and
-`r13-t0-migration-guide` checks the list against `cargo semver-checks` at the release exit.
+Each section below names the leaf that made the change. The list was checked against
+`cargo semver-checks` 0.51 run per published crate with `--baseline-rev v0.12.0` at the release
+exit (r13-t0-migration-guide). Changes the tool does not flag (behaviour changes, additive items
+worth knowing, the labs crate) are listed as well, so this list is a superset of its report.
+
+Crates new in 0.13 (`id_effect_admin`, `id_effect_i18n`) have no 0.12 API to break;
+`id_effect_ai` was a labs crate without a semver promise, and its changes are listed anyway.
 
 ## SQL: `id_effect_sql::repository` split into a module tree
 
-Owner: r13-e3-3-relations. The paths of 0.12 stay importable through `pub use`.
+Owners: r13-e3-3-relations, r13-e3-3-pagination, r13-e3-3-hooks. `src/repository.rs` became
+`src/repository/{mod,relations,page,hooks,outbox}.rs`. Every 0.12 path is the same module
+(`id_effect_sql::repository`), and every 0.12 item is still defined in it or re-exported from it
+with `pub use`, so nothing to change:
+
+```rust,ignore
+// 0.12 and 0.13 alike
+use id_effect_sql::repository::{BoundRepository, CurrentTenant, Entity, Page, Repository, SqlExecutor};
+use id_effect_sql::{Entity, Repository};
+```
+
+The new items live in submodules and are re-exported from `repository` (and the most used ones
+from the crate root, feature `repository`): `Relation`, `RelationKind`, `RelationMeta`,
+`FieldMeta`, `Loaded`, `EagerRepository`, `BoundEagerRepository`, `MAX_EAGER_DEPTH`
+(`repository::relations`); `Keyset`, `PageCursor`, `PageCursorError`, `PageLimits`, `Paged`,
+`SortOrder` (`repository::page`); `EntityHooks`, `HookContext`, `HookedRepository`,
+`BoundHookedRepository` (`repository::hooks`); `repository::outbox` (feature `outbox`). The only
+source break is a name clash: code that glob-imports `id_effect_sql::*` or
+`id_effect_sql::repository::*` and also glob-imports a type with one of these names (for example
+its own `Relation` or `SortOrder`) gets an ambiguity error where it uses the name. Import the one
+you mean by name:
+
+```rust,ignore
+// before (0.12): compiled, the glob had no `SortOrder`
+use id_effect_sql::*;
+use my_app::query::*; // defines SortOrder
+// after (0.13)
+use id_effect_sql::*;
+use my_app::query::SortOrder; // a named import wins over the glob
+```
 
 ## SQL: `Entity` gains associated items
 
-Owners: r13-e3-3-relations, r13-e3-3-hooks. Every new item has a default, so manual `Entity`
-implementations keep compiling.
+Owner: r13-e3-3-relations (r13-e3-3-pagination and r13-e3-3-hooks add no trait item). `Entity`
+gains three associated constants, each with a default, so a hand-written `impl Entity` compiles
+unchanged:
+
+| New item | Default | Filled by `#[derive(Entity)]` from |
+|---|---|---|
+| `const LABEL: &'static str` | `Self::NAME` | `#[entity(label = "..")]`, else the type name in snake case |
+| `const FIELDS: &'static [FieldMeta]` | `&[]` | each field: column, type, nullable, `#[entity(editable)]`, `#[entity(label = "..")]`, relation |
+| `const RELATIONS: &'static [RelationMeta]` | `&[]` | `#[entity(belongs_to(..))]`, `has_many(..)`, `many_to_many(.., through = "..")` |
+
+```rust,ignore
+// before (0.12) and after (0.13): unchanged
+impl Entity for Order {
+  type Id = i64;
+  const NAME: &'static str = "Order";
+  const TABLE: &'static str = "orders";
+  const COLUMNS: &'static [&'static str] = &["id", "customer", "total"];
+  const ID: &'static str = "id";
+  fn id(&self) -> i64 { self.id }
+  fn values(&self) -> Vec<(&'static str, SqlValue)> { /* as in 0.12 */ }
+}
+// optional in 0.13, for the admin and other generic tools: add to the same impl
+  const LABEL: &'static str = "order";
+  const FIELDS: &'static [FieldMeta] = &[/* one FieldMeta per column */];
+```
+
+Two edge cases: a type with an inherent `const FIELDS` / `LABEL` / `RELATIONS` still compiles
+(the inherent item wins for `Order::FIELDS`), but generic code reading `T::FIELDS` sees the
+trait's default; move the constant into the `impl Entity` block. And `id_effect_admin` (and
+`id-effect generate admin`) builds its forms and columns from `FIELDS`, so an entity for the admin
+uses the derive or fills `FIELDS` itself.
 
 ## Events: `EventLog::head`
 
-Owner: r13-f-eventlog-head. A provided method; implementors outside the workspace need no change.
+Owner: r13-f-eventlog-head. `EventLog<E>` gains `fn head(&self) -> Effect<u64, EventStoreError>`
+(`where E: Send + 'static`), the position of the last event appended (`0` for an empty log). It
+is a provided method, so an `EventLog` implemented outside the workspace compiles unchanged; the
+default reads the whole log (`read_all(0, usize::MAX)`) and takes the greatest position, so a
+store that knows its head should override it:
+
+```rust,ignore
+// before (0.12): read every event to find the position to start "from now"
+let start = log
+  .read_all(0, usize::MAX)
+  .map(|events| events.iter().map(|e| e.position).max().unwrap_or(0));
+// after (0.13)
+let start = log.head();
+// optional override in a custom store (one query instead of a scan)
+impl EventLog<MyEvent> for MyStore {
+  fn read_all(&self, after: u64, limit: usize) -> Effect<Vec<RecordedEvent<MyEvent>>, EventStoreError> {
+    /* as in 0.12 */
+  }
+  fn head(&self) -> Effect<u64, EventStoreError> {
+    /* SELECT MAX(position) */
+  }
+}
+```
+
+`MemoryEventStore` and `SqlEventJournal` already override it. In `id_effect_rpc` (feature
+`events`), `EventSubscription::from_now()` is new; a subscription without it still starts after
+`starting_after` (default `0`), as in 0.12.
 
 ## Axum: `WsConfig` control-frame cap
 
@@ -174,7 +263,27 @@ include `WEBTRANSPORT_WITHOUT_HTTP3_WARNING`.
 
 ## TLS: rcgen 0.14
 
-Owner: r13-f-rcgen. Only a break if an rcgen type appears in a public signature.
+Owner: r13-f-rcgen. `id_effect_platform`, `id_effect_node`, `id_effect_axum`, `id_effect_sql`,
+`id_effect_tool` and `id_effect_kit` move from rcgen 0.13 to 0.14 (the version `instant-acme`
+already brought), so the dependency graph holds one rcgen. No public signature of any id_effect
+crate names an rcgen type (rcgen is used inside `id_effect_platform::tls::certs` and
+`id-effect dev` only), so there is nothing to change in code that uses id_effect. Behaviour is
+unchanged: `id-effect dev` still writes an ECDSA P-256 CA and a 13-day leaf.
+
+Only code that uses rcgen itself next to id_effect (test fixtures that mint certificates, say) and
+wants a single rcgen in its own graph ports to 0.14:
+
+```rust,ignore
+// before (rcgen 0.13)
+let ca = ca_params.self_signed(&ca_key)?;
+let leaf = params.signed_by(&leaf_key, &ca, &ca_key)?;
+let pem = certified.key_pair.serialize_pem();
+// after (rcgen 0.14)
+let ca = ca_params.self_signed(&ca_key)?;
+let issuer = Issuer::from_params(&ca_params, &ca_key);
+let leaf = params.signed_by(&leaf_key, &issuer)?;
+let pem = certified.signing_key.serialize_pem();
+```
 
 ## CLI: `crates/id_effect_cli/templates/admin-stub` removed
 
