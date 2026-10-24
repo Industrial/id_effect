@@ -27,12 +27,14 @@ const IMAGE: &str = "ghcr.io/letsencrypt/pebble@sha256:d9080f68f6cb6af8d82134ab2
 const DOMAIN: &str = "acme.id-effect.test";
 const BLOCKED: &str = "blocked.id-effect.test";
 
-fn free_port() -> u16 {
-  TcpListener::bind("127.0.0.1:0")
-    .expect("bind")
-    .local_addr()
-    .expect("addr")
-    .port()
+/// `N` distinct free ports: every probe listener stays bound until all are chosen (released one
+/// at a time, the OS can hand the same port out twice; CI saw Pebble's listen and management
+/// addresses collide).
+fn free_ports<const N: usize>() -> [u16; N] {
+  let probes: Vec<TcpListener> = (0..N)
+    .map(|_| TcpListener::bind("127.0.0.1:0").expect("bind"))
+    .collect();
+  std::array::from_fn(|i| probes[i].local_addr().expect("addr").port())
 }
 
 /// A running Pebble container; removed on drop.
@@ -74,14 +76,14 @@ fn pebble(tls_port: u16, validity: Duration, authz_reuse: u8) -> Option<Pebble> 
     return None;
   }
   let dir = tempfile::tempdir().expect("dir");
-  let (listen, management) = (free_port(), free_port());
+  let [listen, management, http] = free_ports::<3>();
   let config = serde_json::json!({
     "pebble": {
       "listenAddress": format!("127.0.0.1:{listen}"),
       "managementListenAddress": format!("127.0.0.1:{management}"),
       "certificate": "test/certs/localhost/cert.pem",
       "privateKey": "test/certs/localhost/key.pem",
-      "httpPort": free_port(),
+      "httpPort": http,
       "tlsPort": tls_port,
       "ocspResponderURL": "",
       "externalAccountBindingRequired": false,
