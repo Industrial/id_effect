@@ -630,6 +630,8 @@ where
 #[derive(Debug)]
 pub(crate) struct HostWebTransport {
   endpoint: id_effect_platform::quic::QuicEndpoint,
+  /// Registered at bind, so the host accepts HTTP/3 as soon as it has started.
+  route: id_effect_platform::quic::AlpnRoute,
 }
 
 impl HostWebTransport {
@@ -662,7 +664,10 @@ impl HostWebTransport {
       .with_limits(quic_limits(limits));
     let endpoint = id_effect_platform::quic::QuicEndpoint::bind(tcp, quic)
       .map_err(|e| std::io::Error::other(format!("http3: {e}")))?;
-    Ok(Some(Self { endpoint }))
+    let route = endpoint
+      .register(super::h3::Http3Options::default().webtransport().route())
+      .map_err(|e| std::io::Error::other(format!("http3: {e}")))?;
+    Ok(Some(Self { endpoint, route }))
   }
 
   /// The UDP port (the TCP one).
@@ -670,7 +675,8 @@ impl HostWebTransport {
     self.endpoint.local_addr().port()
   }
 
-  /// [`serve_h3`](super::h3::serve_h3) with WebTransport on, then closes the endpoint.
+  /// [`serve_h3`](super::h3::serve_h3) on the bound route with WebTransport on, then closes
+  /// the endpoint.
   pub(crate) async fn serve<F>(
     self,
     app: Router,
@@ -681,7 +687,7 @@ impl HostWebTransport {
     F: std::future::Future<Output = ()> + Send + 'static,
   {
     let options = super::h3::Http3Options::default().webtransport();
-    let served = super::h3::serve_h3(&self.endpoint, app, limits, options, shutdown).await;
+    let served = super::h3::serve_route(Ok(self.route), app, limits, options, shutdown).await;
     self.endpoint.close();
     served
   }
