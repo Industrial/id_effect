@@ -355,6 +355,11 @@
   Windows; until the sample lands they report `TelemetrySnapshot::NEUTRAL` (new), and the new
   `SysinfoTelemetry::is_primed` tells when real readings start. The 50 ms non-blocking bound
   holds on every platform again.
+- A dropped `MySqlSqlClient::query_stream` closes its connection after `KILL QUERY` instead of
+  returning it to the pool (0.12 follow-ups F63, F65): sqlx's pool read the rest of the result
+  before reusing the connection, which in CI took minutes for a large result. The pool slot now
+  frees at once and a fresh connection opens on demand; the conformance test drops 100 000-row
+  streams again and requires the release within 20 s, without the bounded retry.
 - `id_effect_ai` and `id_effect_i18n` move to tier `platform` (r13-w6-pipeline, ADR 0012 check P):
   the Pipeline reference app depends on them and runs them in CI.
 - `id_effect_admin` moves to tier `platform` (r13-w7-pipeline-backoffice, ADR 0012 check P): the

@@ -9,17 +9,21 @@
 //! When the consumer goes away (the stream is dropped, or the fiber pulling it is interrupted),
 //! the channel closes. The feeder then stops reading, asks the server to stop the query
 //! (`KILL QUERY <id>` from a separate connection, while it still holds the query's connection,
-//! so the kill can never hit a later statement on it) and returns the connection to the pool,
-//! which reads what is left of the result before reusing it.
+//! so the kill can never hit a later statement on it) and closes the connection instead of
+//! returning it to the pool: the pool would read what is left of the result before reusing it,
+//! which can take far longer than the stream was ever consumed for. The pool slot frees up at
+//! once and the pool opens a fresh connection when one is next needed.
 
 use std::future::{Future, poll_fn};
 use std::pin::pin;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::task::Poll;
+use std::time::Duration;
 
 use id_effect::{DEFAULT_CHUNK_SIZE, Stream, from_async};
 use sqlx::mysql::MySqlRow;
-use sqlx::{Connection as _, Executor as _, MySqlConnection, MySqlPool, Row as _};
+use sqlx::pool::PoolConnection;
+use sqlx::{Connection as _, Executor as _, MySql, MySqlConnection, MySqlPool, Row as _};
 use tokio::sync::mpsc;
 
 use super::error::mysql_error;
@@ -30,6 +34,8 @@ use crate::{SqlError, SqlRow, SqlValue};
 pub(super) const BATCH_ROWS: usize = DEFAULT_CHUNK_SIZE;
 /// Batches the channel holds before the feeder waits for the consumer.
 pub(super) const BUFFERED_BATCHES: usize = 2;
+/// Upper bound on closing an abandoned stream's connection.
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 type Batch = Result<Vec<SqlRow>, SqlError>;
 
@@ -186,19 +192,33 @@ async fn feed(
   match outcome {
     Outcome::Drained => Ok(()),
     Outcome::Abandoned => {
-      kill_query(pool, id).await;
+      abandon(conn, pool, id).await;
       Ok(())
     }
     Outcome::Failed(e) => {
-      kill_query(pool, id).await;
+      abandon(conn, pool, id).await;
       Err(e)
     }
   }
 }
 
+/// Gives up on the query running on `conn` (connection id `id`) with part of its result unread.
+///
+/// Returning the connection to the pool as-is would make the pool read the rest of the result
+/// before reusing it, which for a large result can take far longer than the query was ever
+/// consumed for (F65). Instead the query is killed (so the server stops producing rows) and the
+/// connection is closed without reading what is left; its pool slot frees up and the pool
+/// opens a fresh connection when one is next needed.
+async fn abandon(conn: PoolConnection<MySql>, pool: &MySqlPool, id: u64) {
+  kill_query(pool, id).await;
+  // Best effort: `close` sends COM_QUIT and shuts the socket down without draining; the pool
+  // slot is released whether or not that succeeds.
+  let _ = tokio::time::timeout(CLOSE_TIMEOUT, conn.close()).await;
+}
+
 /// Asks the server to stop what connection `id` is running, from a fresh connection (the pool
-/// may have no other connection to give). Best effort: if it fails, returning the connection to
-/// the pool still reads the rest of the result.
+/// may have no other connection to give). Best effort: if it fails, closing the connection still
+/// ends the query the next time the server writes to it.
 async fn kill_query(pool: &MySqlPool, id: u64) {
   let options = pool.connect_options();
   if let Ok(mut conn) = MySqlConnection::connect_with(&options).await {
