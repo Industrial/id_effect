@@ -17,6 +17,14 @@
 //! connection and need the transport parameter. The session hook rides the endpoint's one `h3`
 //! route: no route of its own is registered.
 //!
+//! **On the host.** The host entry points ([`serve_router`](crate::server::serve_router),
+//! [`ServerHandle`](crate::server::ServerHandle), [`serve`](crate::server::serve)) do both for
+//! their own HTTP/3 endpoint when
+//! [`HostConfig::webtransport`](crate::server::HostConfig::webtransport) is on
+//! (`server.http3.webtransport = true`; off by default): put the [`endpoint`] route in the app
+//! they serve and give the host TLS certificate files; no `serve_h3` endpoint of the app's own
+//! is needed. The route's `Origin` allowlist and session caps apply there as anywhere.
+//!
 //! ## Limits (ADR 0013 R4)
 //!
 //! | Limit | Default |
@@ -611,6 +619,72 @@ where
     },
   );
   Endpoint::from_parts(info, method_router)
+}
+
+// --- the host entry points --------------------------------------------------------------------
+
+/// The HTTP/3 side of a host entry point that serves WebTransport
+/// ([`HostConfig::webtransport`](crate::HostConfig::webtransport), F43): its own endpoint on the
+/// TCP port number, with QUIC datagrams ([`quic_limits`]), served with
+/// [`Http3Options::webtransport`](super::h3::Http3Options::webtransport).
+#[derive(Debug)]
+pub(crate) struct HostWebTransport {
+  endpoint: id_effect_platform::quic::QuicEndpoint,
+}
+
+impl HostWebTransport {
+  /// Binds UDP on `tcp`'s address when `config` turns HTTP/3 on and `transport` is TLS with an
+  /// HTTP/3 identity (certificate files); `None` otherwise, and the reason is logged.
+  pub(crate) fn bind(
+    config: &crate::HostConfig,
+    transport: &super::connection::HostTransport,
+    tcp: SocketAddr,
+    limits: &ConnectionLimits,
+  ) -> std::io::Result<Option<Self>> {
+    if !config.http3 || !transport.is_tls() {
+      tracing::warn!(
+        target: "id_effect_axum::posture",
+        "{}",
+        crate::server::bootstrap::WEBTRANSPORT_WITHOUT_HTTP3_WARNING
+      );
+      return Ok(None);
+    }
+    let Some(identity) = transport.http3_identity() else {
+      tracing::warn!(
+        target: "id_effect_axum::posture",
+        "WebTransport is on but the TLS settings were provided (HostTls::Provided), which \
+         carry no certificate identity for QUIC; serving TCP only, without HTTP/3 or \
+         WebTransport (use certificate files)"
+      );
+      return Ok(None);
+    };
+    let quic = id_effect_platform::quic::QuicEndpointConfig::new(identity.clone())
+      .with_limits(quic_limits(limits));
+    let endpoint = id_effect_platform::quic::QuicEndpoint::bind(tcp, quic)
+      .map_err(|e| std::io::Error::other(format!("http3: {e}")))?;
+    Ok(Some(Self { endpoint }))
+  }
+
+  /// The UDP port (the TCP one).
+  pub(crate) fn port(&self) -> u16 {
+    self.endpoint.local_addr().port()
+  }
+
+  /// [`serve_h3`](super::h3::serve_h3) with WebTransport on, then closes the endpoint.
+  pub(crate) async fn serve<F>(
+    self,
+    app: Router,
+    limits: ConnectionLimits,
+    shutdown: F,
+  ) -> std::io::Result<()>
+  where
+    F: std::future::Future<Output = ()> + Send + 'static,
+  {
+    let options = super::h3::Http3Options::default().webtransport();
+    let served = super::h3::serve_h3(&self.endpoint, app, limits, options, shutdown).await;
+    self.endpoint.close();
+    served
+  }
 }
 
 // --- a client ---------------------------------------------------------------------------------

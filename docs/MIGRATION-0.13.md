@@ -126,6 +126,39 @@ let args = CheckArgs { contract, against: Some(spec), generated: None, allow_ret
 No shim: a struct literal cannot default a field. Parsing arguments with clap (`CheckArgs` derives
 `Args`) needs no change.
 
+## Axum: `HostConfig::webtransport` (WebTransport in the host entry points)
+
+Owner: r13-f-webtransport-host. `id_effect_axum::HostConfig` gains the public field
+`webtransport: bool` (config key `server.http3.webtransport`, environment form
+`server_http3_webtransport`; default `false`). Code that builds `HostConfig` with a struct literal
+without `..HostConfig::default()` adds the field:
+
+```rust,ignore
+// before (0.12)
+let config = HostConfig { bind_host, bind_port, shutdown_timeout, load_shed, tls, http3 };
+// after (0.13)
+let config = HostConfig { bind_host, bind_port, shutdown_timeout, load_shed, tls, http3, webtransport: false };
+```
+
+No shim: a struct literal cannot default a field (`..HostConfig::default()` keeps working
+unchanged). Behaviour is unchanged unless you turn it on. With it on (and feature `webtransport`,
+HTTP/3 and TLS certificate files), `ServerHandle`, `serve_router` and `serve` serve the app's
+`webtransport::endpoint` routes on the host's own HTTP/3 endpoint, so an app that ran a private
+`serve_h3` endpoint for WebTransport can drop it:
+
+```rust,ignore
+// before (0.12): a second QUIC endpoint of the app's own
+let endpoint = QuicEndpoint::bind(addr, QuicEndpointConfig::new(identity)
+  .with_limits(webtransport::quic_limits(&limits)))?;
+tokio::spawn(serve_h3(&endpoint, app.clone(), limits, Http3Options::default().webtransport(), stop));
+// after (0.13): the host does it on its port (or set server.http3.webtransport = true)
+ServerHandle::start(&HostConfig::default().with_tls(tls).with_webtransport(), app).await?;
+```
+
+A host with `webtransport` set but built without the feature refuses to start
+(`HostError::Serve`); without HTTP/3 or TLS files it starts TCP only and its posture warnings
+include `WEBTRANSPORT_WITHOUT_HTTP3_WARNING`.
+
 ## TLS: rcgen 0.14
 
 Owner: r13-f-rcgen. Only a break if an rcgen type appears in a public signature.
