@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-c1a71d",
+  "taskId": "tsk-mvf9rld7-x1htmf",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T13:07:50.304Z",
+  "lockedAt": "2026-10-19T13:07:50.304Z",
+  "intent": "r12-e12-2-rpc-ws-sse",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-b27ede",
+      "text": "web.rpc#5: every procedure kind over WebSocket frames multiplexed by call id (frame format from r12-rpc-design.md), subprotocols idrpc.json.v1 and idrpc.postcard.v1; subscriptions and server streams over SSE with mutations over POST next to it (the browser fallback).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3ef7e3",
+      "text": "Backpressure: streams are pull-based end to end, so a slow client slows its own stream and the server buffers at most the configured window per stream; per-connection stream cap and frame cap (ADR 0013 R4).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-57a22b",
+      "text": "The Rust client chooses a transport (HTTP, WebSocket, SSE) from config; client/mod.rs holds the choice.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5c4c22",
+      "text": "Tests `every_kind_over_websocket`, `subscription_over_sse`, `mutation_over_post_next_to_sse`, `slow_ws_client_applies_backpressure`, `r4_ws_streams_per_connection_capped`, `ws_frame_decode_rejects_unknown_kind`; `transport::frame::decode` is public for the fuzz target; book part6/ch33-06-rpc-transports.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b2710d",
+      "text": "Gate: `cargo nextest run -p id_effect_rpc --features ws,sse`; `cargo nextest run -p id_effect_rpc --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-77170d",
+      "text": "Owns: `crates/id_effect_rpc/src/transport/{mod.rs,ws.rs,sse.rs,frame.rs}`, `crates/id_effect_rpc/src/client/{mod.rs,ws.rs,sse.rs}`, `crates/id_effect_rpc/src/server/mod.rs` (transport mounts, after r12-e12-1-kinds), `crates/id_effect_rpc/tests/{transport_ws.rs,transport_sse.rs}`, `crates/id_effect/book/src/part6/ch33-06-rpc-transports.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "d1-rpc-ws-sse",
+  "lockedBy": "d1-rpc-ws-sse",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

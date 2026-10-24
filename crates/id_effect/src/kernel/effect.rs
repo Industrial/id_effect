@@ -1,5 +1,6 @@
 //! `Effect<A, E = Never, R = HNil>`, its `Node` representation (`Pure`/`Sync`/`Op`), the core
-//! combinators (`map`/`flat_map`/`map_err`/`catch`/`exit`/`then`/`zip`/`widen`) and `ExitKind`.
+//! combinators (`map`/`flat_map`/`map_err`/`catch`/`exit`/`then`/`zip`/`widen`/`any_env`) and
+//! `ExitKind`.
 //!
 //! Design A §1.1: an inline `Pure` node (no allocation for ready values), lazy synchronous
 //! closures (`Sync`) and erased runloop programs (`Op`). `ExitKind` is defined in
@@ -12,7 +13,7 @@
 //! fusion saved. The fiber-free prefix of a program still runs without a fiber or executor
 //! (`settle_instr`, used by `block_on` and `~` binds).
 
-use super::anybox::{AnyBox, downcast_env, erase, unbox, unerase_exit};
+use super::anybox::{AnyBox, AnyEnv, downcast_env, erase, hnil_env, unbox, unerase_exit};
 use super::cause::{map_fail_once, split_failure, to_exit};
 use super::runloop::{Frame, Instr, SeqBody, frame_vec};
 use crate::capability::HNil;
@@ -236,5 +237,50 @@ impl<A: Send + 'static, R: Send + Sync + 'static> Effect<A, Never, R> {
   /// An infallible effect under any error type.
   pub fn widen<E: Send + 'static>(self) -> Effect<A, E, R> {
     self.map_err(|n| match n {})
+  }
+}
+
+impl<A: Send + 'static, E: Send + 'static> Effect<A, E, HNil> {
+  /// Runs this environment-free effect under any environment `R`: the result needs `R` in the
+  /// type only and never reads it.
+  ///
+  /// Use it to hand an env-free effect to code that expects an `Effect<A, E, R>` for an `R` that
+  /// need not be an HList (a procedure over a bare [`DynEnv`](crate::DynEnv), a generic `R`),
+  /// where [`narrow`](Self::narrow) does not apply and a `from_ctx` body that only binds the
+  /// effect would be boilerplate.
+  ///
+  /// Cost: a ready effect is returned as is (no allocation); a fused synchronous step is rewrapped
+  /// once (one closure box, as [`narrow`](Self::narrow) does); an erased program gets one
+  /// `Provide` frame whose inner environment is the shared static `HNil` (no allocation per run).
+  /// The inner program runs on the same fiber, so interrupts, masks and finalizers behave as they
+  /// would without the lift.
+  ///
+  /// ```
+  /// use id_effect::{DynEnv, Effect, Exit, HNil, succeed};
+  ///
+  /// fn audit_count() -> Effect<u32, String> {
+  ///   succeed::<u32, String, HNil>(20).map(|n| n + 1)
+  /// }
+  ///
+  /// // A procedure over a `DynEnv`: before `any_env` this was
+  /// // `Effect::from_ctx(|ctx| async move { ctx.bind(audit_count()).await })`.
+  /// fn procedure() -> Effect<u32, String, DynEnv> {
+  ///   audit_count().any_env()
+  /// }
+  ///
+  /// let exit = procedure().provide_all(DynEnv::new()).block_on();
+  /// assert!(matches!(exit, Exit::Success(21)));
+  /// ```
+  pub fn any_env<R: Send + Sync + 'static>(self) -> Effect<A, E, R> {
+    match self.node {
+      Node::Pure(r) => Effect::pure(r),
+      Node::Sync(f, d) => Effect {
+        node: Node::Sync(Box::new(move |_: &R| f(&HNil).any_env::<R>()), d),
+      },
+      Node::Op(i) => Effect::from_instr(Instr::Provide(
+        Box::new(i),
+        Box::new(|_: &AnyEnv| hnil_env().clone()),
+      )),
+    }
   }
 }

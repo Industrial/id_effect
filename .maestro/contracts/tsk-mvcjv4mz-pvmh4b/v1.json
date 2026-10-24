@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-545f94",
+  "taskId": "tsk-mvcjv4mz-pvmh4b",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T19:17:11.614Z",
+  "lockedAt": "2026-10-17T19:17:11.614Z",
+  "intent": "r10-t0-k2-k6",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-a2672c",
+      "text": "`dx-kpis.sh` measures K2 = median incremental `cargo build` after editing one handler of a generated `service` project (method of `scripts/compile-time.sh`: wrappers unset, 3 runs) with `K2_BUDGET_S` default 8 (fails above), and K6 = cold `cargo build --release` of the same project (recorded; the budget value is written into the README per PLAN-OF-PLANS §8); `DX_KPIS_RELEASE` default 0.10; self-test covers K2/K6 parsing. Run once in wave 1 to get the baseline before the kit grows.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3b5283",
+      "text": "Gate: `bash scripts/dx-kpis.sh --self-test`; `DX_KPIS_RELEASE=0.10 bash scripts/dx-kpis.sh` prints K2",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c8c495",
+      "text": "Owns: `scripts/dx-kpis.sh`, `docs/benchmarks/README.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

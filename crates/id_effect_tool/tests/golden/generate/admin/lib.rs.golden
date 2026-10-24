@@ -1,0 +1,4 @@
+//! The shop.
+
+pub mod admin;
+pub mod documents;

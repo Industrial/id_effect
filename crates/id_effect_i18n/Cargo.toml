@@ -1,0 +1,90 @@
+[package]
+name = "id_effect_i18n"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Internationalization for id_effect services: locales, message catalogs and per-request locale selection"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["effect", "i18n", "l10n", "locale", "fluent"]
+categories = ["internationalization", "localization"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_i18n"
+
+# Every 0.13 feature is declared here once (r13-e9-4-i18n-core), so r13-e9-4-i18n-web adds modules
+# without editing this manifest. All are off by default.
+[features]
+default = []
+# `Accept-Language` negotiation for axum: a layer that provides `CurrentLocale` per request.
+axum = [
+  "dep:axum",
+  "dep:id_effect_axum",
+  "dep:tower-layer",
+  "dep:tower-service",
+]
+# `maud::Render` for translated messages (escaped arguments, Unicode bidi isolation).
+maud = ["dep:maud"]
+# Translated `Schema` validation messages (error codes of `id_effect::schema` → message ids).
+schema = []
+
+[dependencies]
+# No `compute` (rayon, sysinfo): catalogs and the locale capability need only the kernel.
+id_effect = { path = "../id_effect", version = "0.12.0", default-features = false }
+# Project Fluent (0.13 decision D5), exact pins: the crates are pre-1.0. fluent-bundle 0.16.0
+# requires fluent-langneg ^0.13, fluent-syntax ^0.12.0 and unic-langid ^0.9, so these pins are the
+# versions it resolves to and the tree keeps one copy of each. CLDR plural rules come through
+# fluent-bundle's intl_pluralrules 7.
+fluent-bundle = "=0.16.0"
+fluent-langneg = "=0.13.1"
+fluent-syntax = "=0.12.0"
+unic-langid = "=0.9.6"
+# Feature `axum` (r13-e9-4-i18n-web); the versions id_effect_axum already uses.
+axum = { version = "0.8.9", optional = true }
+id_effect_axum = { path = "../id_effect_axum", version = "0.12.0", optional = true }
+tower-layer = { version = "0.3.3", optional = true }
+tower-service = { version = "0.3.3", optional = true }
+# Feature `maud` (r13-e9-4-i18n-web), exact pin (pre-1.0); only the `Render` trait.
+maud = { version = "=0.27.0", optional = true }
+
+[[example]]
+name = "010_locale"
+path = "examples/010_locale.rs"
+
+[[example]]
+name = "020_catalog"
+path = "examples/020_catalog.rs"
+
+[[example]]
+name = "i18n_web"
+path = "examples/i18n_web.rs"
+required-features = ["axum", "maud", "schema"]
+
+# `i18n/format_plural` (docs/benchmarks/gates.toml, r13-e-benches).
+[[bench]]
+name = "format"
+harness = false
+
+# tests/web.rs and example i18n_web (r13-e9-4-i18n-web): drive an axum router in-process and
+# serve it; the versions id_effect_axum already uses.
+[dev-dependencies]
+# benches/format.rs (r13-e-benches): the version the other gate benches use.
+criterion = "0.8.2"
+http-body-util = "0.1"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+tower = { version = "0.5.3", features = ["util"] }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier (Amendment 9) — checked by scripts/tier-conformance.sh. Promoted to
+# `platform` by r13-w6-pipeline: the Pipeline reference app depends on it (kit feature `i18n`, the
+# extraction labels and MCP tool descriptions in en/de) and runs it in CI (job
+# `reference-pipeline`; ADR 0012 rule 4, check P).
+tier = "platform"

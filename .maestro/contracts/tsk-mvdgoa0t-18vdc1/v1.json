@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "id": "c-616b6d",
+  "taskId": "tsk-mvdgoa0t-18vdc1",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-18T06:45:30.008Z",
+  "lockedAt": "2026-10-18T06:45:30.008Z",
+  "intent": "r11-sec-tenancy",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-a8613c",
+      "text": "M19: when the request has a current tenant, resource policies built for a Tenanted resource (crates/id_effect_authz/src/resource.rs, Tenanted/same_tenant are opt-in today) include the tenant match automatically; crossing tenants needs cross_tenant_dangerous(reason), which records a posture opt-out; resources that are not Tenanted are unaffected.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-9ad85d",
+      "text": "Regression tests `m19_tenanted_resource_requires_tenant_match_by_default`, `m19_cross_tenant_requires_named_opt_out`, `m19_untenanted_resource_unaffected`; book part6/ch30-07-audit-tenancy.md section.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3e33af",
+      "text": "Gate: `cargo nextest run -p id_effect_authz --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-cb5208",
+      "text": "Owns: `crates/id_effect_authz/src/{resource.rs,policy.rs,lib.rs}`, `crates/id_effect_authz/tests/tenancy.rs`, `crates/id_effect/book/src/part6/ch30-07-audit-tenancy.md` (section)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

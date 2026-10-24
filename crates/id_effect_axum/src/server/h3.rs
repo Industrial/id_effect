@@ -36,12 +36,27 @@
 //! [`ClientIp`](crate::ClientIp) applies the 0.10.1 trusted-proxy rules to HTTP/3 exactly as to
 //! TCP, and per-IP rate limits see the same address.
 //!
-//! ## 0-RTT
+//! ## 0-RTT (ADR 0013 R10, F25)
 //!
 //! Off: the platform endpoint accepts no early data and hands connections over only after the
 //! handshake. [`Http3Options::dangerous_allow_zero_rtt_for_queries`] records a posture opt-out
-//! and admits early requests with safe methods only ([`Http3Options::admits_early`]); the
-//! endpoint does not yet offer early data, so today it changes nothing on the wire.
+//! and turns early data on for the `h3` route
+//! ([`Route::dangerous_allow_early_data`](id_effect_platform::quic::Route::dangerous_allow_early_data);
+//! the mesh route never takes it): a resumed client's first-flight requests are then served
+//! before the handshake completes when their method is safe (`GET`, `HEAD`: pages, files and
+//! RPC `query` procedures, which RPC serves on `GET`; [`Http3Options::admits_early`]). Every
+//! other request that arrives before the handshake completes — a mutation, a WebTransport
+//! `CONNECT` — is answered **`425 Too Early`** (RFC 8470) without reaching the router; the
+//! client retries it once the handshake is done. Early data can be replayed by whoever
+//! captured it, until the handshake completes, so only idempotent handlers that reveal nothing
+//! a replay could exploit may sit behind safe methods.
+//!
+//! ## Congestion control (F36)
+//!
+//! The `h3` route runs BBR (ADR 0014 D9, 0.12 F22); quinn marks its BBR experimental, so
+//! [`Http3Options::congestion`] switches to CUBIC without touching the mesh (which stays on
+//! CUBIC). [`Http3Options::config`] reads the switch from the config key
+//! `server.http3.congestion` (`bbr` or `cubic`, [`CONGESTION_KEY`]).
 //!
 //! ```rust,no_run
 //! use axum::Router;
@@ -78,12 +93,15 @@ use ::h3::server::{RequestResolver, RequestStream};
 use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::ConnectInfo;
-use axum::http::{Method, Response, header};
+use axum::http::{Method, Response, StatusCode, header};
 use bytes::Buf;
 use http_body::Frame;
 use http_body_util::BodyExt;
 use id_effect::observability::posture::record_dangerous;
-use id_effect_platform::quic::{AlpnRoute, QuicEndpoint, QuicEndpointConfig, QuicLimits, Route};
+use id_effect_config::{Config, ConfigError};
+use id_effect_platform::quic::{
+  AlpnRoute, CongestionControl, Handshake, QuicEndpoint, QuicEndpointConfig, QuicLimits, Route,
+};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use tower_service::Service;
 
@@ -116,6 +134,7 @@ pub(crate) type Handoff = crate::server::webtransport::Handoff;
 pub(crate) type Handoff = std::convert::Infallible;
 
 /// The next hand-off, or never (no WebTransport on this connection).
+#[cfg(feature = "webtransport")]
 async fn next_handoff(handoffs: &mut Option<mpsc::Receiver<Handoff>>) -> Handoff {
   match handoffs {
     Some(rx) => match rx.recv().await {
@@ -126,30 +145,146 @@ async fn next_handoff(handoffs: &mut Option<mpsc::Receiver<Handoff>>) -> Handoff
   }
 }
 
-/// HTTP/3 settings beyond the [`ConnectionLimits`]: off by default, each a `dangerous_*`
-/// opt-out.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Never: without the feature no connection serves WebTransport.
+#[cfg(not(feature = "webtransport"))]
+async fn next_handoff(_: &mut Option<mpsc::Receiver<Handoff>>) -> Handoff {
+  std::future::pending().await
+}
+
+/// The h3 server builder of a connection: the header-section cap, and the WebTransport
+/// settings (extended CONNECT, datagrams, one session) when it serves WebTransport.
+fn h3_builder(webtransport: bool) -> ::h3::server::Builder {
+  let mut builder = ::h3::server::builder();
+  builder.max_field_section_size(MAX_FIELD_SECTION_SIZE);
+  #[cfg(feature = "webtransport")]
+  if webtransport {
+    builder
+      .enable_webtransport(true)
+      .enable_extended_connect(true)
+      .enable_datagram(true)
+      .max_webtransport_sessions(1);
+  }
+  #[cfg(not(feature = "webtransport"))]
+  let _ = webtransport;
+  builder
+}
+
+/// Where a request task hands a WebTransport CONNECT back to its connection (a channel of one
+/// when the connection serves WebTransport, nothing otherwise).
+type Handoffs = (
+  Option<mpsc::Sender<Handoff>>,
+  Option<mpsc::Receiver<Handoff>>,
+);
+
+/// [`Handoffs`] for a connection that serves WebTransport when `webtransport`.
+#[cfg(feature = "webtransport")]
+fn handoffs(webtransport: bool) -> Handoffs {
+  if webtransport {
+    let (tx, rx) = mpsc::channel::<Handoff>(1);
+    (Some(tx), Some(rx))
+  } else {
+    (None, None)
+  }
+}
+
+/// No hand-offs without the feature.
+#[cfg(not(feature = "webtransport"))]
+fn handoffs(_: bool) -> Handoffs {
+  (None, None)
+}
+
+/// The config key of [`Http3Options::config`]: the `h3` route's congestion control, `bbr`
+/// (the default) or `cubic` (F36).
+pub const CONGESTION_KEY: &str = "server.http3.congestion";
+
+/// HTTP/3 settings beyond the [`ConnectionLimits`]: 0-RTT off by default (its opt-out is
+/// `dangerous_*`), BBR congestion control.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Http3Options {
   zero_rtt_for_queries: bool,
+  congestion: CongestionControl,
   #[cfg(feature = "webtransport")]
   webtransport: bool,
 }
 
+impl Default for Http3Options {
+  /// 0-RTT off, BBR, no WebTransport.
+  fn default() -> Self {
+    Self {
+      zero_rtt_for_queries: false,
+      congestion: CongestionControl::Bbr,
+      #[cfg(feature = "webtransport")]
+      webtransport: false,
+    }
+  }
+}
+
 impl Http3Options {
-  /// The defaults: 0-RTT off.
+  /// The defaults: 0-RTT off, BBR.
   pub fn new() -> Self {
     Self::default()
   }
 
-  /// **Dangerous.** Admit requests that arrive in 0-RTT early data when their method is safe
-  /// (`GET`, `HEAD`, `OPTIONS`: RPC queries); every other method is never served from early
-  /// data. Recorded in the [posture registry](id_effect::observability::posture) as
-  /// [`DANGEROUS_ALLOW_ZERO_RTT_FOR_QUERIES`].
+  /// The options from config: the congestion control at [`CONGESTION_KEY`]
+  /// (`server.http3.congestion`: `bbr`, the default when the key is absent, or `cubic`, in any
+  /// case), everything else at its default. In a profile file that is
+  /// `[server.http3] congestion = "cubic"`; flat providers join the path with their delimiter
+  /// (`server_http3_congestion` for the environment provider's default). 0-RTT has no config
+  /// key: its opt-out is code.
+  // `ConfigError` is the descriptor API's error type (as `HostConfig::config`).
+  #[allow(clippy::result_large_err)]
+  pub fn config() -> Config<Http3Options> {
+    Config::optional_string(CONGESTION_KEY).map_attempt(|name| {
+      let Some(name) = name else {
+        return Ok(Self::new());
+      };
+      match name.parse::<CongestionControl>() {
+        Ok(congestion) => Ok(Self::new().congestion(congestion)),
+        Err(e) => Err(ConfigError::Invalid {
+          path: CONGESTION_KEY.into(),
+          value: name,
+          reason: e.to_string(),
+        }),
+      }
+    })
+  }
+
+  /// Run `congestion` control on the `h3` route's connections (F36; default
+  /// [`CongestionControl::Bbr`], which quinn marks experimental: [`CongestionControl::Cubic`]
+  /// is the escape hatch). The mesh keeps CUBIC either way.
+  #[must_use]
+  pub fn congestion(mut self, congestion: CongestionControl) -> Self {
+    self.congestion = congestion;
+    self
+  }
+
+  /// The congestion control of the `h3` route's connections.
+  pub fn congestion_control(&self) -> CongestionControl {
+    self.congestion
+  }
+
+  /// The platform route these options serve: `h3` with their congestion control, taking early
+  /// data only with [`Self::dangerous_allow_zero_rtt_for_queries`].
+  pub fn route(&self) -> Route {
+    let route = Route::h3().with_congestion_control(self.congestion);
+    if self.zero_rtt_for_queries {
+      route.dangerous_allow_early_data()
+    } else {
+      route
+    }
+  }
+
+  /// **Dangerous.** Take 0-RTT early data on the `h3` route and serve the requests that arrive
+  /// in it when their method is safe (`GET`, `HEAD`: RPC `query` procedures ride `GET`);
+  /// every other request that arrives before the handshake completes is answered
+  /// `425 Too Early` (RFC 8470). Recorded in the
+  /// [posture registry](id_effect::observability::posture) as
+  /// [`DANGEROUS_ALLOW_ZERO_RTT_FOR_QUERIES`] (and the route's
+  /// [`DANGEROUS_ALLOW_EARLY_DATA`](id_effect_platform::quic::DANGEROUS_ALLOW_EARLY_DATA)).
   ///
-  /// Early data can be replayed by an attacker who captured it: only handlers that are
-  /// idempotent **and** reveal nothing a replay could exploit may sit behind safe methods.
-  /// The platform QUIC endpoint does not offer early data yet, so the opt-out has no effect on
-  /// the wire until it does.
+  /// Early data can be replayed by an attacker who captured it, until the handshake
+  /// completes: only handlers that are idempotent **and** reveal nothing a replay could
+  /// exploit may sit behind safe methods. There is no opt-out for other methods.
   #[must_use]
   pub fn dangerous_allow_zero_rtt_for_queries(mut self) -> Self {
     record_dangerous(
@@ -192,10 +327,16 @@ impl Http3Options {
   }
 
   /// Whether a request with `method` may be served from 0-RTT early data: only with
-  /// [`Self::dangerous_allow_zero_rtt_for_queries`] and only for `GET`, `HEAD` and `OPTIONS`.
+  /// [`Self::dangerous_allow_zero_rtt_for_queries`] and only for `GET` and `HEAD` (RPC
+  /// queries ride `GET`).
   pub fn admits_early(&self, method: &Method) -> bool {
-    self.zero_rtt_for_queries && matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
+    admits_early(self.zero_rtt_for_queries, method)
   }
+}
+
+/// [`Http3Options::admits_early`] for a connection that takes early data when `zero_rtt`.
+fn admits_early(zero_rtt: bool, method: &Method) -> bool {
+  zero_rtt && matches!(*method, Method::GET | Method::HEAD)
 }
 
 /// The endpoint limits matching `limits`: the platform defaults (the ceiling), with at most
@@ -239,11 +380,11 @@ pub fn serve_h3<F>(
 where
   F: Future<Output = ()> + Send + 'static,
 {
-  let route = endpoint.register(Route::h3()).map_err(io_error);
+  let route = endpoint.register(options.route()).map_err(io_error);
   serve_route(route, app, limits, options, shutdown)
 }
 
-async fn serve_route<F>(
+pub(crate) async fn serve_route<F>(
   route: std::io::Result<AlpnRoute>,
   app: Router,
   limits: ConnectionLimits,
@@ -263,9 +404,6 @@ where
   // Every connection holds a receiver; the loop waits for the last one to drop.
   let (close_tx, close_rx) = watch::channel(());
   let limits = Arc::new(limits);
-  // Connections are handed over after the handshake, so no request is early data and the
-  // 0-RTT rule ([`Http3Options::admits_early`]) has nothing to decide yet.
-  let _ = options.zero_rtt_for_queries();
   let slots = limits
     .connections_limit()
     .map(|n| Arc::new(Semaphore::new(n)));
@@ -277,9 +415,10 @@ where
       },
       None => None,
     };
-    let conn = tokio::select! {
-      accepted = route.accept() => match accepted {
-        Some(Ok(conn)) => conn,
+    // With 0-RTT on, a connection arrives before its handshake completes (F25).
+    let (conn, handshake) = tokio::select! {
+      accepted = route.accept_early() => match accepted {
+        Some(Ok(accepted)) => accepted,
         // A refused handshake (reported for logs only).
         Some(Err(_)) => continue,
         None => break,
@@ -293,6 +432,10 @@ where
       signal: signal_tx.clone(),
       held: (close_rx.clone(), permit),
       webtransport: options.serves_webtransport(),
+      early: Early {
+        handshake,
+        zero_rtt: options.zero_rtt_for_queries(),
+      },
     };
     tokio::spawn(task.run());
   }
@@ -311,6 +454,27 @@ struct ConnectionTask {
   held: (watch::Receiver<()>, Option<OwnedSemaphorePermit>),
   /// Advertise WebTransport, and let a session take the connection over.
   webtransport: bool,
+  /// The handshake and the 0-RTT rule its requests follow until it completes.
+  early: Early,
+}
+
+/// What decides whether a request that arrives before the handshake completes is served
+/// (F25).
+#[derive(Clone)]
+struct Early {
+  handshake: Handshake,
+  /// [`Http3Options::dangerous_allow_zero_rtt_for_queries`].
+  zero_rtt: bool,
+}
+
+impl Early {
+  /// Whether a request with `method`, whose header section just arrived, must wait for the
+  /// handshake: it arrived as early data and is not admitted from it. The handshake state is
+  /// the connection's own, settled before any data its completion released can be read, so a
+  /// request sent after the handshake never reads as early.
+  fn too_early(&self, method: &Method) -> bool {
+    !self.handshake.is_complete() && !admits_early(self.zero_rtt, method)
+  }
 }
 
 impl ConnectionTask {
@@ -322,30 +486,17 @@ impl ConnectionTask {
       signal,
       held,
       webtransport,
+      early,
     } = self;
     // Released when the connection is done, whichever way.
     let _held = held;
     let peer = conn.remote_address();
-    let mut builder = ::h3::server::builder();
-    builder.max_field_section_size(MAX_FIELD_SECTION_SIZE);
-    if webtransport {
-      builder
-        .enable_webtransport(true)
-        .enable_extended_connect(true)
-        .enable_datagram(true)
-        .max_webtransport_sessions(1);
-    }
-    let built = builder
+    let built = h3_builder(webtransport)
       .build::<_, Bytes>(h3_quinn::Connection::new(conn.clone()))
       .await;
     // A request task whose CONNECT a WebTransport route accepted hands the stream back here:
     // the session takes the connection over (one per connection).
-    let (handoff_tx, mut handoffs) = if webtransport {
-      let (tx, rx) = mpsc::channel::<Handoff>(1);
-      (Some(tx), Some(rx))
-    } else {
-      (None, None)
-    };
+    let (handoff_tx, mut handoffs) = handoffs(webtransport);
     let Ok(mut h3) = built else {
       return;
     };
@@ -370,6 +521,7 @@ impl ConnectionTask {
               peer,
               header_timeout,
               handoff: handoff_tx.clone(),
+              early: early.clone(),
             };
             requests.spawn(request.run());
             if !draining && max_requests.is_some_and(|max| served >= max) {
@@ -451,6 +603,8 @@ struct RequestTask {
   header_timeout: Option<Duration>,
   /// Where a WebTransport CONNECT goes once its route accepted it (WebTransport on).
   handoff: Option<mpsc::Sender<Handoff>>,
+  /// The connection's handshake and 0-RTT rule.
+  early: Early,
 }
 
 impl RequestTask {
@@ -461,6 +615,7 @@ impl RequestTask {
       peer,
       header_timeout,
       handoff,
+      early,
     } = self;
     let resolve = resolver.resolve_request();
     let resolved = match header_timeout {
@@ -472,6 +627,11 @@ impl RequestTask {
     let Some(Ok((head, stream))) = resolved else {
       return;
     };
+    // Early data a replay could repeat never reaches the router unless it is a safe request
+    // the opt-out admits (ADR 0013 R10, RFC 8470).
+    if early.too_early(head.method()) {
+      return too_early(stream).await;
+    }
     #[cfg(feature = "webtransport")]
     if let Some(handoff) = handoff
       && crate::server::webtransport::is_connect(&head)
@@ -508,6 +668,28 @@ pub(crate) async fn serve_request(
   let Ok(response) = app.call(request).await;
   let _ = respond(send, response, head_only).await;
   finish_request_body(body).await;
+}
+
+/// Answers a request that arrived in 0-RTT early data and is not admitted from it
+/// `425 Too Early` (RFC 8470 §5.2): the client retries it once the handshake completed. The
+/// router never sees it; the rest of its body is drained as for any answered request.
+async fn too_early(stream: FullStream) {
+  let (send, recv) = stream.split();
+  let mut response = Response::new(Body::from(
+    "Too Early: this request arrived in TLS early data; retry it once the handshake completed",
+  ));
+  *response.status_mut() = StatusCode::TOO_EARLY;
+  response.headers_mut().insert(
+    header::CONTENT_TYPE,
+    header::HeaderValue::from_static("text/plain; charset=utf-8"),
+  );
+  let _ = respond(send, response, false).await;
+  finish_request_body(Arc::new(Mutex::new(BodyState {
+    stream: recv,
+    data_done: false,
+    done: false,
+  })))
+  .await;
 }
 
 /// Most a client may still send of an unread request body once the response is out.
@@ -667,7 +849,9 @@ impl HostHttp3 {
     };
     let config = QuicEndpointConfig::new(identity.clone()).with_limits(quic_limits(limits));
     let endpoint = QuicEndpoint::bind(tcp, config).map_err(io_error)?;
-    let route = endpoint.register(Route::h3()).map_err(io_error)?;
+    let route = endpoint
+      .register(Http3Options::default().route())
+      .map_err(io_error)?;
     Ok(Some(Self { endpoint, route }))
   }
 
@@ -730,12 +914,21 @@ mod tests {
     let options = Http3Options::new();
     assert!(!options.zero_rtt_for_queries());
     assert!(!options.admits_early(&Method::GET));
+    assert!(!options.route().early_data());
     let options = options.dangerous_allow_zero_rtt_for_queries();
     assert!(options.zero_rtt_for_queries());
-    for method in [Method::GET, Method::HEAD, Method::OPTIONS] {
+    assert!(options.route().early_data());
+    for method in [Method::GET, Method::HEAD] {
       assert!(options.admits_early(&method), "{method}");
     }
-    for method in [Method::POST, Method::PUT, Method::PATCH, Method::DELETE] {
+    for method in [
+      Method::POST,
+      Method::PUT,
+      Method::PATCH,
+      Method::DELETE,
+      Method::OPTIONS,
+      Method::CONNECT,
+    ] {
       assert!(!options.admits_early(&method), "{method}");
     }
     assert!(
@@ -743,5 +936,39 @@ mod tests {
         .iter()
         .any(|(id, _)| *id == DANGEROUS_ALLOW_ZERO_RTT_FOR_QUERIES)
     );
+  }
+
+  #[test]
+  fn congestion_defaults_to_bbr_and_switches_from_config() {
+    use id_effect_config::{MapConfigProvider, ProviderOptions};
+
+    // Dotted paths, as a profile file (`[server.http3] congestion = "cubic"`) provides them.
+    let dotted = |pairs: Vec<(&str, &str)>| {
+      MapConfigProvider::from_pairs_with_options(
+        pairs,
+        ProviderOptions {
+          path_delim: ".",
+          ..ProviderOptions::default()
+        },
+      )
+    };
+    let options = Http3Options::new();
+    assert_eq!(options.congestion_control(), CongestionControl::Bbr);
+    assert_eq!(options.route().congestion_control(), CongestionControl::Bbr);
+    let cubic = options.clone().congestion(CongestionControl::Cubic);
+    assert_eq!(cubic.route().congestion_control(), CongestionControl::Cubic);
+
+    let empty = dotted(Vec::new());
+    assert_eq!(Http3Options::config().load(&empty).unwrap(), options);
+    let set = dotted(vec![(CONGESTION_KEY, "Cubic")]);
+    assert_eq!(Http3Options::config().load(&set).unwrap(), cubic);
+    // The environment form joins the path with `_`.
+    let env = MapConfigProvider::from_pairs([("server_http3_congestion", "cubic")]);
+    assert_eq!(Http3Options::config().load(&env).unwrap(), cubic);
+    let bad = dotted(vec![(CONGESTION_KEY, "reno")]);
+    assert!(matches!(
+      Http3Options::config().load(&bad),
+      Err(ConfigError::Invalid { path, value, .. }) if path == CONGESTION_KEY && value == "reno"
+    ));
   }
 }

@@ -71,7 +71,7 @@ tokio = { version = "1.50.0", features = [
 # reqwest and jsonwebtoken use aws-lc-rs, and with both providers compiled in rustls cannot pick a
 # process default. One quinn and one rustls in `cargo tree -d`.
 rustls = { version = "0.23.46", optional = true }
-rcgen = { version = "0.13", optional = true, default-features = false, features = [
+rcgen = { version = "0.14", optional = true, default-features = false, features = [
   "aws_lc_rs",
   "pem",
 ] }
@@ -96,8 +96,8 @@ rustls-platform-verifier = { version = "=0.7.1", optional = true }
 # Exact pins: h3 is pre-1.0 and h3-quinn tracks it release by release.
 h3 = { version = "=0.0.8", optional = true }
 h3-quinn = { version = "=0.0.10", optional = true }
-# instant-acme's `aws-lc-rs` feature turns on its rcgen 0.14 (beside rcgen 0.13 above): the one
-# duplicate, and only under `acme`. Our own CSR and TLS-ALPN-01 certificates use rcgen 0.13.
+# instant-acme's `aws-lc-rs` feature turns on its rcgen 0.14, the same rcgen as above (one copy in
+# `cargo tree -d`); our own CSR and TLS-ALPN-01 certificates use it too.
 instant-acme = { version = "=0.8.5", optional = true, default-features = false, features = [
   "aws-lc-rs",
   "hyper-rustls",

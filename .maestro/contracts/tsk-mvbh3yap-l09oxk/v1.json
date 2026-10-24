@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-9d2ff0",
+  "taskId": "tsk-mvbh3yap-l09oxk",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T22:13:18.860Z",
+  "lockedAt": "2026-10-16T22:13:18.860Z",
+  "intent": "r09-e3-4-redis",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-ea0212",
+      "text": "`RedisLayer` (pooled connection manager); typed KV/hash/JSON store API (D6); `CacheBackend` implemented by the in-process cache and by Redis so `Cache` code runs on either (#2); `RedisSessionStore: SessionStore`; rate-limit store for E4.1b; pub/sub as `Stream`. Tests against a Redis container. Book `ch28-04-redis.md`, example.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2ae36a",
+      "text": "Gate: `ID_EFFECT_REQUIRE_DOCKER=1 cargo nextest run -p id_effect_redis`; tier-conformance",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7fb113",
+      "text": "Owns: `crates/id_effect_redis/**`; `crates/id_effect/src/resource/cache.rs` (additive `CacheBackend` trait)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

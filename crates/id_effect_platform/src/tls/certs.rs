@@ -101,7 +101,7 @@ impl NodeCertificate {
   pub fn self_signed(host: &str) -> Result<Self, CertError> {
     let certified = rcgen::generate_simple_self_signed(vec![host.to_string()])
       .map_err(|e| CertError::Certificate(format!("rcgen: {e}")))?;
-    let key = PrivateKeyDer::Pkcs8(certified.key_pair.serialize_der().into());
+    let key = PrivateKeyDer::Pkcs8(certified.signing_key.serialize_der().into());
     Ok(Self {
       chain: vec![certified.cert.der().clone()],
       key,
@@ -852,7 +852,7 @@ mod tests {
     let certified = rcgen::generate_simple_self_signed(vec!["node".into()]).expect("rcgen");
     let (chain, key) = (dir.join("node.crt"), dir.join("node.key"));
     std::fs::write(&chain, certified.cert.pem()).expect("chain");
-    std::fs::write(&key, certified.key_pair.serialize_pem()).expect("key");
+    std::fs::write(&key, certified.signing_key.serialize_pem()).expect("key");
     let reloader = Arc::new(CertReloader::new(&chain, &key).expect("load"));
     assert!(format!("{reloader:?}").contains("node.crt"));
     let before = reloader.cert_sha256();
@@ -865,7 +865,7 @@ mod tests {
     assert_eq!(reloader.cert_sha256(), before);
     let next = rcgen::generate_simple_self_signed(vec!["node".into()]).expect("rcgen");
     std::fs::write(&chain, next.cert.pem()).expect("chain");
-    std::fs::write(&key, next.key_pair.serialize_pem()).expect("key");
+    std::fs::write(&key, next.signing_key.serialize_pem()).expect("key");
     tokio::time::timeout(Duration::from_secs(5), async {
       while reloader.cert_sha256() == before {
         tokio::time::sleep(Duration::from_millis(5)).await;

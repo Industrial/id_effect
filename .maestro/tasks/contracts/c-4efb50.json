@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-4efb50",
+  "taskId": "tsk-mvcpexhy-k9wn2c",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T18:33:47.449Z",
+  "lockedAt": "2026-10-17T18:33:47.449Z",
+  "intent": "r10-e7-1-docs-labs",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-88112a",
+      "text": "Chapter + example + integration test cover #2–#6 #8; labs crate removed (no apalis/obix/job/rdkafka anywhere in `cargo metadata` of the root and labs workspaces); `grep -rniw stub crates/id_effect_jobs crates/id_effect_messaging` finds nothing; the labs CI job runs without `--exclude`. **Blocked by `r10-e7-2-outbox-inbox`** (msg.brokers#8 must exist before ObixInbox goes).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2faa34",
+      "text": "Gate: `cargo test --doc -p book_snippets`; `bash scripts/tier-conformance.sh id_effect_jobs`; labs CI job",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-170057",
+      "text": "Owns: `book/src/part6/ch31-00-async-messaging.md` (de-labs), `book/src/part6/ch31-01-jobs.md`, `SUMMARY.md` line, `crates/id_effect_jobs/examples/010_jobs.rs`, `crates/id_effect_jobs/tests/pg_queue.rs`, `labs/id_effect_jobs/**` (removed), `labs/Cargo.toml`, `.github/workflows/ci.yml` labs job (`:301-306`)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

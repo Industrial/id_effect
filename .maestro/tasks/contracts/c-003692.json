@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-003692",
+  "taskId": "tsk-mvbh3yue-83n9vp",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T21:46:07.533Z",
+  "lockedAt": "2026-10-16T21:46:07.533Z",
+  "intent": "r09-e5-2b-totp",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-5c6679",
+      "text": "Enrol (secret + otpauth URI), verify with ±1 step skew under the executor clock (TestExecutor-testable), recovery codes hashed with argon2.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d59366",
+      "text": "Gate: `cargo nextest run -p id_effect_auth --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-26c6b5",
+      "text": "Owns: `crates/id_effect_auth/src/totp.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

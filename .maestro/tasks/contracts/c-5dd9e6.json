@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-5dd9e6",
+  "taskId": "tsk-mvcrl0u6-q95oms",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T19:03:11.869Z",
+  "lockedAt": "2026-10-17T19:03:11.869Z",
+  "intent": "r10-w3-kit-template",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-3bc69d",
+      "text": "Kit features `jobs`, `jobs-cron`, `messaging`, `redis-streams`, `mail`, `console`, `storage`, `events`, `auth-accounts`; `full` updated; the service template gains opt-in (off by default) jobs + console wiring so K2 stays lean; `id_effect_kit` tier → `platform`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-eaaf0b",
+      "text": "Gate: kit tests; CI template matrix; `bash scripts/tier-conformance.sh id_effect_kit`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-83e626",
+      "text": "Owns: `crates/id_effect_kit/Cargo.toml` + `src/prelude.rs`, `crates/id_effect_tool/templates/service/**`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

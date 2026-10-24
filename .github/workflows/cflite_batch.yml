@@ -11,7 +11,8 @@ permissions:
 jobs:
   BatchFuzzing:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    # fuzz-seconds (230 minutes), the 10-minute prune and the build.
+    timeout-minutes: 300
     permissions:
       contents: read
       # Find the corpus artifacts of the previous run.
@@ -33,9 +34,9 @@ jobs:
         uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # Split evenly across the targets: 10 minutes each for the 17 in fuzz/. Add 600 per
+          # Split evenly across the targets: 10 minutes each for the 23 in fuzz/. Add 600 per
           # target added to fuzz/Cargo.toml (and raise timeout-minutes with it).
-          fuzz-seconds: 10200
+          fuzz-seconds: 13800
           mode: batch
           sanitizer: ${{ matrix.sanitizer }}
       - name: Prune the corpus

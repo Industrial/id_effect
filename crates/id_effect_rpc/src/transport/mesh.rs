@@ -19,8 +19,10 @@
 //!
 //! The mesh delivers a cast to a process as bytes; it does not tell the process which node sent
 //! them. [`MeshRpc::ingress`] does: it is the receiving side of the mesh connections (in place
-//! of [`Mesh::handle_envelope_from`], [`MeshRpc::handle_session_frame`] in place of
-//! [`Mesh::handle_session_frame`], [`MeshRpc::peer_sender`] for in-memory links), and stamps
+//! of [`Mesh::handle_envelope_from`]; a node [`SessionPump`](id_effect_node::SessionPump) started
+//! on the [`MeshRpc`], which is an [`Ingress`], delivers through it, and so does one started on
+//! the bare mesh through `channels::attach_session`; [`MeshRpc::handle_session_frame`] in place
+//! of [`Mesh::handle_session_frame`], [`MeshRpc::peer_sender`] for in-memory links), and stamps
 //! every message for an RPC process with the node the authenticated session belongs to. The
 //! stamp carries a 256-bit key that never leaves this node, so a message that bypassed the
 //! ingress (or forged a stamp) is dropped: **a mesh RPC call is never run on an unverified
@@ -42,6 +44,10 @@
 //! - A call is dropped (its fiber interrupted, finalizers run) when the caller cancels, when the
 //!   calling node's reply process or the node itself goes down (a monitor), and when the
 //!   endpoint process exits.
+//! - Liveness: the calling node pings the endpoint of every open stream each heartbeat interval
+//!   ([`MeshLiveness`], default [`DEFAULT_HEARTBEAT_INTERVAL`]); a stream whose endpoint stays
+//!   silent past [`DEFAULT_SILENT_INTERVALS`] intervals fails with a typed `PeerSilent` error,
+//!   even when no `peer_down` reports its node lost.
 //! - Each call runs in the span `rpc.request` (attributes `rpc.service`, `rpc.method`,
 //!   `rpc.procedure`, `mesh.node`, `mesh.from`, `mesh.parent`) under the caller's span, through
 //!   the [`TracePropagator`] (dist.remote#8), and in a `tracing` span of the same name.
@@ -78,6 +84,7 @@ use futures_util::StreamExt as _;
 use futures_util::future::{Either, select};
 use id_effect::{DynEnv, Effect, Never, fail, from_async, succeed, suspend, sync};
 use id_effect_axum::route::GuardFuture;
+use id_effect_node::session_pump::Ingress;
 use id_effect_node::{
   BehaviorRegistry, GlobalNameError, Mesh, NodeId, PeerSender, PidWire, ProcessEnvelope,
   ReliableMessage, RemoteFault, Session, TraceContext, TracePropagator, W3cTraceContext,
@@ -100,6 +107,7 @@ use crate::contract::ProcedureKind;
 use crate::handler::{CallContext, CallOutcome, InboundSender};
 use crate::kinds::{CallFrames, exit_frame};
 use crate::registry::{RouteGuard, RpcGroup};
+use crate::resume::{ResumeClock, SystemClock};
 use crate::server::RpcPrincipal;
 use crate::server::dispatch::{self, Rejection};
 use crate::wire::{CallId, Frame, FrameFlags, FrameKind, INITIAL_CREDITS, InputIssue, RpcFailure};
@@ -141,6 +149,136 @@ const MAX_GRANTED_CREDITS: usize = 1 << 20;
 /// The cluster-wide name of `service`'s endpoint: `rpc:<service>`.
 pub fn endpoint_name(service: &str) -> String {
   format!("{NAME_PREFIX}{service}")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Liveness
+// ---------------------------------------------------------------------------------------------
+
+/// Default interval between two heartbeats of an open mesh stream ([`MeshLiveness`]).
+pub const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Default number of heartbeat intervals the peer of a mesh stream may stay silent before the
+/// stream fails ([`MeshLiveness::silent_after`]).
+pub const DEFAULT_SILENT_INTERVALS: u32 = 3;
+
+/// Shortest heartbeat interval [`MeshLiveness::every`] accepts.
+pub const MIN_HEARTBEAT_INTERVAL: Duration = Duration::from_millis(10);
+
+/// Longest heartbeat interval [`MeshLiveness::every`] accepts.
+pub const MAX_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(3600);
+
+/// Most heartbeat intervals [`MeshLiveness::silent_after`] accepts.
+pub const MAX_SILENT_INTERVALS: u32 = 100;
+
+/// How a node watches the peers of its open mesh streams ([`MeshRpc::with_liveness`]).
+///
+/// Every interval the calling node pings the endpoint of each open server stream, subscription
+/// and two-way stream; the endpoint answers while it still runs the call. Anything heard from
+/// the endpoint (an item, a credit, an answer) counts. A stream whose endpoint stayed silent past
+/// the deadline — [`DEFAULT_SILENT_INTERVALS`] intervals by default — fails with
+/// `MeshRpcError::PeerSilent` (`client::mesh`, feature `client`) and is cancelled,
+/// even when nothing reported the node down. Both the interval and the deadline are finite
+/// (ADR 0013 R4): the interval is clamped to [`MIN_HEARTBEAT_INTERVAL`]..=
+/// [`MAX_HEARTBEAT_INTERVAL`], the deadline to 1..=[`MAX_SILENT_INTERVALS`] intervals.
+///
+/// ```rust
+/// use std::time::Duration;
+/// use id_effect_rpc::transport::mesh::MeshLiveness;
+///
+/// let liveness = MeshLiveness::new().every(Duration::from_secs(2)).silent_after(4);
+/// assert_eq!(liveness.deadline(), Duration::from_secs(8));
+/// assert_eq!(MeshLiveness::new().every(Duration::ZERO).interval(), Duration::from_millis(10));
+/// ```
+#[derive(Clone)]
+pub struct MeshLiveness {
+  interval: Duration,
+  intervals: u32,
+  clock: Arc<dyn ResumeClock>,
+  driven: bool,
+}
+
+impl fmt::Debug for MeshLiveness {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.debug_struct("MeshLiveness")
+      .field("interval", &self.interval)
+      .field("silent_after", &self.intervals)
+      .field("driven", &self.driven)
+      .finish_non_exhaustive()
+  }
+}
+
+impl Default for MeshLiveness {
+  fn default() -> Self {
+    Self {
+      interval: DEFAULT_HEARTBEAT_INTERVAL,
+      intervals: DEFAULT_SILENT_INTERVALS,
+      clock: Arc::new(SystemClock::new()),
+      driven: true,
+    }
+  }
+}
+
+impl MeshLiveness {
+  /// The defaults: a heartbeat every [`DEFAULT_HEARTBEAT_INTERVAL`], silent after
+  /// [`DEFAULT_SILENT_INTERVALS`] intervals, on the system clock, driven by a background task.
+  pub fn new() -> Self {
+    Self::default()
+  }
+
+  /// Heartbeat every `interval` (clamped to [`MIN_HEARTBEAT_INTERVAL`]..=
+  /// [`MAX_HEARTBEAT_INTERVAL`]).
+  #[must_use]
+  pub fn every(mut self, interval: Duration) -> Self {
+    self.interval = interval.clamp(MIN_HEARTBEAT_INTERVAL, MAX_HEARTBEAT_INTERVAL);
+    self
+  }
+
+  /// Fail a stream whose endpoint was silent for more than `intervals` heartbeat intervals
+  /// (clamped to 1..=[`MAX_SILENT_INTERVALS`]).
+  #[must_use]
+  pub fn silent_after(mut self, intervals: u32) -> Self {
+    self.intervals = intervals.clamp(1, MAX_SILENT_INTERVALS);
+    self
+  }
+
+  /// Measure silence with `clock` (tests: [`crate::resume::TestClock`]).
+  #[must_use]
+  pub fn with_clock(mut self, clock: impl ResumeClock) -> Self {
+    self.clock = Arc::new(clock);
+    self
+  }
+
+  /// Run no background task: heartbeat rounds run only when [`MeshRpc::heartbeat`] is called
+  /// (deterministic tests, or an application that schedules them itself).
+  #[must_use]
+  pub fn manual(mut self) -> Self {
+    self.driven = false;
+    self
+  }
+
+  /// The heartbeat interval.
+  pub fn interval(&self) -> Duration {
+    self.interval
+  }
+
+  /// How long an endpoint may stay silent: the interval times [`MeshLiveness::silent_after`].
+  pub fn deadline(&self) -> Duration {
+    self.interval.saturating_mul(self.intervals)
+  }
+
+  /// Whether a background task runs the heartbeat rounds.
+  pub fn is_driven(&self) -> bool {
+    self.driven
+  }
+
+  fn now_ms(&self) -> u64 {
+    millis(self.clock.now())
+  }
+}
+
+fn millis(d: Duration) -> u64 {
+  u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -293,13 +431,28 @@ pub(crate) enum ClientEvent {
   Down(ExitReason),
   /// The endpoint broke the protocol (items beyond the granted credits).
   Violation(&'static str),
+  /// Nothing was heard from the endpoint's node within the liveness deadline.
+  Silent {
+    /// The endpoint's node.
+    node: String,
+    /// How long it was silent.
+    silent_for: Duration,
+  },
 }
 
 struct ClientSlot {
   endpoint: Pid,
+  /// The reply process the call's frames come from.
+  reply: Pid,
   tx: mpsc::UnboundedSender<ClientEvent>,
   in_credits: Arc<AtomicU32>,
   out_credits: Arc<Semaphore>,
+  /// A stream call: watched by the heartbeat rounds.
+  watched: bool,
+  /// When the endpoint was last heard from (liveness clock, ms).
+  last_heard: AtomicU64,
+  /// The call is over, or was failed as silent: it is pinged no more.
+  unwatched: AtomicBool,
 }
 
 pub(crate) struct Node {
@@ -313,6 +466,9 @@ pub(crate) struct Node {
   reply: Mutex<Option<Pid>>,
   calls: Mutex<HashMap<u64, ClientSlot>>,
   next_call: AtomicU64,
+  liveness: Mutex<MeshLiveness>,
+  /// Whether the heartbeat task runs.
+  driver: AtomicBool,
 }
 
 impl Drop for Node {
@@ -384,6 +540,8 @@ impl MeshRpc {
       reply: Mutex::default(),
       calls: Mutex::default(),
       next_call: AtomicU64::new(1),
+      liveness: Mutex::default(),
+      driver: AtomicBool::new(false),
     });
     HOSTS
       .lock()
@@ -398,6 +556,40 @@ impl MeshRpc {
   pub fn with_trace_propagator(self, propagator: Arc<dyn TracePropagator>) -> Self {
     *self.node.propagator.lock().expect("propagator") = propagator;
     self
+  }
+
+  /// Watch the peers of this node's mesh streams with `liveness` (default
+  /// [`MeshLiveness::new`]). Set it before the first stream opens: the background task reads the
+  /// interval at every round, the deadline and the clock at every check.
+  #[must_use]
+  pub fn with_liveness(self, liveness: MeshLiveness) -> Self {
+    *self.node.liveness.lock().expect("liveness") = liveness;
+    self
+  }
+
+  /// The liveness settings in force.
+  pub fn liveness(&self) -> MeshLiveness {
+    self.node.liveness.lock().expect("liveness").clone()
+  }
+
+  /// Run one heartbeat round now: ping the endpoint of every open stream call, and fail with
+  /// `MeshRpcError::PeerSilent` (and cancel) each one whose endpoint was silent past the
+  /// deadline. The background task runs one round per interval unless the liveness is
+  /// [`MeshLiveness::manual`]. Returns how many calls failed.
+  pub fn heartbeat(&self) -> usize {
+    self.node.heartbeat()
+  }
+
+  /// The [`MeshRpc`] built over `mesh` (or a clone of it), if one is alive: what a session
+  /// attached to the bare mesh delivers through.
+  pub fn of(mesh: &Mesh) -> Option<Self> {
+    // Upgrade outside the lock: dropping the last handle of a node takes it.
+    let hosts: Vec<Weak<Node>> = HOSTS.lock().expect("hosts").values().cloned().collect();
+    hosts
+      .iter()
+      .filter_map(Weak::upgrade)
+      .find(|node| std::ptr::eq(node.mesh.process(), mesh.process()))
+      .map(|node| Self { node })
   }
 
   /// The mesh.
@@ -460,6 +652,19 @@ impl MeshRpc {
       config: ServeConfig::default(),
       shared: std::sync::OnceLock::new(),
     }
+  }
+}
+
+/// A node with RPC receives through [`MeshRpc::ingress`]: an
+/// [`id_effect_node::SessionPump`] started on a [`MeshRpc`] stamps the RPC messages its session
+/// carries with the verified peer.
+impl Ingress for MeshRpc {
+  fn mesh(&self) -> &Mesh {
+    &self.node.mesh
+  }
+
+  fn deliver(&self, origin: &NodeId, envelope: ProcessEnvelope) -> Result<(), RemoteFault> {
+    self.ingress(origin, envelope)
   }
 }
 
@@ -636,7 +841,13 @@ impl Node {
     if envelope.from != PidWire::from(&slot.endpoint) {
       return;
     }
+    if slot.watched {
+      let now = self.liveness.lock().expect("liveness").now_ms();
+      slot.last_heard.fetch_max(now, Ordering::SeqCst);
+    }
     match frame.kind {
+      // A heartbeat's answer: heard, nothing to deliver.
+      FrameKind::Pong => return,
       FrameKind::Credit => {
         grant(&slot.out_credits, frame.credits.unwrap_or(0));
         return;
@@ -661,6 +872,89 @@ impl Node {
     }
   }
 
+  /// Send the control frame `kind` of call `id` from `reply` to `endpoint` (best effort).
+  fn control(&self, endpoint: &Pid, reply: &Pid, id: u64, kind: FrameKind) {
+    // `id` is a live call's (never 0); a bare control frame always encodes.
+    let id = CallId::new(id).unwrap_or(CallId::CONNECTION);
+    let frame = encode_frame(&Frame::<Vec<u8>>::new(id, kind)).unwrap_or_default();
+    let _ = self.send(
+      endpoint,
+      MeshEnvelope {
+        stamp: None,
+        from: PidWire::from(reply),
+        trace: TraceContext::new(),
+        deadline_ms: None,
+        frame,
+      },
+    );
+  }
+
+  /// One heartbeat round ([`MeshRpc::heartbeat`]).
+  fn heartbeat(&self) -> usize {
+    let (now, deadline) = {
+      let liveness = self.liveness.lock().expect("liveness");
+      (liveness.now_ms(), millis(liveness.deadline()))
+    };
+    let mut silent = Vec::new();
+    let mut alive = Vec::new();
+    for (id, slot) in self.calls.lock().expect("calls").iter() {
+      if !slot.watched || slot.unwatched.load(Ordering::SeqCst) {
+        continue;
+      }
+      let quiet = now.saturating_sub(slot.last_heard.load(Ordering::SeqCst));
+      let target = (*id, slot.endpoint.clone(), slot.reply.clone());
+      if quiet > deadline {
+        slot.unwatched.store(true, Ordering::SeqCst);
+        silent.push((target, quiet));
+      } else {
+        alive.push(target);
+      }
+    }
+    for (id, endpoint, reply) in &alive {
+      self.control(endpoint, reply, *id, FrameKind::Ping);
+    }
+    for ((id, endpoint, reply), quiet) in &silent {
+      tracing::warn!(
+        target: "id_effect_rpc::mesh",
+        node = %endpoint.node().as_str(),
+        silent_ms = quiet,
+        "mesh stream failed: the endpoint's node was silent past the liveness deadline"
+      );
+      self.client_event(
+        *id,
+        ClientEvent::Silent {
+          node: endpoint.node().as_str().to_owned(),
+          silent_for: Duration::from_millis(*quiet),
+        },
+      );
+      // Should the node come back, the endpoint stops the call.
+      self.control(endpoint, reply, *id, FrameKind::Cancel);
+    }
+    silent.len()
+  }
+
+  /// Start the background heartbeat task (once; never for a manual liveness). It runs a round
+  /// per interval for as long as the node lives.
+  fn start_heartbeat(self: &Arc<Self>) {
+    if !self.liveness.lock().expect("liveness").is_driven()
+      || self.driver.swap(true, Ordering::SeqCst)
+    {
+      return;
+    }
+    let node = Arc::downgrade(self);
+    self.spawn(async move {
+      while let Some(interval) = node
+        .upgrade()
+        .map(|node| node.liveness.lock().expect("liveness").interval())
+      {
+        tokio::time::sleep(interval).await;
+        if let Some(live) = node.upgrade() {
+          live.heartbeat();
+        }
+      }
+    });
+  }
+
   /// Open a call to `endpoint`: its reply slot and a monitor on the endpoint. `items` is
   /// whether the endpoint sends items (the initial credit window).
   pub(crate) fn open_call(
@@ -674,15 +968,23 @@ impl Node {
     let (tx, rx) = mpsc::unbounded_channel();
     let in_credits = Arc::new(AtomicU32::new(if items { INITIAL_CREDITS } else { 0 }));
     let out_credits = Arc::new(Semaphore::new(INITIAL_CREDITS as usize));
+    let now = self.liveness.lock().expect("liveness").now_ms();
     self.calls.lock().expect("calls").insert(
       id.get(),
       ClientSlot {
         endpoint: endpoint.clone(),
+        reply: reply.clone(),
         tx,
         in_credits: Arc::clone(&in_credits),
         out_credits: Arc::clone(&out_credits),
+        watched: items,
+        last_heard: AtomicU64::new(now),
+        unwatched: AtomicBool::new(false),
       },
     );
+    if items {
+      self.start_heartbeat();
+    }
     let node = Arc::downgrade(self);
     let key = id.get();
     let monitor = self.mesh.remote_monitor(
@@ -753,6 +1055,10 @@ impl CallShared {
   pub(crate) fn finish(&self) {
     self.finished.store(true, Ordering::SeqCst);
     self.out_credits.close();
+    // Over: the heartbeat rounds leave it alone.
+    if let Some(slot) = self.node.calls.lock().expect("calls").get(&self.id.get()) {
+      slot.unwatched.store(true, Ordering::SeqCst);
+    }
   }
 
   /// Send `frame` to the endpoint.
@@ -1210,6 +1516,14 @@ impl Endpoint {
         }
       }
       FrameKind::Cancel => self.drop_call(node, &key),
+      // A caller's heartbeat: answered while the call runs here (an unknown call stays
+      // silent, and the caller gives up on it).
+      FrameKind::Ping => {
+        let running = self.calls.lock().expect("calls").contains_key(&key);
+        if running {
+          node.control(&key.0, me, key.1.get(), FrameKind::Pong);
+        }
+      }
       _ => {}
     }
   }

@@ -8,6 +8,8 @@
 //! [`HostConfig::tls`](crate::server::HostConfig::tls) and every host entry point serves TLS.
 //! The [`ConnectionLimits`](crate::server::ConnectionLimits) apply to TLS connections as to
 //! plain ones, plus a TLS handshake timeout and, on HTTP/2, a cap on concurrent streams.
+//! HTTP/2 connections accept the extended `CONNECT` of RFC 8441, so WebSocket endpoints
+//! (feature `ws`) serve `h2` clients as well as `http/1.1` ones.
 //!
 //! ```rust
 //! use id_effect_axum::server::tls::{ALPN_H2, ALPN_HTTP11, ServerTls};
@@ -399,7 +401,7 @@ mod tests {
     let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
     let (chain, key) = (dir.join("chain.pem"), dir.join("key.pem"));
     std::fs::write(&chain, certified.cert.pem()).unwrap();
-    std::fs::write(&key, certified.key_pair.serialize_pem()).unwrap();
+    std::fs::write(&key, certified.signing_key.serialize_pem()).unwrap();
     let no_runtime = ServerTls::from_pem_files(&chain, &key, Some(Duration::from_secs(1)));
     assert!(
       matches!(&no_runtime, Err(CertError::Tls(m)) if m.contains("Tokio")),

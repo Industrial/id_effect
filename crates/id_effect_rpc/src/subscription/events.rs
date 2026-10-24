@@ -22,7 +22,9 @@
 //!   correlation id, answered as `InternalError { id }`. The client resumes from its last cursor.
 //!
 //! Without a cursor a call starts after [`EventSubscription::starting_after`] (default `0`: the
-//! whole log).
+//! whole log), or, after [`EventSubscription::from_now`], after the log's
+//! [`head`](EventLog::head) when the call's stream is first pulled (only what is appended from
+//! then on). A call that names a cursor always starts after it.
 //!
 //! ```rust
 //! use id_effect::{DynEnv, Exit, Never, fail, schema, succeed};
@@ -66,7 +68,7 @@
 //! ```
 
 use std::fmt;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use id_effect::{Ctx, DynEnv, Effect, Stream, die, sleep, succeed};
@@ -86,8 +88,17 @@ struct BookSubscriptionsDoctests;
 pub struct EventSubscription<Ev> {
   log: Arc<dyn EventLog<Ev>>,
   config: TailConfig,
-  start: u64,
+  start: Start,
   readers: Arc<AtomicUsize>,
+}
+
+/// Where a call without a cursor starts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Start {
+  /// After this position (`0`: the whole log).
+  After(u64),
+  /// After the log's head, read when the call's stream is first pulled.
+  Head,
 }
 
 impl<Ev> Clone for EventSubscription<Ev> {
@@ -122,7 +133,7 @@ impl<Ev: Send + Sync + 'static> EventSubscription<Ev> {
     Self {
       log,
       config: TailConfig::default(),
-      start: 0,
+      start: Start::After(0),
       readers: Arc::new(AtomicUsize::new(0)),
     }
   }
@@ -134,11 +145,23 @@ impl<Ev: Send + Sync + 'static> EventSubscription<Ev> {
     self
   }
 
-  /// Where a call without a cursor starts: after `position` (`0`, the default: the whole log;
-  /// the log's head: only what is appended from now on).
+  /// Where a call without a cursor starts: after `position` (`0`, the default: the whole log).
+  /// Replaces an earlier [`from_now`](Self::from_now).
   #[must_use]
   pub fn starting_after(mut self, position: u64) -> Self {
-    self.start = position;
+    self.start = Start::After(position);
+    self
+  }
+
+  /// A call without a cursor starts after the log's [`head`](EventLog::head), read when its
+  /// stream is first pulled: it skips the history and delivers only what is appended from then
+  /// on. Items still carry their positions as cursors, so a resume from the last one replays
+  /// what was missed while disconnected. Replaces an earlier
+  /// [`starting_after`](Self::starting_after); a failed head read ends the call as a defect,
+  /// like a failed read.
+  #[must_use]
+  pub fn from_now(mut self) -> Self {
+    self.start = Start::Head;
     self
   }
 
@@ -200,11 +223,16 @@ impl<Ev: Send + Sync + 'static> EventSubscription<Ev> {
     E: Send + 'static,
     F: FnMut(RecordedEvent<Ev>) -> Option<T> + Send + 'static,
   {
-    let from = position_after(after, CursorSource::Events)?.unwrap_or(self.start);
+    let start = position_after(after, CursorSource::Events)?.map_or(self.start, Start::After);
+    let (from, at_head) = match start {
+      Start::After(position) => (position, false),
+      Start::Head => (0, true),
+    };
     let reader = Reader {
       log: Arc::clone(&self.log),
       config: self.config,
       position: Arc::new(AtomicU64::new(from)),
+      at_head: Arc::new(AtomicBool::new(at_head)),
       project: Arc::new(Mutex::new(project)),
       _open: OpenReader::new(Arc::clone(&self.readers)),
     };
@@ -228,11 +256,14 @@ impl Drop for OpenReader {
   }
 }
 
-/// The state of one stream: the last position delivered and the projection.
+/// The state of one stream: the last position delivered, whether it still has to start at the
+/// log's head (a [`from_now`](EventSubscription::from_now) call before its first read), and the
+/// projection.
 struct Reader<Ev, F> {
   log: Arc<dyn EventLog<Ev>>,
   config: TailConfig,
   position: Arc<AtomicU64>,
+  at_head: Arc<AtomicBool>,
   project: Arc<Mutex<F>>,
   _open: OpenReader,
 }
@@ -249,17 +280,22 @@ where
     E: Send + 'static,
     F: FnMut(RecordedEvent<Ev>) -> Option<T> + Send + 'static,
   {
-    let from = self.position.load(Ordering::Acquire);
     let position = Arc::clone(&self.position);
     let project = Arc::clone(&self.project);
     let interval = self.config.poll_interval();
-    on_dyn_env(self.log.read_all(from, self.config.batch_size()))
-      .catch(move |error| {
-        die(format!(
-          "subscription: reading the event log after position {from} failed: {error}"
-        ))
+    let (log, batch_size) = (Arc::clone(&self.log), self.config.batch_size());
+    self
+      .start()
+      .flat_map(move |from| {
+        on_dyn_env(log.read_all(from, batch_size))
+          .catch(move |error| {
+            die(format!(
+              "subscription: reading the event log after position {from} failed: {error}"
+            ))
+          })
+          .map(move |events| (from, events))
       })
-      .flat_map(move |events| {
+      .flat_map(move |(from, events)| {
         // Only what lies after the last position, in increasing order: a log that answered
         // out of order can never make the stream repeat or rewind.
         let mut last = from;
@@ -279,6 +315,26 @@ where
         position.store(last, Ordering::Release);
         let mut project = project.lock().unwrap_or_else(PoisonError::into_inner);
         succeed(Some(fresh.into_iter().filter_map(&mut *project).collect()))
+      })
+  }
+
+  /// The position to read after: the last one delivered, or, before the first read of a
+  /// [`from_now`](EventSubscription::from_now) call, the log's head (stored as the position).
+  fn start<E: Send + 'static>(&self) -> Effect<u64, E, DynEnv> {
+    if !self.at_head.load(Ordering::Acquire) {
+      return succeed(self.position.load(Ordering::Acquire));
+    }
+    let (position, at_head) = (Arc::clone(&self.position), Arc::clone(&self.at_head));
+    on_dyn_env(self.log.head())
+      .catch(|error| {
+        die(format!(
+          "subscription: reading the event log head failed: {error}"
+        ))
+      })
+      .map(move |head| {
+        position.store(head, Ordering::Release);
+        at_head.store(false, Ordering::Release);
+        head
       })
   }
 }
@@ -340,6 +396,77 @@ mod tests {
       panic!("the read after position 3 fails")
     };
     assert!(format!("{cause:?}").contains("reading the event log"));
+  }
+
+  /// A log whose head cannot be read.
+  struct Headless;
+
+  impl EventLog<i64> for Headless {
+    fn read_all(&self, _: u64, _: usize) -> Effect<Vec<RecordedEvent<i64>>, EventStoreError> {
+      succeed(Vec::new())
+    }
+
+    fn head(&self) -> Effect<u64, EventStoreError> {
+      fail(EventStoreError::Io("no head".into()))
+    }
+  }
+
+  #[test]
+  fn subscription_from_now_skips_history() {
+    let store = MemoryEventStore::<i64>::new();
+    let _ = store.append("a", &[1, 2]).block_on();
+    let feed = EventSubscription::new(store.clone())
+      .with_config(TailConfig::new().with_poll_interval(std::time::Duration::from_millis(10)))
+      .from_now();
+    assert!(format!("{feed:?}").contains("Head"));
+    let subscription = feed
+      .subscribe::<i64, Never, _>(None, |e| Some(e.event.payload))
+      .unwrap();
+
+    // The head is read when the stream is first pulled; what is appended after it arrives.
+    let writer = std::thread::spawn({
+      let store = store.clone();
+      move || {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let _ = store.append("b", &[3]).block_on();
+        let _ = store.append("a", &[4]).block_on();
+      }
+    });
+    let Exit::Success(items) = collect(subscription.into_stream(), 2) else {
+      panic!("items")
+    };
+    writer.join().unwrap();
+    let got: Vec<_> = items.iter().map(|i| (i.value, i.cursor)).collect();
+    assert_eq!(
+      got,
+      [(3, Some(Cursor::events(3))), (4, Some(Cursor::events(4)))]
+    );
+
+    // A cursor still wins over `from_now`, and `starting_after` replaces it.
+    let Exit::Success(resumed) = collect(feed.events(Some(Cursor::events(1))).unwrap(), 1) else {
+      panic!("resumed")
+    };
+    assert_eq!(resumed[0].position, 2);
+    let Exit::Success(all) = collect(feed.starting_after(0).events(None).unwrap(), 1) else {
+      panic!("all")
+    };
+    assert_eq!(all[0].position, 1);
+  }
+
+  #[test]
+  fn from_now_over_a_failing_head_or_tail_is_a_defect() {
+    let feed = EventSubscription::new(Headless).from_now();
+    let Exit::Failure(cause) = collect(feed.events(None).unwrap(), 1) else {
+      panic!("the head read fails")
+    };
+    assert!(format!("{cause:?}").contains("reading the event log head failed"));
+
+    // `Unordered` keeps the provided `head` (3); its read after 3 fails.
+    let feed = EventSubscription::new(Unordered).from_now();
+    let Exit::Failure(cause) = collect(feed.events(None).unwrap(), 1) else {
+      panic!("the read after the head fails")
+    };
+    assert!(format!("{cause:?}").contains("after position 3"));
   }
 
   #[test]

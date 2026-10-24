@@ -29,6 +29,10 @@ struct Ch2907Http3Deployment;
 struct Ch2909CertificatesAcme;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-10-server-rendered-ui.md")]
+struct Ch2910ServerRenderedUi;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-00-one-call-surface.md")]
 struct Ch3300OneCallSurface;
 
@@ -105,6 +109,14 @@ struct Ch3006Totp;
 struct Ch3007AuditTenancy;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-08-admin.md")]
+struct Ch3008Admin;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-09-i18n.md")]
+struct Ch3009I18n;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch27-01-metrics.md")]
 struct Ch2701Metrics;
 
@@ -141,6 +153,18 @@ struct Ch2804Redis;
 struct Ch2805Storage;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-06-relations.md")]
+struct Ch2806Relations;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-07-pagination.md")]
+struct Ch2807Pagination;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-08-lifecycle-hooks.md")]
+struct Ch2808LifecycleHooks;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-00-api-boundaries.md")]
 struct Ch2900ApiBoundaries;
 
@@ -171,3 +195,19 @@ struct Ch3401DoctorGraph;
 #[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch35-00-ai.md")]
 struct Ch3500Ai;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch35-01-tools-structured-output.md")]
+struct Ch3501ToolsStructuredOutput;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch35-02-embeddings.md")]
+struct Ch3502Embeddings;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch35-03-mcp.md")]
+struct Ch3503Mcp;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-11-leptos-recipe.md")]
+struct Ch2911LeptosRecipe;

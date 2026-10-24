@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "id": "c-a07b64",
+  "taskId": "tsk-mvet31ys-gowf3l",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T05:20:45.689Z",
+  "lockedAt": "2026-10-19T05:20:45.689Z",
+  "intent": "r11-w3-kit-template",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-7b6474",
+      "text": "id_effect_kit features workflow (id_effect_workflow), mesh-mtls and kubernetes; full updated; the prelude exposes id_effect::stm.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-64ec09",
+      "text": "ADR 0013 R10: id_effect_kit::posture::check(profile) returns a PostureReport with named probes — console guarded, docs closed, mesh transport encrypted, redaction policy non-empty, SSRF guard on, CSRF on, load shedding on, no memory-only security state, and no recorded dangerous opt-out that is not listed in config `security.accepted_risks` with a reason; under the prod profile startup fails on any failed probe; dev and test profiles report only.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7cd9bb",
+      "text": "The service, worker and cluster templates call the posture check at startup; the cluster template configures mTLS with PEM paths (dev certificates for local runs); the service template passes the prod posture check as generated.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a5db2d",
+      "text": "scripts/check-dangerous.sh proves every `pub fn dangerous_*` / `insecure_*` under crates/ calls id_effect::observability::posture::record_dangerous, with --self-test; added as one step to .github/workflows/lint.yml.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5a98c1",
+      "text": "Tests `posture_prod_fails_on_unaccepted_opt_out`, `posture_accepted_risk_needs_reason`, `posture_report_lists_probes`, `template_service_passes_prod_posture`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3507b7",
+      "text": "Gate: `cargo nextest run -p id_effect_kit --all-features`; `bash scripts/template-smoke.sh`; `bash scripts/check-dangerous.sh --self-test && bash scripts/check-dangerous.sh`; `DX_KPIS_RELEASE=0.11 bash scripts/dx-kpis.sh` K2 ≤ 8 s",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-6f0771",
+      "text": "Owns: `crates/id_effect_kit/**` (incl. new `src/posture.rs`, `tests/posture.rs`), `crates/id_effect_tool/templates/**`, `scripts/check-dangerous.sh`, one step in `.github/workflows/lint.yml`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-w3-kit-template",
+  "lockedBy": "r11-w3-kit-template",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

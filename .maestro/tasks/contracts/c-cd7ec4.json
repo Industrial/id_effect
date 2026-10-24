@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-cd7ec4",
+  "taskId": "tsk-mvcjv4cx-u59do2",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T15:43:18.054Z",
+  "lockedAt": "2026-10-17T15:43:18.054Z",
+  "intent": "r10-sqlt-mysql-query-ci",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-06a37d",
+      "text": "MySQL `DATETIME`/`TIMESTAMP`/`DATE`/`TIME` decode from the binary protocol into jiff; the sea-query bridge uses `with-jiff` only; `cargo tree -p id_effect_kit --all-features -e features -i sqlx` shows no `feature \"time\"` and `cargo tree -p id_effect_sql --all-features -e normal -i time` finds no match (CI step fails otherwise); MIGRATION-0.10 section \"Data: sqlx's `time` feature is off again\".",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e1ad07",
+      "text": "Gate: `<docker> -p id_effect_sql --all-features` (MySQL conformance); the CI step",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-9b4cc3",
+      "text": "Owns: `crates/id_effect_sql/src/mysql/value.rs`, `src/query/time_conv.rs`, `crates/id_effect_sql/Cargo.toml` (sqlx `time` `:78`, `time` dep `:68`, `query` feature `:36`, sea-query `with-time` `:93`), `.github/workflows/ci.yml` (one check step), `docs/MIGRATION-0.10.md` (section draft)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-5a67b2",
+  "taskId": "tsk-mvcpexoh-4d52ro",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T18:17:35.685Z",
+  "lockedAt": "2026-10-17T18:17:35.685Z",
+  "intent": "r10-e7-2-outbox-inbox",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-90e368",
+      "text": "`Outbox::stage(&SqlTransaction, msg)` (#7); relay claims rows with `SKIP LOCKED`, publishes, marks sent, retries with `Schedule`; `Inbox::once(&SqlTransaction, consumer, message_id, f)` dedups inside the handler's transaction (#8). Tests `outbox_row_rolls_back_with_tx`, `relay_publishes_each_row_once_across_two_relays`, `inbox_skips_duplicate_delivery`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f26ff2",
+      "text": "Gate: `<pg> -p id_effect_messaging --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7aaf2c",
+      "text": "Owns: `crates/id_effect_messaging/src/{outbox.rs,inbox.rs,relay.rs}`, `crates/id_effect_messaging/migrations/`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

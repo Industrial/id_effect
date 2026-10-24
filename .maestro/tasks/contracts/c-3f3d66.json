@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-3f3d66",
+  "taskId": "tsk-mvcpeyb9-t3b4bu",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T18:18:37.969Z",
+  "lockedAt": "2026-10-17T18:18:37.969Z",
+  "intent": "r10-e6-2-dashboard",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-beea03",
+      "text": "Static page (`include_str!`, no JS toolchain, L12) polling the JSON API: fibers, supervisor tree, metrics, health, log-level form (#3). Integration test over a socket fetches `/_console` and every API route with and without the guard. Chapter + example.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-aa7dc9",
+      "text": "Gate: same + `cargo test --doc -p book_snippets`; `bash scripts/tier-conformance.sh id_effect_console`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3b6c2d",
+      "text": "Owns: `crates/id_effect_console/src/ui/{index.html,mod.rs}`, `book/src/part6/ch27-03-console.md`, `crates/id_effect_console/examples/010_console.rs`, `crates/id_effect_console/tests/console.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

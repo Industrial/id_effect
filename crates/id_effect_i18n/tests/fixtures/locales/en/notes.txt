@@ -1,0 +1,1 @@
+Not a Fluent file: CatalogBuilder::dir skips it.

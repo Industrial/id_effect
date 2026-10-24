@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-9594b9",
+  "taskId": "tsk-mvbh3z49-hbvk3j",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T21:22:21.413Z",
+  "lockedAt": "2026-10-16T21:22:21.413Z",
+  "intent": "r09-e6-5-containers",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-e22be4",
+      "text": "Effect-native `Postgres/MySql/Redis/Keycloak/Vault` containers as scoped Layers (testcontainers), torn down on scope exit or interrupt (#2).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0ddb85",
+      "text": "Gate: `ID_EFFECT_REQUIRE_DOCKER=1 cargo nextest run -p id_effect_test`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e43c4c",
+      "text": "Owns: `crates/id_effect_test/src/containers/**`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

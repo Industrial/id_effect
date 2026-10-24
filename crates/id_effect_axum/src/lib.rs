@@ -105,6 +105,8 @@ pub mod routing;
 pub mod server;
 #[cfg(feature = "tower")]
 pub mod service;
+#[cfg(feature = "ui")]
+pub mod ui;
 
 pub use channel_bridge::{exchange, exchange_into_response};
 pub use client_ip::{ClientIp, ClientIpRejection, InvalidTrustedProxy, TrustedProxies};

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-a51e96",
+  "taskId": "tsk-mvbh3yki-lxt7mh",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T21:22:21.047Z",
+  "lockedAt": "2026-10-16T21:22:21.047Z",
+  "intent": "r09-e4-2-openapi-doc",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-3c7863",
+      "text": "`OpenApi::from_router(&router)` builds a 3.1 document whose component schemas are `to_json_schema` of the same Schemas the extractors decode with (#4); `securitySchemes` from declared auth (bearer JWT, cookie session, OIDC) (#7). Test validates the output against the OpenAPI 3.1 meta-schema and asserts schema identity with `json_schema_for::<T>()`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-633d13",
+      "text": "Gate: `cargo nextest run -p id_effect_axum --features openapi`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e6b318",
+      "text": "Owns: `crates/id_effect_axum/src/openapi/**` (feature `openapi`)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

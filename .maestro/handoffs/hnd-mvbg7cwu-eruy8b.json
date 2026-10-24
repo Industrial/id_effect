@@ -1,0 +1,8 @@
+{
+  "id": "hnd-mvbg7cwu-eruy8b",
+  "task_id": "tsk-mvbg796n-xpvbrc",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-16T20:56:47.646Z",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.9/e5-2a-pg-session-store.md",
+  "to_agent": "cli"
+}

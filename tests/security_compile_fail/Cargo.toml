@@ -30,6 +30,20 @@ id_effect_kit = { path = "../../crates/id_effect_kit", features = [
 # `#[rpc::service]` expansion names `::id_effect_rpc`, so an app keeps that crate as well
 # (r1_rpc_procedure_without_access_decision).
 id_effect_rpc = { path = "../../crates/id_effect_rpc" }
+# The 0.13 breadth cases: the admin site and the MCP Streamable HTTP endpoint are not in the kit
+# yet (r13-w5-kit-template), so an app names their crates (r1_admin_site_without_guard,
+# r1_mcp_endpoint_without_access_decision). id_effect_sql for the admin's `TestSqlClient`.
+id_effect_admin = { path = "../../crates/id_effect_admin" }
+id_effect_ai = { path = "../../crates/id_effect_ai", features = ["mcp-http"] }
+id_effect_sql = { path = "../../crates/id_effect_sql", features = [
+  "repository",
+] }
+# tests/surface_013.rs (the 0.13 cross-crate cases): guards and principals, the locale layer, and
+# the runtime the MCP endpoint serves on.
+id_effect_authz = { path = "../../crates/id_effect_authz", features = ["axum"] }
+id_effect_i18n = { path = "../../crates/id_effect_i18n", features = ["axum"] }
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
+tower = { version = "0.5.3", features = ["util"] }
 # `http::request::Parts` for the route guards of the H8 cases.
 axum = "0.8"
 # secret_is_not_serialize.

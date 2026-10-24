@@ -1,0 +1,53 @@
+{
+	"schemaVersion": 1,
+	"id": "vrd-1792100100814-45442b",
+	"taskId": "tsk-mv9zvfav-x5368h",
+	"contractVersion": 1,
+	"computedAt": "2026-10-15T21:35:00.814Z",
+	"decision": "HUMAN",
+	"proposedRiskClass": "medium",
+	"effectiveRiskClass": "medium",
+	"reasons": [
+		{
+			"category": "policy",
+			"code": "auto-merge-not-allowed",
+			"message": "Auto-merge is opt-in and not enabled for risk class \"medium\" in autopilot.yaml; the task can still complete via human review (run `maestro handoff emit`, or set autoMergeAllowed.medium: true — note: enabling auto-merge is a \"loosening\" and soaks for 30 days before taking effect; run `maestro policy pending` to see in-flight changes)."
+		}
+	],
+	"evidenceConsulted": [
+		"evd-1792100100101-b4cbff",
+		"evd-1792100100229-f188b7",
+		"evd-1792100100354-57a86b"
+	],
+	"policiesConsulted": [
+		{
+			"file": "policies/risk.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/autopilot.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/release.yaml",
+			"version": "1"
+		}
+	],
+	"trustVerifier": {
+		"findingsCount": 1,
+		"errors": 0,
+		"warns": 1,
+		"infos": 0,
+		"findings": [
+			{
+				"check": "empty-diff",
+				"severity": "warn",
+				"paths": [],
+				"details": "Diff between f6d730760da0ec0c181e90675118b9277cebe6d4 and f6d730760da0ec0c181e90675118b9277cebe6d4 is empty (base equals HEAD). Commit work after locking the contract — the verifier diffs from the lock-commit."
+			}
+		]
+	},
+	"subject": {
+		"tree_sha": "4b5f1177ffef48a77c55997a0c3561760a517376"
+	}
+}

@@ -19,6 +19,20 @@ id_effect = { path = "../../crates/id_effect", version = "0.12.0", features = [
   "schema-regex",
   "proptest",
 ] }
+id_effect_ai = { path = "../../crates/id_effect_ai", version = "0.12.0", features = [
+  "openai",
+  "anthropic",
+  "ollama",
+  "embeddings",
+  "tools",
+  "mcp",
+  "mcp-http",
+  "test-util",
+] }
+id_effect_admin = { path = "../../crates/id_effect_admin", version = "0.12.0", features = [
+  "i18n",
+  "test-util",
+] }
 id_effect_auth = { path = "../../crates/id_effect_auth", version = "0.12.0", features = [
   "axum",
   "jwt",
@@ -35,6 +49,7 @@ id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.12.0", fea
   "openapi",
   "tower",
   "http3",
+  "ui",
 ] }
 id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.12.0" }
 id_effect_config = { path = "../../crates/id_effect_config", version = "0.12.0", features = [
@@ -51,6 +66,11 @@ id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.12.0", featu
   "audit",
 ] }
 id_effect_fsm = { path = "../../crates/id_effect_fsm", version = "0.12.0" }
+id_effect_i18n = { path = "../../crates/id_effect_i18n", version = "0.12.0", features = [
+  "axum",
+  "maud",
+  "schema",
+] }
 id_effect_kit = { path = "../../crates/id_effect_kit", version = "0.12.0", features = [
   "full",
 ] }
@@ -119,6 +139,8 @@ opentelemetry_sdk = { version = "0.32", default-features = false, features = [
   "testing",
 ] }
 http-body-util = "0.1"
+# Chapter 29.10: `html!` expands to `extern crate maud;` (same pin as id_effect_axum's `ui`).
+maud = "=0.27.0"
 proptest = "1"
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 serde = { version = "1", features = ["derive"] }

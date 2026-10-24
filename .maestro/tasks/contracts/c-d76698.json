@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-d76698",
+  "taskId": "tsk-mvfdi1tt-t8vr7z",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T14:52:16.227Z",
+  "lockedAt": "2026-10-19T14:52:16.227Z",
+  "intent": "r12-e12-4-openapi-asyncapi",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-aaca2b",
+      "text": "web.rpc#7: id_effect_rpc::openapi emits OpenAPI 3.1 from Service::contract() for queries and mutations (GET and POST forms, the x-rpc header, idempotency key, error unions as oneOf with a _tag discriminator, the batch endpoint); it replaces the labs 3.0 emitter (crates/id_effect_rpc/src/openapi.rs).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e09cb0",
+      "text": "id_effect_rpc::asyncapi emits AsyncAPI 3.0 for server streams, client streams, two-way streams, subscriptions and channels, with WebSocket and SSE bindings and the cursor field documented.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-533276",
+      "text": "Both documents validate against their meta-schemas (jsonschema, no remote resolution); /rpc/openapi.json and /rpc/asyncapi.json are closed in the prod profile unless guarded (ADR 0013 R7).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e7b4cd",
+      "text": "Tests `openapi_31_validates_against_meta_schema`, `openapi_error_union_is_one_of_with_discriminator`, `asyncapi_30_validates`, `asyncapi_lists_every_stream_and_channel`, `r7_rpc_docs_closed_in_prod`; book part6/ch33-10-contracts.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-ff8f48",
+      "text": "Gate: `cargo nextest run -p id_effect_rpc --all-features --test openapi_emit --test asyncapi_emit`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-347ba0",
+      "text": "Owns: `crates/id_effect_rpc/src/{openapi.rs,asyncapi.rs}`, `crates/id_effect_rpc/tests/{openapi_emit.rs,asyncapi_emit.rs}`, `crates/id_effect_rpc/tests/fixtures/asyncapi-3.0.schema.json`, `crates/id_effect/book/src/part6/ch33-10-contracts.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "e3-openapi",
+  "lockedBy": "e3-openapi",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

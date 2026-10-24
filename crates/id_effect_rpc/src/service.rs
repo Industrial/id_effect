@@ -77,7 +77,7 @@ use futures_util::future::{Either, select};
 use http::HeaderMap;
 use http::request::Parts;
 use id_effect::schema::HasSchema;
-use id_effect::{DynEnv, Effect, Never, Stream, fail, from_async};
+use id_effect::{DynEnv, Effect, Never, Stream, fail, from_async, succeed};
 use id_effect_axum::route::Problem;
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -451,6 +451,17 @@ pub trait RpcTransport: Clone + Send + Sync + 'static {
   /// A query or mutation.
   fn unary(&self, call: TransportCall) -> BoxFuture<Result<WireExit, TransportError>>;
 
+  /// [`unary`](Self::unary) as an effect of the calling fiber (what the generated client runs).
+  /// The default awaits `unary`; `HttpTransport` (feature `client`) overrides it so that the
+  /// calls a program makes in the same tick join one batch window and go out as one request.
+  fn unary_effect<R: Send + Sync + 'static>(
+    &self,
+    call: TransportCall,
+  ) -> Effect<WireExit, TransportError, R> {
+    let this = self.clone();
+    from_async(move || this.unary(call))
+  }
+
   /// A server stream.
   fn server_stream(&self, call: TransportCall) -> BoxFuture<Result<FrameStream, TransportError>> {
     unsupported(call.kind)
@@ -695,31 +706,111 @@ impl RpcTransport for LocalTransport {
 }
 
 #[cfg(feature = "client")]
-pub use http_transport::HttpTransport;
+pub use http_transport::{HttpHeaderError, HttpTransport};
 
 #[cfg(feature = "client")]
 mod http_transport {
-  use id_effect::{Exit, HNil};
+  use id_effect::{Effect, Exit, HNil};
   use id_effect_axum::route::Problem;
-  use id_effect_platform::http::{HttpClientService, HttpMethod, HttpRequest};
+  use id_effect_config::{Secret, SecretString};
+  use id_effect_platform::http::HttpClientService;
 
   use super::{BoxFuture, RpcTransport, TransportCall, TransportError};
+  use crate::client::http::ExtraHeaders;
   use crate::client::{RPC_HEADER, RpcClient};
   use crate::wire::{WireCall, WireExit, WireResult};
 
+  /// Headers an [`HttpTransport`] never lets a caller set: the CSRF header every `POST /rpc`
+  /// carries (`x-rpc: 1`, ADR 0013 R9), the media type, and the framing and routing headers
+  /// the HTTP client owns.
+  const RESERVED: [&str; 6] = [
+    RPC_HEADER,
+    "content-type",
+    "content-length",
+    "transfer-encoding",
+    "host",
+    "connection",
+  ];
+
+  /// Why [`HttpTransport::with_header`] or [`HttpTransport::with_bearer`] refused a header.
+  /// Values never appear in the error (they may be credentials).
+  #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+  #[non_exhaustive]
+  pub enum HttpHeaderError {
+    /// The name is not an HTTP header name (RFC 9110 token).
+    #[error("invalid http header name {0:?}")]
+    InvalidName(String),
+    /// The value holds a byte a header value cannot (a control character such as CR or LF,
+    /// or a non-ASCII byte), or a bearer token is empty.
+    #[error("invalid value for http header {name:?}")]
+    InvalidValue {
+      /// The (lower-case) header name.
+      name: String,
+    },
+    /// The header is the transport's own: `x-rpc` (the CSRF rule), `content-type`, or a framing
+    /// header (`content-length`, `transfer-encoding`, `host`, `connection`).
+    #[error("http header {0:?} is reserved by the rpc transport")]
+    Reserved(String),
+  }
+
+  /// A header value's bytes: visible ASCII, space and tab (what `http::HeaderValue::from_str`
+  /// accepts), so no CR, LF or NUL can split the request.
+  fn valid_value(value: &str) -> bool {
+    value
+      .bytes()
+      .all(|b| b == b'\t' || (b' '..=b'~').contains(&b))
+  }
+
+  /// The lower-case form of a header name that is valid and not reserved.
+  fn header_name(name: &str) -> Result<String, HttpHeaderError> {
+    let parsed = http::HeaderName::from_bytes(name.as_bytes())
+      .map_err(|_| HttpHeaderError::InvalidName(name.to_owned()))?;
+    let name = parsed.as_str();
+    if RESERVED.contains(&name) {
+      return Err(HttpHeaderError::Reserved(name.to_owned()));
+    }
+    Ok(name.to_owned())
+  }
+
   /// Queries and mutations over `POST /rpc` (the [`WireCall`] envelope, `v` = the service
-  /// version) through id_effect_platform's HTTP client. The stream kinds go over the WebSocket
-  /// and SSE transports.
+  /// version) through id_effect_platform's HTTP client. The calls a generated client makes in
+  /// the same tick go out as one batch request, by the rules of
+  /// [`RpcClient::call`](crate::client::RpcClient::call) (at most
+  /// [`CLIENT_BATCH_MAX_CALLS`](crate::client::http::CLIENT_BATCH_MAX_CALLS) calls and
+  /// [`CLIENT_BATCH_MAX_BYTES`](crate::client::http::CLIENT_BATCH_MAX_BYTES) bytes; a call alone
+  /// is a plain envelope); [`RpcTransport::unary`] sends one at once, on its own. The stream
+  /// kinds go over the WebSocket and SSE transports.
+  ///
+  /// [`with_header`](Self::with_header) and [`with_bearer`](Self::with_bearer) add headers to
+  /// every request (validated; `x-rpc` and `content-type` stay the transport's own, so the CSRF
+  /// rule holds). `Debug` shows header names only.
+  ///
+  /// ```
+  /// use id_effect_config::Secret;
+  /// use id_effect_platform::http::HttpClientService;
+  /// use id_effect_rpc::client::RpcClient;
+  /// use id_effect_rpc::service::{HttpHeaderError, HttpTransport};
+  ///
+  /// # fn transport(http: HttpClientService) -> Result<HttpTransport, HttpHeaderError> {
+  /// let transport = HttpTransport::new(RpcClient::new("https://api.example.com"), http)
+  ///   .with_header("x-tenant", "acme")?
+  ///   .with_bearer(Secret::new("s3cr3t".to_owned()))?;
+  /// assert!(!format!("{transport:?}").contains("s3cr3t"));
+  /// # Ok(transport)
+  /// # }
+  /// ```
   #[derive(Clone)]
   pub struct HttpTransport {
     client: RpcClient,
     http: HttpClientService,
+    headers: ExtraHeaders,
   }
 
   impl std::fmt::Debug for HttpTransport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
       f.debug_struct("HttpTransport")
         .field("url", &self.client.config().url())
+        .field("headers", &self.headers.names())
         .finish_non_exhaustive()
     }
   }
@@ -727,7 +818,57 @@ mod http_transport {
   impl HttpTransport {
     /// Call the server `client` names through `http`.
     pub fn new(client: RpcClient, http: HttpClientService) -> Self {
-      Self { client, http }
+      Self {
+        client,
+        http,
+        headers: ExtraHeaders::default(),
+      }
+    }
+
+    /// This transport with the header `name: value` on every request (replacing an earlier
+    /// value of `name`; names are case-insensitive).
+    ///
+    /// # Errors
+    ///
+    /// [`HttpHeaderError::InvalidName`] when `name` is not a header name,
+    /// [`HttpHeaderError::Reserved`] for `x-rpc`, `content-type` and the framing headers, and
+    /// [`HttpHeaderError::InvalidValue`] when `value` holds a control character (CR, LF, …) or
+    /// a non-ASCII byte.
+    pub fn with_header(
+      self,
+      name: impl AsRef<str>,
+      value: impl Into<String>,
+    ) -> Result<Self, HttpHeaderError> {
+      let name = header_name(name.as_ref())?;
+      let value = value.into();
+      if !valid_value(&value) {
+        return Err(HttpHeaderError::InvalidValue { name });
+      }
+      let headers = self.headers.with_plain(name, value);
+      Ok(Self { headers, ..self })
+    }
+
+    /// This transport with `authorization: Bearer <secret>` on every request. The token stays a
+    /// [`Secret`] (zeroized on drop; `Debug` of the transport shows only the header name).
+    ///
+    /// # Errors
+    ///
+    /// [`HttpHeaderError::InvalidValue`] when the token is empty or holds a byte a header value
+    /// cannot.
+    pub fn with_bearer(self, secret: SecretString) -> Result<Self, HttpHeaderError> {
+      let token = secret.expose();
+      if token.is_empty() || !valid_value(token) {
+        return Err(HttpHeaderError::InvalidValue {
+          name: "authorization".to_owned(),
+        });
+      }
+      let mut value = String::with_capacity(7 + token.len());
+      value.push_str("Bearer ");
+      value.push_str(token);
+      let headers = self
+        .headers
+        .with_secret("authorization".to_owned(), Secret::new(value));
+      Ok(Self { headers, ..self })
     }
   }
 
@@ -754,21 +895,24 @@ mod http_transport {
   }
 
   impl RpcTransport for HttpTransport {
+    fn unary_effect<R: Send + Sync + 'static>(
+      &self,
+      call: TransportCall,
+    ) -> Effect<WireExit, TransportError, R> {
+      self.client.call_value(
+        &self.http,
+        &self.headers,
+        call.tag,
+        call.version,
+        call.payload,
+      )
+    }
+
     fn unary(&self, call: TransportCall) -> BoxFuture<Result<WireExit, TransportError>> {
       let wire = WireCall::new(call.tag, call.payload).with_version(call.version);
       // A tag and a `serde_json::Value` always serialize.
       let body = serde_json::to_vec(&wire).unwrap_or_default();
-      let req = HttpRequest {
-        method: HttpMethod::Post,
-        url: self.client.config().url(),
-        headers: vec![
-          ("content-type".to_owned(), "application/json".to_owned()),
-          (RPC_HEADER.to_owned(), "1".to_owned()),
-        ],
-        body: Some(body),
-        timeout: None,
-        max_body_bytes: None,
-      };
+      let req = self.headers.post(self.client.config().url(), body);
       let http = self.http.clone();
       Box::pin(async move {
         let exit = id_effect_axum::run_with_env(HNil, move |_| http.execute(req)).await;
@@ -820,11 +964,13 @@ where
     Err(why) => return fail(RpcCallError::Encode(why)),
   };
   let call = transport_call(tag, version, kind, payload);
-  let transport = transport.clone();
-  from_async(move || async move {
-    let exit = transport.unary(call).await?;
-    exit_output(exit, &output)
-  })
+  transport
+    .unary_effect(call)
+    .map_err(RpcCallError::Transport)
+    .flat_map(move |exit| match exit_output(exit, &output) {
+      Ok(o) => succeed(o),
+      Err(e) => fail(e),
+    })
 }
 
 /// The decoded items of `frames` with their cursors; the `exit` frame ends the stream or fails

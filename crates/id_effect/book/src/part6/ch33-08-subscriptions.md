@@ -49,8 +49,14 @@ group.subscription(
   falls between them, and a resume from the last cursor neither skips nor repeats an event.
 - **Projection.** The function you pass sees every event in order and keeps the ones the
   subscriber should get. Dropped events still move the position forward.
-- **No cursor** starts after `starting_after(n)`: `0` (the default) replays the whole log; the
-  log's head means "only what happens from now on".
+- **No cursor** starts after `starting_after(n)`: `0` (the default) replays the whole log.
+  `from_now()` starts after the log's head instead — `EventLog::head()`, the position of the
+  last event appended, read when the call's stream is first pulled — so the subscriber gets only
+  what happens from then on. Items still carry their positions, so a client that reconnects
+  with its last cursor replays what it missed meanwhile; a cursor always wins over either start.
+  The in-memory store and `SqlEventJournal` read the head in one step; a log of your own that
+  only implements `read_all` gets a provided `head` that reads the log to its end, so override
+  it when the log can answer directly.
 
 ## Rules that keep it safe
 

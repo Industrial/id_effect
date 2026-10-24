@@ -11,12 +11,11 @@ help: the trait `Tenanted` is not implemented for `Report`
   |
 5 | struct Report;
   | ^^^^^^^^^^^^^
-  = help: the following other types implement trait `TenantScope`:
-            ()
-            Acl
-            JoinTarget
-            std::string::String
-            str
+help: the trait `Tenanted` is implemented for `TenantId`
+ --> $WORKSPACE/crates/id_effect_authz/src/tenant.rs
+  |
+  | impl Tenanted for TenantId {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^
   = note: required for `Report` to implement `TenantScope`
 note: required by a bound in `PoliciesBuilder::define`
  --> $WORKSPACE/crates/id_effect_authz/src/registry.rs

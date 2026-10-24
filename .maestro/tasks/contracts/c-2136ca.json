@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-2136ca",
+  "taskId": "tsk-mvdgtk7t-ly5lul",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-18T06:49:36.067Z",
+  "lockedAt": "2026-10-18T06:49:36.067Z",
+  "intent": "r11-sec-sql-redis",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-046de0",
+      "text": "M16 (0.11.0.md D9): the effect-level query and execute (crates/id_effect_sql/src/client.rs:195, :207, today impl Into<String>) take impl Into<Sql>, where Sql: From<&'static str>; string literals still compile and a String does not; query_raw and execute_raw take RawSql and need RawSqlCapability in R, provided only by RawSqlCapability::layer_dangerous() (records a posture opt-out; the capability has no public constructor). Internal callers that build SQL (repository, migrate, query builder) use a crate-private trusted constructor. The SqlClient trait's &str methods stay as the driver boundary. MIGRATION-0.11 section \"Sql/RawSql\".",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-6575fc",
+      "text": "M17: clear() on a Redis store whose namespace is empty (crates/id_effect_redis/src/client.rs:355-367 turns \"\" into the glob \"*\"; store.rs:90-91, :287, :423, :569) returns RedisError::EmptyNamespace; the explicit flush is clear_all_dangerous() (records a posture opt-out).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f1ed0d",
+      "text": "Regression tests `m16_query_with_string_does_not_compile` (trybuild, crates/id_effect_sql/tests/ui), `m16_query_raw_requires_capability` (trybuild), `m16_literal_query_still_compiles`, `m17_clear_with_empty_namespace_is_an_error`, `m17_clear_only_deletes_namespace_keys` (Docker Redis).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d85695",
+      "text": "Gate: `cargo nextest run -p id_effect_sql --test ui`; `ID_EFFECT_REQUIRE_PG=1 cargo nextest run -p id_effect_sql --all-features` (Postgres required); `ID_EFFECT_REQUIRE_DOCKER=1 cargo nextest run -p id_effect_redis --all-features` (Docker required); `cargo build --workspace --all-targets`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-57b143",
+      "text": "Owns: `crates/id_effect_sql/**` (incl. new `src/raw.rs` and `tests/ui/m16_*`), `crates/id_effect_redis/src/{store.rs,client.rs}`, `crates/id_effect_redis/tests/store_clear.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

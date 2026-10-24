@@ -49,7 +49,7 @@ fn tls() -> (HostTls, Option<Vec<u8>>) {
   std::fs::create_dir_all(&dir).expect("temp dir");
   let (chain, key) = (dir.join("chain.pem"), dir.join("key.pem"));
   std::fs::write(&chain, ck.cert.pem()).expect("write chain");
-  std::fs::write(&key, ck.key_pair.serialize_pem()).expect("write key");
+  std::fs::write(&key, ck.signing_key.serialize_pem()).expect("write key");
   (HostTls::files(chain, key), Some(ck.cert.der().to_vec()))
 }
 

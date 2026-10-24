@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "id": "c-7b91e1",
+  "taskId": "tsk-mvbg796n-xpvbrc",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T20:56:47.644Z",
+  "lockedAt": "2026-10-16T20:56:47.644Z",
+  "intent": "PgSessionStore",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-f7bb0b",
+      "text": "id_effect_auth feature `pg`: `PgSessionStore` implements `SessionStore` (save as upsert, load, remove, remove_user, purge_expired) over `id_effect_sql::SqlClient` with `SqlValue` params.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-66d76a",
+      "text": "The table stores SHA-256 of the session id, never the raw id; ships a migration (`migrations/` in the crate, usable with id_effect_sql::migrate) creating `id_effect_sessions` with an index on user_id and on absolute_expires_at.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-cec605",
+      "text": "Live Postgres test (ID_EFFECT_REQUIRE_PG=1) runs the same store behaviour suite as MemorySessionStore; book ch30-03 documents the store.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c3b89c",
+      "text": "Completes sec.authn #2 (persistent session store).",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-02ad50",
+  "taskId": "tsk-mvbm09jg-c92j9a",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T23:39:19.663Z",
+  "lockedAt": "2026-10-16T23:39:19.663Z",
+  "intent": "r09-w3-tutorial",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-461aad",
+      "text": "book/src/tutorial-zero-to-production.md follows the 0.9 service template: migrations through id_effect_sql::migrate (migrations/ applied on start, id-effect migrate new / status / check), no include_str! migration constants; the typed route and Problem+JSON answer; the middleware stack.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-980ba1",
+      "text": "Every rust block still compiles in examples/book-snippets (cargo test -p book_snippets --doc); the tutorial text matches the generated project file by file (verify by generating one with id-effect new and comparing).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-89d99a",
+      "text": "dx KPI K1 (time to a running service) is unaffected; scripts/dx-kpis.sh still passes its tutorial-related steps if any.",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "low"
+}

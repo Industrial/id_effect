@@ -9,9 +9,12 @@
 //!   room's stream in a PostgreSQL event log and published on the room's channel.
 //! - **History** is a subscription on the event log ([`api::Relay::history`]): the cursor is the
 //!   event's position, so a client that reconnects resumes with no gap and no repeat.
-//! - **Nodes** talk over mesh RPC ([`api::RelayPeer`], guarded for verified nodes only) on the
-//!   same QUIC endpoint (one UDP port) that serves HTTP/3 and WebTransport (ADR 0014 D7), with
-//!   mutual TLS on `idm/1`.
+//! - **Nodes** talk over mesh RPC ([`api::RelayPeer`], guarded for verified nodes only) on a
+//!   QUIC endpoint of the mesh's own, with mutual TLS on `idm/1`; each session runs on a node
+//!   session pump that verifies every envelope.
+//! - **The host** ([`node::RelayNode`] starts the host entry point) serves the clients on one
+//!   port number: TLS on TCP, and HTTP/3 with WebTransport on UDP (`server.http3`,
+//!   `server.http3.webtransport`), with no HTTP/3 endpoint of the Relay's own.
 //! - **Clients**: the generated Rust client over HTTP (HTTP/1.1, HTTP/2, HTTP/3) and WebSocket,
 //!   the generated TypeScript client (`web/src/rpc`), and the browser page (`web/`), which
 //!   prefers WebTransport and falls back to WebSocket.

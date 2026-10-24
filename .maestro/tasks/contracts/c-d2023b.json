@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-d2023b",
+  "taskId": "tsk-mvffsow8-ogb7fz",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T15:56:36.455Z",
+  "lockedAt": "2026-10-19T15:56:36.455Z",
+  "intent": "r12-f-h3-platform",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-59108f",
+      "text": "F22 (D9 tuning task): `QuicLimits` (or a sibling transport setting) gains a congestion-control choice (`Cubic`, `Bbr`); the `h3` route defaults to BBR, the mesh `idm/1` route keeps Cubic; the choice is documented as quinn-experimental for BBR and is configurable per route. Test `h3_route_uses_bbr_mesh_uses_cubic`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-cea452",
+      "text": "F23: the QUIC endpoint sets UDP send/receive socket buffers (default 4 MiB, best effort, logs the granted size at debug); configurable; test asserts the requested size is applied or the shortfall logged.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-bea5a1",
+      "text": "F10: the HTTP/3 client trusts the platform verifier (`rustls-platform-verifier =0.7.1`, already in Cargo.lock) when no explicit roots are configured, keeping `HttpClientConfig::root_certificates` as the override; SSRF and body-cap tests stay green.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-267903",
+      "text": "F24: `HostTls::Provided` can carry an `Identity` (or exposes one from its resolver) so a host with provided TLS serves HTTP/3 too; when it cannot, the existing log line stays. Test `provided_tls_serves_h3`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-6e10aa",
+      "text": "Gate: `cargo nextest run -p id_effect_platform --all-features`, `cargo nextest run -p id_effect_axum --features http3,tls`, clippy -D warnings, coverage of new code >= 96% regions, `cargo tree -d` one quinn / rustls.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-4de393",
+      "text": "Owns: `crates/id_effect_platform/{Cargo.toml,src/quic/**,src/http/h3.rs,tests/http3_client.rs}`, `crates/id_effect_axum/src/server/{bootstrap.rs,tls.rs,lifecycle.rs}` (Provided identity only), CHANGELOG/MIGRATION-0.12 own hunks.",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "f1-h3-platform",
+  "lockedBy": "f1-h3-platform",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

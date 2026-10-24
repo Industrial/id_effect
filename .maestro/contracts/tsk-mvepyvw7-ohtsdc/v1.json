@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-98539c",
+  "taskId": "tsk-mvepyvw7-ohtsdc",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:53:30.643Z",
+  "lockedAt": "2026-10-19T03:53:30.643Z",
+  "intent": "r11-sec-auth-state",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-8cc86f",
+      "text": "M18: PgTotpStepStore (features pg + totp) implements TotpStepStore (crates/id_effect_auth/src/totp.rs:236-240; MemoryTotpStepStore at :251 is the only implementation today) with one atomic compare-and-set statement; migration 0003 creates its table; using MemoryTotpStepStore under the prod profile is reported by the posture check as memory-only security state.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0a4d2a",
+      "text": "A Postgres store for the 0.10.1 LoginThrottle trait (H5), so throttling is shared across instances.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2ecca3",
+      "text": "L5: the session login path (session/manager.rs) rotates the session id and calls CsrfToken::rotate (from r11-sec-csrf-headers) on successful login.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-fdd049",
+      "text": "Regression tests `m18_pg_totp_replay_rejected_across_instances`, `m18_pg_totp_concurrent_consume_one_wins`, `pg_login_throttle_shared_across_instances`, `l5_csrf_token_rotates_at_login`, `l5_session_id_rotates_at_login`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2365bc",
+      "text": "Gate: `ID_EFFECT_REQUIRE_PG=1 cargo nextest run -p id_effect_auth --all-features` (Postgres required)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-6ee569",
+      "text": "Owns: `crates/id_effect_auth/{src/totp.rs,src/session/manager.rs,migrations/0003_*,Cargo.toml,tests/auth_state.rs}`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-sec-auth-state",
+  "lockedBy": "r11-sec-auth-state",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

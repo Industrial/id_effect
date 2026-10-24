@@ -1,0 +1,33 @@
+# https://moonrepo.dev/docs/config/project
+# The Pipeline reference app (multi-tenant document intake and its back office). Its integration
+# tests run in the `reference-pipeline` CI job (PostgreSQL in the tests' own container;
+# ID_EFFECT_REQUIRE_PG=1 turns a missing Docker into a failure).
+language: 'rust'
+layer: 'application'
+tasks:
+  check:
+    deps: ['effect:ci-format', '^:check']
+    command: [cargo, check, -p, pipeline, --all-targets]
+    inputs: ['Cargo.toml', 'src/**/*.rs', 'tests/**/*.rs', 'examples/**/*.rs', 'fixtures/**/*', 'migrations/**/*.sql', 'README.md']
+    options: {cache: true, outputStyle: buffer-only-failure}
+  clippy:
+    deps: ['effect:ci-format', '^:clippy', '~:check']
+    command: [cargo, clippy, -p, pipeline, --all-targets, --, -D, warnings]
+    inputs: ['Cargo.toml', 'src/**/*.rs', 'tests/**/*.rs', 'examples/**/*.rs', 'fixtures/**/*', 'migrations/**/*.sql', 'README.md']
+    options: {cache: true, outputStyle: buffer-only-failure}
+  lint:
+    description: 'Alias for ~:clippy (format-gated)'
+    deps: ['effect:ci-format', '~:clippy']
+    command: 'bash'
+    args: ['-c', ':']
+    options: {cache: true, outputStyle: buffer-only-failure}
+  test:
+    deps: ['effect:ci-format', '^:test', '~:clippy']
+    command: [cargo, nextest, run, -p, pipeline]
+    inputs: ['Cargo.toml', 'src/**/*.rs', 'tests/**/*.rs', 'examples/**/*.rs', 'fixtures/**/*', 'migrations/**/*.sql', 'README.md']
+    options: {cache: true, outputStyle: buffer-only-failure}
+  build:
+    deps: ['effect:ci-format', '^:build', '~:test']
+    command: [cargo, build, -p, pipeline, --all-targets]
+    inputs: ['Cargo.toml', 'src/**/*.rs', 'tests/**/*.rs', 'examples/**/*.rs', 'fixtures/**/*', 'migrations/**/*.sql', 'README.md']
+    options: {cache: true, outputStyle: buffer-only-failure}

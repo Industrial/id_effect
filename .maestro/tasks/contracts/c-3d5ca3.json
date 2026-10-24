@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-3d5ca3",
+  "taskId": "tsk-mvf9rlqz-0bc6j8",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T13:07:50.801Z",
+  "lockedAt": "2026-10-19T13:07:50.801Z",
+  "intent": "r12-e12-2-subscriptions",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-d834ef",
+      "text": "A Subscription procedure can be backed by an id_effect_events EventLog (crates/id_effect_events/src/subscription.rs:39 read_all(after, limit)): the cursor is the global position, the stream replays from the cursor and then tails live events without a gap at the hand-over; an optional projection filter narrows the stream.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-398adb",
+      "text": "Interrupting the subscriber releases the reader (no leaked polling fiber); the read batch size and the poll interval are bounded config.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-1a90dd",
+      "text": "Tests `subscription_replays_from_cursor_then_tails`, `subscription_resume_has_no_gap_or_duplicate`, `subscription_interrupt_releases_reader` (memory EventLog), and the same three against Postgres under ID_EFFECT_REQUIRE_PG=1 (own container, never the ambient DATABASE_URL); book part6/ch33-08-subscriptions.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-da26cc",
+      "text": "Gate: `cargo nextest run -p id_effect_rpc --features events`; `ID_EFFECT_REQUIRE_PG=1 cargo nextest run -p id_effect_rpc --features events --test subscription_events`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-34d66a",
+      "text": "Owns: `crates/id_effect_rpc/src/subscription/{mod.rs,events.rs}`, `crates/id_effect_rpc/tests/subscription_events.rs`, `crates/id_effect/book/src/part6/ch33-08-subscriptions.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "d5-subscriptions",
+  "lockedBy": "d5-subscriptions",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

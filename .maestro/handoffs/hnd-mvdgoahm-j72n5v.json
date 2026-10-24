@@ -1,0 +1,8 @@
+{
+  "id": "hnd-mvdgoahm-j72n5v",
+  "task_id": "tsk-mvdgoa0t-18vdc1",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-18T06:45:30.010Z",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.11/r11-sec-tenancy.md",
+  "to_agent": "cli"
+}

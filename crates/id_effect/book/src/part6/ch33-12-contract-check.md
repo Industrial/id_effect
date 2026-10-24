@@ -64,6 +64,13 @@ compatible Greeter v2 history: procedure added
 
 Dropping v1 in the same release fails with `breaking Greeter v1: version no longer served`.
 
+When the time comes to retire v1 on purpose, say so on the command line: `--allow-retired
+Greeter:1` (repeatable, one `Service:N` per retired version) lets exactly that removal pass and
+prints it as `retired    Greeter v1: version no longer served (--allow-retired)`. It excuses
+nothing else: any other breaking change still exits `1`, and naming a version that was not
+removed (a typo, a version still served, one that never existed) is a usage error that exits `2`,
+so the flag can never quietly widen the check.
+
 ## Type names
 
 `$defs` keys are Rust `type_name` paths (`app::store::Todo`), which change whenever a module

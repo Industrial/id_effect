@@ -467,13 +467,46 @@ jobs:
           cargo nextest run --locked -p id_effect_rpc -p id_effect_rpc_macros -p relay --all-features
           cargo test --locked -p id_effect_rpc -p id_effect_rpc_macros --doc --all-features
   # ──────────────────────────────────────────────────────────────────────────
+  # Breadth (0.13, ADR 0010 Amendment 9): id_effect_ai (moved out of labs), id_effect_admin,
+  # id_effect_i18n and the Pipeline reference app, all features. They are not moon projects yet,
+  # so this job is what runs their clippy and tests on every PR (the workspace jobs build them
+  # too). No AI vendor is called: wiremock fixtures and scripted models only (0.13 D8).
+  # ──────────────────────────────────────────────────────────────────────────
+  breadth:
+    name: Breadth crates (ai, admin, i18n, Pipeline)
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy
+      - name: Cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: breadth
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-nextest
+      - name: Clippy
+        run: cargo clippy --locked -p id_effect_ai -p id_effect_admin -p id_effect_i18n -p pipeline --all-targets --all-features -- -D warnings
+      - name: Tests
+        run: |
+          cargo nextest run --locked -p id_effect_ai -p id_effect_admin -p id_effect_i18n -p pipeline --all-features
+          cargo test --locked -p id_effect_ai -p id_effect_admin -p id_effect_i18n -p pipeline --doc --all-features
+  # ──────────────────────────────────────────────────────────────────────────
   # Relay reference app (0.12 §6 KPI, never cut): three nodes on real QUIC and TLS on
-  # loopback, the mesh (mutual TLS, `idm/1`) on the endpoint that serves HTTP/3 and
-  # WebTransport (ADR 0014 D7), PostgreSQL in the tests' own container; the Rust client over
-  # HTTP/1.1-2, HTTP/3 and WebSocket, the generated TypeScript client under Deno, Chromium over
-  # CDP (WebTransport, then WebSocket); the prod posture with zero accepted risks; `id-effect rpc
-  # check` against the last release tag; then once more with UDP dropped by iptables, to prove
-  # the TCP fallback.
+  # loopback, HTTP/3 and WebTransport served by the host entry point (0.13 F59: no endpoint of
+  # the Relay's own), the mesh (mutual TLS, `idm/1`) on its own endpoint with every session on
+  # a node session pump, PostgreSQL in the tests' own container; the Rust client over
+  # HTTP/1.1-2 and HTTP/3 (`HttpTransport::with_bearer`) and its own `wss://` WebSocket, the
+  # generated TypeScript client under Deno, Chromium over CDP (WebTransport, then WebSocket);
+  # the prod posture with zero accepted risks; the manifest on the kit only (cargo metadata);
+  # `id-effect rpc check` against the last release tag; then once more with UDP dropped by
+  # iptables, to prove the TCP fallback.
   # ──────────────────────────────────────────────────────────────────────────
   reference-relay:
     name: Reference app (Relay)
@@ -517,7 +550,7 @@ jobs:
         run: |
           cargo fmt -p relay --check
           cargo clippy -p relay --all-targets --locked -- -D warnings
-      - name: Relay KPI (3 nodes over HTTP/3 and WebSocket, presence, resume, membership, browser, TypeScript, prod posture, contract)
+      - name: Relay KPI (3 nodes over HTTP/3 and WebSocket, host WebTransport, kit-only manifest, presence, resume, membership, browser, TypeScript, prod posture, contract)
         run: cargo nextest run --locked -p relay
       - name: id-effect rpc check against the last release tag
         run: |
@@ -541,9 +574,115 @@ jobs:
           RELAY_UDP_BLOCKED_PORT="${RELAY_BLOCKED_PORT}" \
             cargo nextest run --locked -p relay -E 'test(=relay_udp_blocked_falls_back_to_tcp)'
   # ──────────────────────────────────────────────────────────────────────────
+  # Pipeline reference app (0.13 §6 KPI, never cut; r13-w6-pipeline): the multi-tenant
+  # document-intake pipeline on PostgreSQL in the tests' own container, two databases per test
+  # (`acme` on the main one with the job queue, `globex` on its own through the TenantRouter);
+  # ingest by RPC and upload, the extract / classify / embed jobs, the status subscription,
+  # publication through the outbox hook, the MCP server (guarded, Origin-checked) and client.
+  # Deterministic AI only (D8): ScriptedModel and the recorded OpenAI / Anthropic fixtures under
+  # wiremock; no key, no vendor call. The back office (r13-w7-pipeline-backoffice): the admin
+  # generated with `id-effect generate admin`, the htmx + maud review queue in English and German,
+  # CSRF on every post, and the prod posture with zero accepted risks (id_effect_admin on
+  # platform, check P).
+  # ──────────────────────────────────────────────────────────────────────────
+  reference-pipeline:
+    name: Reference app (Pipeline)
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    env:
+      ID_EFFECT_REQUIRE_PG: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+      - name: Cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: reference-pipeline
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-nextest
+      # The tests start PostgreSQL with id_effect_test (postgres:17-alpine): pull it up front so
+      # no test times out on a cold pull.
+      - name: Pull PostgreSQL
+        run: docker pull -q postgres:17-alpine
+      - name: Format and lints
+        run: |
+          cargo fmt -p pipeline --check
+          cargo clippy -p pipeline --all-targets --locked -- -D warnings
+      - name: Pipeline KPI (two tenants, two databases, AI stages, outbox hook, RPC, MCP, back office, prod posture)
+        run: cargo nextest run --locked -p pipeline
+      # The README's commands still generate the admin: regenerate it into a scratch copy
+      # without `src/admin` and show what was edited after generation (README "Back office").
+      - name: Back office admin from `id-effect generate admin`
+        run: |
+          scratch="$(mktemp -d)"
+          cp -r examples/reference/pipeline "$scratch/pipeline"
+          rm -r "$scratch/pipeline/src/admin"
+          sed -i '/^pub mod admin;$/d' "$scratch/pipeline/src/lib.rs"
+          for entity in Source Document Label; do
+            cargo run --locked -q -p id_effect_tool --bin id-effect -- \
+              generate admin "$entity" --path "$scratch/pipeline"
+          done
+          diff -ru "$scratch/pipeline/src/admin" examples/reference/pipeline/src/admin || true
+      - name: Tier conformance (id_effect_ai, id_effect_i18n and id_effect_admin on platform, check P)
+        run: |
+          command -v rg >/dev/null || sudo apt-get install -y -qq ripgrep
+          bash scripts/tier-conformance.sh
+  # ──────────────────────────────────────────────────────────────────────────
+  # Leptos recipe (0.13 D4, r13-e9-5-leptos): examples/recipes/leptos-ssr, outside the workspace
+  # with its own Cargo.lock. Leptos SSR + hydration on the id_effect axum host, the page's data
+  # from an id_effect RPC service through its generated client. No npm: the wasm32-unknown-unknown
+  # target and wasm-bindgen-cli at the recipe's wasm-bindgen pin (scripts/build-site.sh checks
+  # it against Cargo.lock). Headless Chrome (the runner's) checks hydration under the real CSP.
+  # Not in ci-pass until it has been green twice.
+  # ──────────────────────────────────────────────────────────────────────────
+  recipe-leptos:
+    name: Recipe (Leptos SSR + hydration)
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    env:
+      LEPTOS_SSR_REQUIRE_SITE: '1'
+      ID_EFFECT_REQUIRE_BROWSER: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml) with the wasm target
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - name: Cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: examples/recipes/leptos-ssr
+          key: recipe-leptos
+      # wasm-bindgen = the recipe's `wasm-bindgen` pin (Cargo.toml `=0.2.129`).
+      - name: Install cargo-nextest and wasm-bindgen-cli
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-nextest,wasm-bindgen@0.2.129
+      - name: Format and lints (server and browser builds)
+        working-directory: examples/recipes/leptos-ssr
+        run: |
+          google-chrome --version
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --lib --target wasm32-unknown-unknown --no-default-features \
+            --features hydrate -- -D warnings
+      - name: Build the browser bundle (wasm32-unknown-unknown + wasm-bindgen, no npm)
+        run: examples/recipes/leptos-ssr/scripts/build-site.sh
+      - name: Recipe tests (SSR, RPC, bundle, hydration in Chrome)
+        run: cargo nextest run --locked --manifest-path examples/recipes/leptos-ssr/Cargo.toml
+  # ──────────────────────────────────────────────────────────────────────────
   # Labs: unpublished crates in the separate labs/ workspace (ADR 0010 Amendment 1).
   # No API guarantees, but they must keep building and passing against core.
   # id_effect_rpc left labs in 0.12 (ADR 0010 Amendment 8); the `rpc` job above tests it.
+  # id_effect_ai left labs in 0.13 (ADR 0010 Amendment 9); the `breadth` job above tests it.
   # No system packages: since 0.11 (bundled SQLite and duroxide left with the workflow crate) no
   # labs crate links OpenSSL, and aws-lc-sys (rustls via reqwest) builds without the cmake
   # binary on Linux, as in the main-workspace jobs.
@@ -828,7 +967,9 @@ jobs:
       - containers-integration
       - reference-ledger
       - reference-relay
+      - reference-pipeline
       - rpc
+      - breadth
       - labs
       - minimal-versions
       - validate-packaging

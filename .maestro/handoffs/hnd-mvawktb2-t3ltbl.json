@@ -1,0 +1,8 @@
+{
+	"id": "hnd-mvawktb2-t3ltbl",
+	"task_id": "tsk-mvawkapy-uuzduq",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-10-16T11:47:23.102Z",
+	"spec_path": ".maestro/specs/releases/0.8/e6-1a-metrics.md",
+	"to_agent": "cli"
+}

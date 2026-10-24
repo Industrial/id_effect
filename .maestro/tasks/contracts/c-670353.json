@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 2,
+  "id": "c-670353",
+  "taskId": "tsk-mvf9twme-9avzxk",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T13:09:30.130Z",
+  "lockedAt": "2026-10-19T13:09:30.130Z",
+  "intent": "r12-e12-3-h3-server",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-ffa2ad",
+      "text": "axum feature http3: an adapter feeds h3 (=0.0.8) + h3-quinn (=0.0.10) requests from the platform QuicEndpoint (ALPN h3) into the same axum Router as a tower Service, so every typed route, middleware, guard and RPC endpoint works over HTTP/3 unchanged; the adapter is one module (server/h3.rs) so the backend can be swapped once hyper ships HTTP/3.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-41fe67",
+      "text": "Alt-Svc: h3=\":<port>\"; ma=86400 is added to TLS TCP responses when HTTP/3 is enabled; TCP and UDP listen on the same port number; graceful shutdown drains both (GOAWAY on h3, the 0.11 drain on TCP); server.http3.enabled = false turns HTTP/3 and Alt-Svc off (one flag, D4).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-99ad5e",
+      "text": "Limits mirror ConnectionLimits for HTTP/3 (connections, request header timeout, requests per connection, QUIC stream credits); the client IP comes from the QUIC peer address through the 0.10.1 trusted-proxy rules; 0-RTT off, dangerous_allow_zero_rtt_for_queries() allows it for safe methods only and records a posture opt-out.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-79eb76",
+      "text": "Spike first (D9): one HTTP/2 vs HTTP/3 p99 measurement under netem loss 1% delay 5ms with 64 multiplexed streams, recorded in the leaf evidence before the adapter is finished.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-30753a",
+      "text": "Conformance: a CI job http3-conformance runs h3spec (release binary pinned by sha256) and curl --http3 (container image pinned by digest) against an example server; actions pinned by SHA (0.11 rule).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-321378",
+      "text": "Tests `h3_serves_typed_routes_unchanged`, `h3_middleware_and_guards_apply`, `alt_svc_header_on_tcp_responses`, `http3_disabled_by_one_flag`, `shutdown_drains_tcp_and_udp`, `zero_rtt_off_by_default`, `h3_client_ip_from_quic_peer`; book part6/ch29-05-http3.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-172733",
+      "text": "Gate: `cargo nextest run -p id_effect_axum --features http3`; `cargo nextest run -p id_effect_axum --all-features`; CI job `http3-conformance` green",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-28da5d",
+      "text": "Owns: `crates/id_effect_axum/src/server/{h3.rs,alt_svc.rs,lifecycle.rs}`, `crates/id_effect_axum/tests/http3.rs`, `crates/id_effect_axum/examples/092_http3.rs`, `.github/workflows/ci.yml` (the `http3-conformance` job only), `crates/id_effect/book/src/part6/ch29-05-http3.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "d6-h3-server",
+  "lockedBy": "d6-h3-server",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

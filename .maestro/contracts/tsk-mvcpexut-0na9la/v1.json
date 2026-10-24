@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-4930bc",
+  "taskId": "tsk-mvcpexut-0na9la",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T18:02:39.004Z",
+  "lockedAt": "2026-10-17T18:02:39.004Z",
+  "intent": "r10-e7-3-transports",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-44f265",
+      "text": "`Mailer` capability; `SmtpMailer` (lettre per D9, pooled, rustls) and `SendGridMailer` over `HttpClient` (#1); attachments and inline `cid:` images (#8); `TestMailbox` with `assert_sent_to/subject/contains` (#4). Tests: wiremock SendGrid request shape and error mapping; MIME structure of attachments/inline; `cargo deny check` green.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d44b73",
+      "text": "Gate: `cargo nextest run -p id_effect_mail --all-features`; `cargo deny check`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a8b5bb",
+      "text": "Owns: `crates/id_effect_mail/src/{message.rs,mailer.rs,smtp.rs,sendgrid.rs,testing.rs}`, `crates/id_effect_mail/Cargo.toml`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

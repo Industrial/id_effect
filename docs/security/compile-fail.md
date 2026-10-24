@@ -9,7 +9,9 @@ API adds to point at the safe call.
 
 The cases go through `id_effect_kit` with the features `web`, `sql`, `cluster`, `authz` and
 `logger`, as an app would; the 0.12 call-surface cases use `id_effect_rpc` and `id_effect_axum`
-(feature `http3`) directly until the kit has its `rpc` and `http3` features.
+(feature `http3`) directly until the kit has its `rpc` and `http3` features; the 0.13 breadth cases
+use `id_effect_admin` and `id_effect_ai` (feature `mcp-http`) directly, which the kit does not
+re-export yet.
 
 ## Cases
 
@@ -34,6 +36,8 @@ The cases go through `id_effect_kit` with the features `web`, `sql`, `cluster`, 
 | `r10_accepted_risk_without_reason` | R10 | every opt-out | `AcceptedRisks::accept(id)` without a reason |
 | `r1_rpc_procedure_without_access_decision` | R1 | ADR 0014 C1 | an `#[rpc::service]` procedure with neither `#[public]` nor `#[guard(G)]` |
 | `r10_zero_rtt_on_mutation` | R1, R10 | ADR 0014 (0-RTT replay) | enabling HTTP/3 0-RTT for mutations: the only opt-out is `Http3Options::dangerous_allow_zero_rtt_for_queries` (safe methods) |
+| `r1_admin_site_without_guard` | R1, R7 | 0.13 admin (unguarded admin) | `AdminSite::router` before `.guard(g)` (an `AdminSite<Unguarded>` has no router), and `.guard(Public)`: the route-level `Public` marker is not a `RouteGuard`, so there is no public admin |
+| `r1_mcp_endpoint_without_access_decision` | R1, R7 | 0.13 MCP (endpoint exposure) | `McpEndpoint::router` (the Streamable HTTP route) before `.guard(g)`, and `.guard(Public)` |
 
 R4, R6, R7 and R9 are enforced at run time (defaults, regression tests and posture probes), not by
 types; see the ADR's enforcement table.
@@ -44,7 +48,7 @@ types; see the ADR's enforcement table.
 cargo nextest run -p security_compile_fail
 ```
 
-`tests/compile_fail.rs` also checks that there are at least 19 cases (0.12.0), that each has a `.stderr`
+`tests/compile_fail.rs` also checks that there are at least 21 cases (0.13.0), that each has a `.stderr`
 and that each is listed in the table above with its rule.
 
 ## Pinned toolchain

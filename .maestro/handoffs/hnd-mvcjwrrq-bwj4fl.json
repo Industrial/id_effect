@@ -1,0 +1,8 @@
+{
+  "id": "hnd-mvcjwrrq-bwj4fl",
+  "task_id": "tsk-mvcjv4jp-snazrp",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-17T15:28:18.326Z",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.10/r10-t0-adr-skeletons.md",
+  "to_agent": "cli"
+}

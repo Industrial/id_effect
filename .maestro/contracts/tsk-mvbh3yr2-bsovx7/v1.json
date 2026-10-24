@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-2a710f",
+  "taskId": "tsk-mvbh3yr2-bsovx7",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T21:22:21.291Z",
+  "lockedAt": "2026-10-16T21:22:21.291Z",
+  "intent": "r09-e5-2b-oidc",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-ea850d",
+      "text": "Discovery, authorization-code + PKCE, state/nonce in the session, ID-token validation, callback handler; `OAuthClient` implemented for it. Integration test logs in against a Keycloak container (D5).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-229005",
+      "text": "Gate: `ID_EFFECT_REQUIRE_DOCKER=1 cargo nextest run -p id_effect_auth --features oidc`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-6e9c48",
+      "text": "Owns: `crates/id_effect_auth/src/oidc.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

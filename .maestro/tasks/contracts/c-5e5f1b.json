@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-5e5f1b",
+  "taskId": "tsk-mvdhzjr6-6xpm3i",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-18T07:22:15.120Z",
+  "lockedAt": "2026-10-18T07:22:15.120Z",
+  "intent": "r11-e1-9-dylint",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-f5122b",
+      "text": "labs/id_effect_lint (publish = false at Cargo.toml:2, nightly rustc_private at :22) moves to lints/id_effect_lints, outside the main workspace with its own rust-toolchain.toml (pinned nightly); the rustc lint plugins are ported to dylint_linting; the ast-grep rules stay usable (sgconfig.yml).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a848aa",
+      "text": "dx.lint#3: installable as a package — published to crates.io as id_effect_lints (r11-sc-publish adds the publish step; crate name availability recorded) and loadable through `[workspace.metadata.dylint] libraries = [{ git = ..., tag = ... }]`; #4: runs through `cargo dylint` (the clippy-style driver); #5: at least three lints emit MachineApplicable suggestions that `cargo dylint --fix` applies.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-654636",
+      "text": "New lint raw_sql_non_literal warns when a SqlClient query/execute (&str) receives a non-literal (0.11.0.md D9, ADR 0013 R5 second enforcement point).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f3be79",
+      "text": "dylint_testing UI tests per lint; .github/workflows/lint.yml runs `cargo dylint --all` on the workspace (SHA-pinned, permissions read); book appendix-d-workspace-tooling.md documents install and use; level labs → documented (5/8 + #5 = 6/8 planned, target 63).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7a35e1",
+      "text": "Gate: `cd lints/id_effect_lints && cargo test`; `cargo dylint --path lints/id_effect_lints --all -- --workspace`; `bash scripts/check-workflows.sh`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5855e3",
+      "text": "Owns: `lints/id_effect_lints/**`, `labs/id_effect_lint/**` (deleted), `.github/workflows/lint.yml`, `crates/id_effect/book/src/appendix-d-workspace-tooling.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

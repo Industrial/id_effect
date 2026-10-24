@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-f62814",
+  "taskId": "tsk-mvdh8or6-37dwa9",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-18T07:01:21.740Z",
+  "lockedAt": "2026-10-18T07:01:21.740Z",
+  "intent": "r11-e8-3-global-registry",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-942742",
+      "text": "dist.placement#5: GlobalRegistry with register(name, pid), whereis(name), unregister(name), resolvable from every node (today registry.rs:150 registers behaviours, not processes); an entry is removed when its process exits or its node goes down; registering a taken name fails with AlreadyRegistered.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5b34b4",
+      "text": "After a partition heals, conflicting registrations resolve deterministically to one owner (documented rule, e.g. lowest (incarnation, node id)); the losing process receives an exit signal with reason NameConflict; an Addr can be obtained by global name.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5705ea",
+      "text": "Tests `global_name_resolves_from_every_node`, `name_released_on_process_exit`, `name_released_on_node_down`, `conflicting_registration_after_heal_keeps_one`, `register_twice_fails_with_already_registered`; example 135_global_names.rs; book part7/ch39-01-global-registry.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-4109cf",
+      "text": "Gate: `cargo nextest run -p id_effect_node --all-features --test global_registry`; `cargo nextest run -p id_effect_node --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-844e19",
+      "text": "Owns: `crates/id_effect_node/src/{global_registry.rs,lib.rs,envelope.rs,mesh.rs}`, `crates/id_effect_node/tests/global_registry.rs`, `crates/id_effect_node/examples/135_global_names.rs`, `crates/id_effect/book/src/part7/ch39-01-global-registry.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

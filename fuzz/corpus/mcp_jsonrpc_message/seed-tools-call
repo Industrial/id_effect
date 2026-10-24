@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"call-7","method":"tools/call","params":{"name":"lookup","arguments":{"id":7,"ratio":1e2},"_meta":{"progressToken":"p1"}}}

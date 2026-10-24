@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "id": "c-0aa267",
+  "taskId": "tsk-mvbl55h5-z4i872",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T23:15:06.300Z",
+  "lockedAt": "2026-10-16T23:15:06.300Z",
+  "intent": "r09-sql-tls",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-868de5",
+      "text": "sqlx is built with rustls TLS for the pg and mysql features (aws-lc-rs provider, matching the rustls / jsonwebtoken already in the tree; no OpenSSL). `sslmode` (pg) and `ssl-mode` (mysql) in the URL are honoured, including verify-full / VERIFY_IDENTITY with a custom root CA.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-4770c9",
+      "text": "PgPoolConfig / MySqlPoolConfig expose the TLS mode and root certificate explicitly (not only through the URL), with a documented default. The default must not silently downgrade: document what `prefer` means and recommend `require` / verify modes for production.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-cddf16",
+      "text": "Live tests against TLS-enabled PostgreSQL and MySQL containers (self-signed CA generated in the test): a verify-full connection succeeds, a wrong CA fails with a typed error, and a server without TLS fails under `require`. SKIP without Docker; fail under ID_EFFECT_REQUIRE_DOCKER=1.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d5c631",
+      "text": "Book ch28-01 Backends: the plaintext note is replaced by a TLS section; CHANGELOG; MSRV 1.94; licences MIT/Apache/ISC.",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

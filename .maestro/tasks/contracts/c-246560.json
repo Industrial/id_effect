@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-246560",
+  "taskId": "tsk-mvblcbgd-lktftw",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T23:39:20.074Z",
+  "lockedAt": "2026-10-16T23:39:20.074Z",
+  "intent": "r09-w3-ledger",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-cf4ad0",
+      "text": "See below.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-cf30e0",
+      "text": "Gate: `ID_EFFECT_REQUIRE_DOCKER=1 cargo nextest run -p ledger`; `bash scripts/tier-conformance.sh` (all PASS)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0e883b",
+      "text": "Owns: `examples/reference/ledger/**`, root `Cargo.toml` member, `.github/workflows/ci.yml` (`reference-ledger` job), tier flips to `platform` in the new crates' manifests",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

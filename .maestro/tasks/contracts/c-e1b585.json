@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-e1b585",
+  "taskId": "tsk-mvcpexxx-4ohdhl",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T18:15:45.419Z",
+  "lockedAt": "2026-10-17T18:15:45.419Z",
+  "intent": "r10-e7-3-templates-preview",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-0aa4e2",
+      "text": "minijinja HTML + text templates with layouts and partials (#2); `MailPreviews` router at `/_mail/previews` lists and renders registered previews, re-reading templates from disk in the dev profile (#3); Mailpit container (`axllent/mailpit` pinned, SMTP 1025, API 8025). Tests `layout_wraps_html_and_text`, `preview_index_lists_registered_mails`, container test `smtp_delivery_reaches_mailpit`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2ba355",
+      "text": "Gate: `<docker> -p id_effect_mail -p id_effect_test --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-8e2cca",
+      "text": "Owns: `crates/id_effect_mail/src/{template.rs,preview.rs}`, `crates/id_effect_test/src/containers/mailpit.rs` (+ one `mod` line)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

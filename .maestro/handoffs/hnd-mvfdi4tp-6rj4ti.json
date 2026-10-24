@@ -1,0 +1,9 @@
+{
+  "id": "hnd-mvfdi4tp-6rj4ti",
+  "task_id": "tsk-mvfdi1tt-t8vr7z",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-19T14:52:16.237Z",
+  "agent_id": "e3-openapi",
+  "spec_path": "/data/Code/rust/id_effect/.tmp/wt-012/.maestro/specs/releases/0.12/r12-e12-4-openapi-asyncapi.md",
+  "to_agent": "cli"
+}

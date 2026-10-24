@@ -11,6 +11,7 @@ numbers that gates read are exported to JSON and committed here.
 | `v0.6-rerun.json`, `v0.7.json`, [`REPORT-0.7.md`](REPORT-0.7.md) | The 0.7.0 release comparison: a same-session re-run of `bench/v0.6` against 0.7.0 (`r-bench-report`) |
 | `v0.9.json`, `v0.10.json`, `v0.10-fiber-registry.json` | The 0.10.0 exit gate: `v0.9.0` (a `git archive` export) and 0.10.0 with the `fiber-registry` feature off and on, one session ([0.10 exit](#010-exit-r10-w3-kpis)) |
 | `v0.11.json`, `v0.12.json` | The 0.12 bench gates: the 0.11.0 tree (`release/0.11.0`, a `git archive` export) and 0.12, one session; `v0.12.json` also carries the load, CPU and toolchain of every run, the HTTP/3 trials and the soak ([RPC gates](#rpc-gates-012)) |
+| `v0.13.json` | The 0.13 breadth benches (`r13-e-benches`): every gate bench on the 0.13 tree, with the measurements the D15 budgets of the i18n and UI benches are written from ([Breadth gates (0.13)](#breadth-gates-013)) |
 | `fixtures/*.json` | Synthetic exports for `bench-compare.sh --self-test` |
 | `compile-0.8.json` | Build loop of the template app (`examples/cli-minimal`) for 0.8: cold build, incremental rebuild, boot ([Compile time](#compile-time)) |
 | `dx-kpis-0.8.json`, `dx-kpis-0.9.json`, `dx-kpis-0.10.json` | The DX KPIs of PLAN-OF-PLANS §8 measured by `scripts/dx-kpis.sh` (K1, K4, K5; K3 from 0.9; K2 and K6 from 0.10, [Rebuild and release build](#rebuild-and-release-build-k2-k6)) |
@@ -28,6 +29,9 @@ numbers that gates read are exported to JSON and committed here.
 | `delta` | `rpc/unary_json` over `rpc/axum_json_handler` | new − new ≤ 3000 ns (no noise band; [Unary budget (D5)](#unary-budget-d5)) |
 | `pair` | `rpc/batch_50` over `rpc/sequential_50` | new / new ≤ 0.20 (no noise band; [RPC gates](#rpc-gates-012)) |
 | `pair` | `h3_loss/h3_p99` over `h3_loss/h2_p99` | new / new ≤ 1.00 (noise 0.05; netem in CI, [HTTP/3 under loss](#http3-under-loss-d9)) |
+| `pair` | `orm/eager_100x10` over `orm/n_plus_one_100x10` | new / new ≤ 0.25 (no noise band; [Breadth gates (0.13)](#breadth-gates-013)) |
+| `delta` | `i18n/format_plural` over `i18n/empty_iter` | new − new ≤ 496 ns, the measured median × 1.5 (D15; no noise band; [Breadth gates (0.13)](#breadth-gates-013)) |
+| `delta` | `ui/render_list_50` over `ui/empty_iter` | new − new ≤ 14,710 ns, the measured median × 1.5 (D15; no noise band) |
 | `report` | every other listed or exported bench | always (ratio is printed) |
 
 - **Noise (Q7):** a `budget` ratio that misses its limit by at most 0.05 is reported
@@ -42,15 +46,18 @@ numbers that gates read are exported to JSON and committed here.
   is gated in that change already. From 0.12 the batch gate and the HTTP/3 gate are pairs
   (two measurements of the same stack); the self-test covers the kind with
   `fixtures/gates-pair.toml`, and every fixture carries the four ids of the two pairs, and
-  the two of the unary delta, at passing values.
+  the two of the unary delta, at passing values. From 0.13 the eager-loading gate is a third
+  pair, and every fixture also carries `orm/eager_100x10` and `orm/n_plus_one_100x10` (0.10).
 - **Delta gates** (`kind = "delta"`, `over = "<id>"`) are an absolute difference inside one
   run: `new[id] - new[over]` in the metric's unit (ns), against `limit` in ns. The `RATIO`
   column then shows the difference (`+4650`), and the result the ratio for information
   (`PASS (ratio 6.17)`). The global 0.05 band does not apply; only a `noise` set on the gate
-  (in ns) does.
+  (in ns) does. From 0.13 the D15 budgets are delta gates over an empty iteration
+  (`i18n/empty_iter`, `ui/empty_iter`, about 0.2 ns), which makes them absolute budgets on the
+  bench's own median that need no base; every fixture carries their four ids at passing values.
 - **`--enforce KINDS`** (comma list of `budget`, `improve`, `pair`, `delta`): only those
   kinds' missed limits `FAIL`; the others print `IGNORED`. A missing id still `FAIL`s. The CI
-  job uses `--enforce budget,delta`.
+  job uses `--enforce budget,delta,pair`.
 - **Exit code:** `bench-compare.sh` exits 1 on any `FAIL` and 2 on misuse.
 - **Waivers:** a remaining violation after the one optimisation leaf Q7 allows needs
   an explicit human waiver (H2), recorded in `REPORT-0.7.md`. The gate itself is
@@ -66,6 +73,9 @@ numbers that gates read are exported to JSON and committed here.
 | `id_effect_axum` | `gate_request` | `gate/axum_request_oneshot`, `gate/axum_request_caps`, `gate/axum_request_bare`, `gate/axum_request_secure_stack` |
 | `id_effect_rpc` (feature `postcard`) | `gate_rpc` | `rpc/unary_json`, `rpc/axum_json_handler`, `rpc/unary_postcard`, `rpc/sequential_50`, `rpc/batch_50` |
 | `id_effect_rpc` (feature `http3`) | `h3_loss` (no criterion harness; writes criterion estimates) | `h3_loss/h2_p99`, `h3_loss/h3_p99`, `h3_loss/h2_p50`, `h3_loss/h3_p50` |
+| `id_effect_sql` (features `repository,sqlite`) | `repository_eager` | `orm/eager_100x10`, `orm/n_plus_one_100x10`, `orm/flat_100x10` |
+| `id_effect_i18n` | `format` | `i18n/format_plural`, `i18n/empty_iter` |
+| `id_effect_axum` (feature `ui`) | `ui_render` | `ui/render_list_50`, `ui/empty_iter` |
 
 `scripts/bench-run.sh` lists each bench as `package:bench[:features]` and passes the features to
 `cargo bench`. The 10,000-stream soak is an example, not a bench:
@@ -364,6 +374,152 @@ construction (they are "must improve on v0.6"; 0.11 already has the improvement)
 |---|---|---|---|
 | `v0.11.json` → `v0.12.json` | all PASS (max `bench_schedule_retry_overhead` 1.004; `channel_spsc_10k` 0.86) | secure stack +2,648 ns PASS, batch 0.111 PASS, h3 0.065 PASS | 0.96, 1.02, 1.02 FAIL (by construction) |
 | `v0.6.json` → `v0.12.json` | all PASS (max `bench_schedule_retry_overhead` 1.31 of 2.0) | as above | all PASS |
+
+## Breadth gates (0.13)
+
+The bench gates of `.maestro/specs/releases/0.13.0.md` (`r13-e-benches`, decision D15). First
+measured 2026-10-22 00:13–00:45 UTC on the reference machine (AMD Ryzen 9 7950X, 32 threads,
+`performance` governor, `rustc 1.99.0-nightly (af3d95584 2026-07-09)`, Linux 6.18.55), tree
+`1a7dcb24` plus this leaf's benches, criterion defaults, with `bash scripts/bench-run.sh
+--baseline v0.13`; the D15 budgets are written from that run. **Not an idle machine:** other
+agents were compiling the workspace, the 1-minute load ranged 15–170 during the run (36 at the
+start, 20 at the end). The ratios below are within one run and held across three runs; the
+absolute medians are an upper bound.
+
+`v0.13.json` is the export of the leaf's Gate command run end to end on 2026-10-24
+08:26–08:43 UTC, tree `70f407ad` (`release/0.13.0`), same machine and toolchain:
+`bash scripts/bench-run.sh --baseline v0_13_r4`, `bench-export.sh`, then
+`bash scripts/bench-compare.sh docs/benchmarks/v0.12.json` on the export ([0.13 against
+0.12](#013-against-012)). It is the quietest of the three gate runs: 1-minute load 9–20 (sampled
+every 30 s), apart from 08:36–08:39 UTC when the run's own `h3_loss` build and proxies took it to
+47–103, and 11–20 while `orm/*`, `i18n/*` and `ui/*` ran. Its `.session` keeps that run's load and
+figures, and the two earlier gate runs' (2026-10-24 07:48–08:11 UTC, tree `f57f10ba`, load
+21–180; 2026-10-22, tree `1a7dcb24`, load 15–170) under `.session.earlier`. It is still not the
+idle machine the leaf asks for: two unrelated single-thread processes held a core each and the
+other leaves' agents share the machine during the 0.13.0 build-out, so an idle-machine (or
+`BENCH_RUNNER`) run is still owed, by the owner or the exit leaf.
+
+| Bench (`package`, `benches/…`) | What one iteration does |
+|---|---|
+| `orm/eager_100x10` (`id_effect_sql`, `repository_eager.rs`, features `repository,sqlite`) | `Repository::with(Order::lines()).find_all()`: 100 orders, then their 1,000 lines in one `IN (…)` query (2 queries), tenant and soft-delete scoping on, rows decoded into `Vec<Loaded<Order>>` |
+| `orm/n_plus_one_100x10` (same) | the same 100 orders, then one `find_by(order_id = ?)` per order in sequence (101 queries, `order_id` indexed) |
+| `orm/flat_100x10` (same, report only) | the same rows as two plain `find_all()` reads, with no relation work: the floor eager loading cannot go below on this driver |
+| `i18n/format_plural` (`id_effect_i18n`, `format.rs`) | `Catalog::format` of a plural message with two arguments in `de-AT` (falls back to `de`), counts cycling 1, 2, 5, 21, bidi isolation on |
+| `ui/render_list_50` (`id_effect_axum`, `ui_render.rs`, feature `ui`) | a full page to a `String`: a list component with 50 row components (as slots), each with a checkbox and an htmx delete button and two values maud must escape, inside `BasicLayout` |
+| `i18n/empty_iter`, `ui/empty_iter` (same binaries) | `black_box(())`: the harness floor the two D15 budgets are measured over |
+
+All of them run on SQLite in memory or in process; every gate id is in `gates.toml`, the benches
+in `scripts/bench-run.sh`.
+
+| Gate | Kind | Measured (median) | Limit | Result |
+|---|---|---|---|---|
+| `orm/eager_100x10 / orm/n_plus_one_100x10` | `pair`, noise 0 | 1.192 ms / 3.186 ms = **0.374** (re-runs: 0.366, 0.349, 0.334, 0.313; end-to-end gate runs 1.330 / 3.195 ms = 0.416 and, in `v0.13.json`, 1.160 / 3.333 ms = 0.348) | 0.45 (owner decision 2026-10-24; D15 wrote 0.25) | PASS (see below) |
+| `i18n/format_plural − i18n/empty_iter` | `delta`, noise 0 | **330.9 ns** (re-run 321.8 ns, end-to-end 329.3 and 326.6 ns; empty iteration 0.19–0.26 ns) | 496 ns (330.9 × 1.5, D15) | PASS; owner confirmed 2026-10-24 |
+| `ui/render_list_50 − ui/empty_iter` | `delta`, noise 0 | **9,807 ns** (re-run 10,136 ns, end-to-end 10,091 and 10,118 ns; empty iteration 0.19 ns) | 14,710 ns (9,807 × 1.5, D15) | PASS; owner confirmed 2026-10-24 |
+
+**The eager-loading pair missed 0.25, and the driver sets the floor**, so the owner raised the
+limit to 0.45 for 0.13.0 (decision 1 below); the measurements that led there follow.
+Eager loading does what it should (2 queries instead of 101, 2.7× faster than the N+1 loop),
+but on `SqliteSqlClient` the rows, not the round trips, dominate: sqlx-sqlite returns 1,000 rows
+in about 670 µs (0.67 µs a row, measured with `sqlx::query(…).fetch_all` alone) and a 10-row
+query about 30 µs. With 10 children per parent the N+1 loop spends about 2.3 ms on its 99 extra
+queries and 0.9 ms on the same 1,100 rows eager loading reads, so even `orm/flat_100x10` (no
+relation work at all) is 0.290 of `n_plus_one`. Eager loading adds about 270 µs over `flat`
+(1.192 against 0.925 ms): the owner key column decoded and rendered to a `String` per child
+row, the `HashMap` grouping and the 100-value `IN` list. Reaching 0.25 needs both a cheaper
+relation pass (`repository/relations.rs`) and fewer microseconds per row in the SQLite driver
+(`sqlite/`), neither in this leaf's files; or an owner decision on the limit (D15 wrote it
+before measuring), which was taken: 0.45. It is a `pair`, so it reads the head export only, and
+`bench.yml` (`--enforce budget,delta,pair`) enforces it as well. A re-run on 2026-10-22 (01:00
+UTC, 1-minute load 16–30, 1 s warm-up, 4 s measurement) gave the same picture: eager 1.194 ms,
+N+1 3.259 ms, flat 0.847 ms, so eager / N+1 = 0.366 and flat / N+1 = 0.260.
+Even the floor misses 0.25. A third run (01:12 UTC, criterion defaults, 1-minute load 29–145,
+tree `ed8c17ef` plus the empty-iteration benches) gave eager 1.128 ms, N+1 3.234 ms, flat
+0.937 ms: 0.349, floor 0.290.
+With raw sqlx at about 0.67 µs a row, two statements over 1,100 rows cost about 0.8 ms, already a
+quarter of the N+1 loop, so no change in `relations.rs` alone can reach the limit, and no change
+in this leaf's files (the bench shape is fixed by the leaf: 100 × 10, SQLite in memory) can
+either.
+
+A fourth run on 2026-10-24 (current `release/0.13.0` tree, 1-minute load about 108, 1 s warm-up,
+3–4 s measurement) gave eager 1.244 ms, N+1 3.726 ms, flat 0.938 ms: **0.334**, floor 0.252. Two
+bench-side knobs were tried and rejected, since neither changes what the gate compares and
+neither helped: a sqlx row channel of 2,048 rows instead of 50 (`row_buffer_size`, so the
+1,000-row statement never waits on the consumer) made eager slower (1.370 ms against 3.405 ms,
+0.402), and a current-thread tokio runtime instead of the multi-thread one gave 1.191 ms against
+3.459 ms (0.344). The bench keeps the default pool and the multi-thread runtime a server uses.
+
+The first end-to-end gate run of 2026-10-24 (07:48 UTC, now `.session.earlier` in `v0.13.json`,
+1-minute load 21–180) gave eager 1.330 ms,
+N+1 3.195 ms, flat 0.936 ms: **0.416**, floor 0.293. Eager's confidence interval was wide
+(1.57–2.00 ms on the mean against N+1's 3.22–3.31 ms): its 1,000-row statement is the one most
+exposed to a busy machine, so the ratio rises with load rather than falling. Nothing in the client
+between the repository and sqlx can be shaved from the bench side either: `SqliteSqlClient::query`
+(`crates/id_effect_sql/src/sqlite/client.rs`) is one sqlx `fetch_all` followed by `decode_rows`,
+so the per-row cost the floor measures is the sqlx-sqlite driver's (its worker thread and row
+channel), and reaching 0.25 on this shape means a different SQLite driver path, not a tuning knob.
+
+The quietest runs so far, both on 2026-10-24 with tree `70f407ad` and no change to the bench:
+a single-bench run at 08:25 UTC (1-minute load 10–14) gave eager 1.196 ms, N+1 3.823 ms, flat
+1.013 ms: **0.313**, floor 0.265; the end-to-end gate run stored as `v0.13.json` (08:26–08:43
+UTC, load 11–20 while `orm/*` ran) gave eager 1.160 ms, N+1 3.333 ms, flat 0.838 ms: **0.348**,
+floor 0.251. Lower load lowers the ratio, as the 0.416 run suggested, but not to 0.25.
+Eager loading reads the same rows as `flat` and does strictly more with them, and in the seven runs
+it cost 0.05–0.12 of the N+1 loop more than `flat`, while `flat / N+1` itself read 0.251–0.293
+and never below 0.25. An idle machine is unlikely to change that; the absolute numbers are
+re-measured by `bench.yml` on the runner (decision 3).
+
+**Owner decisions (taken 2026-10-24, with D15).**
+
+1. *Eager pair limit* (release spec `bench_gates.eager`, exit table, leaf criterion 1): raised from
+   0.25 to **0.45** for 0.13.0. Eager loading is about 2.9× faster than the N+1 loop, and
+   sqlx-sqlite's per-row cost puts even two plain reads at 0.25–0.29, so 0.25 is below the driver
+   floor; 0.45 holds every run so far (0.313–0.416). Follow-up F66 records the SQLite driver's
+   per-row cost (`crates/id_effect_sql/src/sqlite/`; `decode` in `value.rs` copies the
+   storage-class name into a `String` for every value read, a first candidate) to bring the pair
+   back toward 0.25.
+2. *D15 budget numbers and kind* (release spec owner item 8): confirmed as they are — 496 ns and
+   14,710 ns, as `delta` gates over `*/empty_iter` (below). The CI bench runner re-measures them.
+3. *Idle-machine measurement*: satisfied by `bench.yml` on the runner; `v0.13.json` stays the
+   quietest reference-machine run (load 9–20).
+
+The eight `fixtures/*.json` edits (each fixture carries the eager pair's two ids and the D15
+gates' four at passing values so `--self-test` stays green) fall under `docs/benchmarks/**`, which
+the release spec's "File ownership" table gives to `r13-e-benches` (W4). The leaf row's own
+Owns list names only `docs/benchmarks/{gates.toml,README.md,v0.13.json}`; without the fixture
+edits, every new gate id would be missing from the synthetic exports and `--self-test` would
+fail, so they are part of adding the gates. Listed here for the owner's review at exit.
+
+**Why the D15 budgets are `delta` gates over an empty iteration.** `gates.toml` is compared
+against `v0.12.json` (the release gate) and, in CI, against the parent commit; a `budget` or
+`report` id must exist in both files, and neither has these benches, so such a row would fail on
+the change that adds them, and a ratio against `v0.13.json` itself proves nothing. A `delta` reads
+the new export only: `new[id] − new[empty_iter] ≤ limit` in ns is "median ≤ measured median ×
+1.5" up to the 0.2 ns floor, with no base. So both budgets are enforced wherever `gates.toml` is
+read: the release gate (`bench-compare.sh docs/benchmarks/v0.12.json NEW`) and `bench.yml`
+(`--enforce budget,delta,pair`), with no change to either script. Each bench binary has its own
+empty iteration, so `--only` one of them still finds both ids. This departs from the row's wording
+(`a budget gate … at measured p50 × 1.5`): the number is that budget, the kind is `delta`
+because `bench-compare.sh`'s `budget` kind is a ratio against a base that has the bench. The
+owner confirms the kind with the numbers at the 0.13.0 exit (decision 2 above).
+
+### 0.13 against 0.12
+
+`bash scripts/bench-compare.sh docs/benchmarks/v0.12.json docs/benchmarks/v0.13.json` (base from
+2026-10-19, other session): every 0.12 gate unchanged and green apart from the `improve` gates,
+which fail against a release that already has the improvement, as at the 0.10 and 0.12 exits.
+
+| Comparison | `budget` (7) | `delta` / `pair` (0.12) | `improve` (3) | new `pair` | new `delta` (D15) |
+|---|---|---|---|---|---|
+| `v0.12.json` → first run (2026-10-22, `1a7dcb24`) | all PASS (max `coord/queue_bounded_10k` 1.225) | secure stack +2,759 ns PASS, unary RPC +1,782 ns PASS, batch 0.092 PASS, h3 0.063 PASS (userspace proxies) | 0.856 PASS, 0.978 and 1.031 FAIL (by construction) | eager 0.374 FAIL | i18n +331 ns, UI +9,807 ns PASS |
+| `v0.12.json` → first end-to-end gate run (2026-10-24 07:48 UTC, `f57f10ba`, load 21–180; exit 1) | all PASS (max `coord/queue_bounded_10k` 1.082) | secure stack +2,659 ns PASS, unary RPC +1,812 ns PASS, batch 0.082 PASS, h3 0.047 PASS (userspace proxies) | 0.956, 1.014 and 1.040 FAIL (by construction) | eager 0.416 FAIL | i18n +329 ns, UI +10,091 ns PASS |
+| `v0.12.json` → `v0.13.json` (end-to-end gate run, 2026-10-24 08:26 UTC, `70f407ad`, load 9–20; exit 1) | all PASS (max `coord/channel_spsc_10k` 1.116) | secure stack +2,698 ns PASS, unary RPC +1,768 ns PASS, batch 0.086 PASS, h3 0.064 PASS (userspace proxies) | 1.103, 0.984 and 0.990 FAIL (by construction) | eager 0.348 PASS at 0.45 (FAIL at the earlier 0.25) | i18n +327 ns, UI +10,118 ns PASS |
+
+The streaming group against 0.12, for `r13-f-stream-chunking` (pull path only, "batch throughput
+unchanged within noise"): `stream/pull_map_10k` 0.998, `stream/map_effect_1k` 0.997,
+`phase0/bench_stream_throughput_collect` 1.017 in the first run; 1.005, 1.012 and 1.050 in the
+first end-to-end run; 1.005, 1.049 and 1.007 in `v0.13.json`, every one inside the 0.05 noise
+band.
 
 ## 0.10 exit (`r10-w3-kpis`)
 

@@ -1,0 +1,8 @@
+{
+  "id": "hnd-mvdfsdqy-u2cjrp",
+  "task_id": "tsk-mvdfsdm7-rk163d",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-18T06:20:41.242Z",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.11/r11-m22-rebase.md",
+  "to_agent": "cli"
+}

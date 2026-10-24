@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-58c9b3",
+  "taskId": "tsk-mvcpey4b-b89h8y",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T19:00:59.831Z",
+  "lockedAt": "2026-10-17T19:00:59.831Z",
+  "intent": "r10-auth8-accounts",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-285b7f",
+      "text": "Registration, email verification, forgot/reset password; single-use expiring tokens stored as SHA-256, compared in constant time (pattern of `src/apikey.rs`); reset re-hashes through `PasswordHasher` and revokes sessions; forgot-password answers identically for unknown accounts; `AccountNotifier` trait implemented by `id_effect_mail`. Tests `reset_token_is_single_use`, `expired_token_rejected`, `token_stored_hashed`, `forgot_password_response_is_uniform`, `reset_revokes_sessions`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-831261",
+      "text": "Gate: `<pg> -p id_effect_auth --features accounts`; `-p id_effect_mail --features auth`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b5cbe7",
+      "text": "Owns: `crates/id_effect_auth/src/account/**` (feature `accounts` = `pg` + `axum`), `crates/id_effect_auth/migrations/` (token table), `crates/id_effect_mail/src/auth.rs` (feature `auth`), `book/src/part6/ch30-03-passwords-sessions.md` (section)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

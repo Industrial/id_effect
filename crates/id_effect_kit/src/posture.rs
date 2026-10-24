@@ -22,6 +22,10 @@
 //! | [`QUIC_RETRY_ON`] | the app states QUIC address validation is off, or `QuicEndpointConfig::dangerous_no_retry` was taken (C6) |
 //! | [`HTTP3_WITH_TLS`] | the host enables HTTP/3 without a TLS certificate (`HostConfig::posture_warnings`) |
 //! | [`NO_DEV_CERTIFICATE`] | outside `dev` and `test`, the served certificate is the `id-effect dev` certificate ([`is_dev_certificate`], C13) |
+//! | [`ADMIN_GUARDED`] | the app states its admin back office is [`Surface::Open`], or a route under the admin prefix is public or undeclared ([`Posture::admin_routes`]) |
+//! | [`MCP_GUARDED`] | the app states its MCP endpoint is [`Surface::Open`] or serves it as a public route ([`Posture::mcp_routes`]), or `McpServer::dangerous_mcp_write_tools` was taken |
+//! | [`PROMPTS_NOT_LOGGED`] | `AiConfig::dangerous_log_prompts` was taken (or the app states prompts are logged) |
+//! | [`TENANT_NOT_FROM_HEADER`] | `TenantResolver::dangerous_tenant_from_header` was taken (or the app states its resolver reads a header) |
 //! | [`NO_UNACCEPTED_OPT_OUT`] | any recorded opt-out is not in `security.accepted_risks` with a reason |
 //!
 //! An opt-out the operator accepted — listed under [`ACCEPTED_RISKS_KEY`] in the profile's
@@ -100,11 +104,31 @@ pub const QUIC_RETRY_ON: &str = "quic retry on";
 pub const HTTP3_WITH_TLS: &str = "HTTP/3 only with TLS";
 /// Probe: outside `dev` and `test`, the served certificate is not the `id-effect dev` one (C13).
 pub const NO_DEV_CERTIFICATE: &str = "no dev certificate";
+/// Probe: the admin back office is mounted only behind a guard (or absent; ADR 0013 R1, R7).
+pub const ADMIN_GUARDED: &str = "admin guarded";
+/// Probe: the MCP endpoint is mounted only behind a guard (or absent) and its write tools are
+/// not exposed without an accepted opt-out (ADR 0013 R1, R7).
+pub const MCP_GUARDED: &str = "mcp guarded";
+/// Probe: AI prompts and completions are not recorded in spans or logs (ADR 0013 R3, R10).
+pub const PROMPTS_NOT_LOGGED: &str = "prompts not logged";
+/// Probe: the tenant is never read from a request header (ADR 0015 D10, ADR 0013 R1, R10).
+pub const TENANT_NOT_FROM_HEADER: &str = "tenant not from header";
 /// Probe: every recorded opt-out is an accepted risk with a reason.
 pub const NO_UNACCEPTED_OPT_OUT: &str = "no unaccepted opt-out";
 
+/// The posture id `id_effect_ai::AiConfig::dangerous_log_prompts` records ([`PROMPTS_NOT_LOGGED`]).
+pub const DANGEROUS_LOG_PROMPTS: &str = "id_effect_ai::AiConfig::dangerous_log_prompts";
+/// The posture id `id_effect_ai::mcp::McpServer::dangerous_mcp_write_tools` records
+/// ([`MCP_GUARDED`]).
+pub const DANGEROUS_MCP_WRITE_TOOLS: &str =
+  "id_effect_ai::mcp::McpServer::dangerous_mcp_write_tools";
+/// The posture id `id_effect_authz::TenantResolver::dangerous_tenant_from_header` records
+/// ([`TENANT_NOT_FROM_HEADER`]).
+pub const DANGEROUS_TENANT_FROM_HEADER: &str =
+  "id_effect_authz::TenantResolver::dangerous_tenant_from_header";
+
 /// Every probe, in report order.
-pub const PROBES: [&str; 15] = [
+pub const PROBES: [&str; 19] = [
   CONSOLE_GUARDED,
   DOCS_CLOSED,
   MESH_ENCRYPTED,
@@ -119,6 +143,10 @@ pub const PROBES: [&str; 15] = [
   QUIC_RETRY_ON,
   HTTP3_WITH_TLS,
   NO_DEV_CERTIFICATE,
+  ADMIN_GUARDED,
+  MCP_GUARDED,
+  PROMPTS_NOT_LOGGED,
+  TENANT_NOT_FROM_HEADER,
   NO_UNACCEPTED_OPT_OUT,
 ];
 
@@ -284,6 +312,11 @@ enum Stated {
   Pass(String),
   Fail(String),
   Absent(String),
+  /// Broken by the named opt-out: accepted with it, a failure otherwise.
+  OptedOut {
+    why: String,
+    id: &'static str,
+  },
 }
 
 /// The inputs of the startup check: the profile, the accepted risks and what the app states
@@ -310,6 +343,10 @@ pub struct Posture {
   quic_retry: Option<Stated>,
   http3: Option<Stated>,
   certificate: Option<Stated>,
+  admin: Option<Stated>,
+  mcp: Option<Stated>,
+  prompts: Option<Stated>,
+  tenant: Option<Stated>,
 }
 
 /// One origin allowlist the app states ([`Posture::realtime_origins`]).
@@ -339,6 +376,10 @@ impl Posture {
       quic_retry: None,
       http3: None,
       certificate: None,
+      admin: None,
+      mcp: None,
+      prompts: None,
+      tenant: None,
     }
   }
 
@@ -658,6 +699,117 @@ impl Posture {
     self.origin_policy("WebTransport", config.origin_policy())
   }
 
+  /// How the admin back office is served ([`ADMIN_GUARDED`]). Replaces an earlier admin
+  /// statement.
+  pub fn admin(mut self, surface: Surface) -> Self {
+    self.admin = Some(surface_stated("the admin", surface));
+    self
+  }
+
+  /// The admin is a guarded `AdminSite` ([`ADMIN_GUARDED`] passes): the typestate leaves no
+  /// other way to mount one.
+  #[cfg(feature = "admin")]
+  pub fn admin_site(mut self, site: &id_effect_admin::AdminSite<id_effect_admin::Guarded>) -> Self {
+    let policies: Vec<&str> = site.guards().policies().collect();
+    self.admin = Some(Stated::Pass(format!(
+      "the admin is behind its guards ({})",
+      policies.join(", ")
+    )));
+    self
+  }
+
+  /// The admin routes of a typed router's `AccessReport`, those under `prefix` (`/admin`):
+  /// [`ADMIN_GUARDED`] fails when one is public or undeclared, and is not applicable when there
+  /// is none. Replaces an earlier admin statement.
+  #[cfg(feature = "web")]
+  pub fn admin_routes(
+    mut self,
+    prefix: &str,
+    report: &id_effect_axum::route::AccessReport,
+  ) -> Self {
+    self.admin = Some(routes_under("the admin", prefix, report));
+    self
+  }
+
+  /// How the MCP Streamable HTTP endpoint is served ([`MCP_GUARDED`]). Replaces an earlier MCP
+  /// statement.
+  pub fn mcp(mut self, surface: Surface) -> Self {
+    self.mcp = Some(surface_stated("the MCP endpoint", surface));
+    self
+  }
+
+  /// The MCP endpoint is a guarded `McpEndpoint` ([`MCP_GUARDED`] passes unless
+  /// `dangerous_mcp_write_tools` was taken and not accepted): the typestate leaves no other way
+  /// to mount one.
+  #[cfg(feature = "mcp")]
+  pub fn mcp_endpoint(
+    mut self,
+    endpoint: &id_effect_ai::mcp::McpEndpoint<id_effect_ai::mcp::Guarded>,
+  ) -> Self {
+    let policies: Vec<&str> = endpoint.guards().policies().collect();
+    self.mcp = Some(Stated::Pass(format!(
+      "the MCP endpoint {} is behind its guards ({})",
+      endpoint.path(),
+      policies.join(", ")
+    )));
+    self
+  }
+
+  /// The MCP routes of a typed router's `AccessReport`, those under `path` (`/mcp`):
+  /// [`MCP_GUARDED`] fails when one is public or undeclared, and is not applicable when there is
+  /// none. Replaces an earlier MCP statement.
+  #[cfg(feature = "web")]
+  pub fn mcp_routes(mut self, path: &str, report: &id_effect_axum::route::AccessReport) -> Self {
+    self.mcp = Some(routes_under("the MCP endpoint", path, report));
+    self
+  }
+
+  /// Whether AI prompts and completions are recorded ([`PROMPTS_NOT_LOGGED`]): `true` fails the
+  /// probe unless [`DANGEROUS_LOG_PROMPTS`] is an accepted risk.
+  pub fn prompts_logged(mut self, logged: bool) -> Self {
+    self.prompts = Some(if logged {
+      Stated::OptedOut {
+        why: "AI prompts and completions are recorded in span annotations".to_owned(),
+        id: DANGEROUS_LOG_PROMPTS,
+      }
+    } else {
+      Stated::Pass("AI prompts and completions are not recorded".to_owned())
+    });
+    self
+  }
+
+  /// [`prompts_logged`](Self::prompts_logged) from the app's `AiConfig`
+  /// (`AiConfig::logs_prompts`).
+  #[cfg(feature = "ai")]
+  pub fn ai_config(self, config: &id_effect_ai::AiConfig) -> Self {
+    self.prompts_logged(config.logs_prompts())
+  }
+
+  /// The request header the tenant resolver reads, if any ([`TENANT_NOT_FROM_HEADER`]): a header
+  /// fails the probe unless [`DANGEROUS_TENANT_FROM_HEADER`] is an accepted risk.
+  pub fn tenant_header(mut self, header: Option<&str>) -> Self {
+    self.tenant = Some(match header {
+      Some(name) => Stated::OptedOut {
+        why: format!(
+          "the tenant is read from the request header `{name}`, which any client can set"
+        ),
+        id: DANGEROUS_TENANT_FROM_HEADER,
+      },
+      None => Stated::Pass(
+        "the tenant comes from the principal's claim or a Host allowlist, never a header"
+          .to_owned(),
+      ),
+    });
+    self
+  }
+
+  /// [`tenant_header`](Self::tenant_header) from the app's `TenantResolver`
+  /// (`TenantResolver::tenant_header`).
+  #[cfg(feature = "authz")]
+  pub fn tenant_resolver(self, resolver: &id_effect_authz::TenantResolver) -> Self {
+    self.tenant_header(resolver.tenant_header())
+  }
+
   /// The profile checked.
   pub fn profile(&self) -> &str {
     &self.profile
@@ -697,6 +849,10 @@ impl Posture {
       (QUIC_RETRY_ON, self.quic_retry.as_ref()),
       (HTTP3_WITH_TLS, self.http3.as_ref()),
       (NO_DEV_CERTIFICATE, self.certificate.as_ref()),
+      (ADMIN_GUARDED, self.admin.as_ref()),
+      (MCP_GUARDED, self.mcp.as_ref()),
+      (PROMPTS_NOT_LOGGED, self.prompts.as_ref()),
+      (TENANT_NOT_FROM_HEADER, self.tenant.as_ref()),
     ];
     let mut probes: Vec<Probe> = stated
       .into_iter()
@@ -719,6 +875,20 @@ impl Posture {
       .map(|o| o.id.as_str())
       .collect();
     let (status, detail) = match stated {
+      Some(Stated::OptedOut { why, id }) => {
+        let mut missing = unaccepted.clone();
+        if self.accepted.reason(id).is_none() && !missing.contains(id) {
+          missing.insert(0, id);
+        }
+        if missing.is_empty() {
+          (ProbeStatus::Accepted, format!("accepted risk: {id}"))
+        } else {
+          (
+            ProbeStatus::Fail,
+            format!("{why}; opt-out not accepted: {}", missing.join(", ")),
+          )
+        }
+      }
       Some(Stated::Fail(why)) if unaccepted.is_empty() => (ProbeStatus::Fail, why.clone()),
       Some(Stated::Fail(why)) => (
         ProbeStatus::Fail,
@@ -883,6 +1053,14 @@ fn default_verdict(name: &str) -> (ProbeStatus, String) {
       ProbeStatus::NotApplicable,
       "no TLS certificate stated".to_owned(),
     ),
+    ADMIN_GUARDED => (
+      ProbeStatus::NotApplicable,
+      "no admin back office stated".to_owned(),
+    ),
+    MCP_GUARDED => (
+      ProbeStatus::NotApplicable,
+      "no MCP endpoint stated".to_owned(),
+    ),
     _ => (
       ProbeStatus::Pass,
       "no opt-out recorded; the default is on".to_owned(),
@@ -918,8 +1096,45 @@ fn covers(name: &str, id: &str) -> bool {
     REALTIME_ORIGINS_SET => id.ends_with("::dangerous_any_origin"),
     ZERO_RTT_OFF => id.ends_with("::dangerous_allow_zero_rtt_for_queries"),
     QUIC_RETRY_ON => id == "id_effect_platform::QuicEndpointConfig::dangerous_no_retry",
-    HTTP3_WITH_TLS | NO_DEV_CERTIFICATE => false,
+    HTTP3_WITH_TLS | NO_DEV_CERTIFICATE | ADMIN_GUARDED => false,
+    MCP_GUARDED => id == DANGEROUS_MCP_WRITE_TOOLS,
+    PROMPTS_NOT_LOGGED => id == DANGEROUS_LOG_PROMPTS,
+    TENANT_NOT_FROM_HEADER => id == DANGEROUS_TENANT_FROM_HEADER,
     _ => true,
+  }
+}
+
+/// The verdict over the routes of `report` under `prefix` (the prefix itself or below it): any
+/// public or undeclared one fails; none at all is not applicable.
+#[cfg(feature = "web")]
+fn routes_under(what: &str, prefix: &str, report: &id_effect_axum::route::AccessReport) -> Stated {
+  let prefix = prefix.trim_end_matches('/');
+  let under = |route: &str| {
+    let path = route.split_once(' ').map_or(route, |(_, path)| path);
+    path == prefix
+      || path
+        .strip_prefix(prefix)
+        .is_some_and(|rest| rest.starts_with('/'))
+  };
+  let open: Vec<&str> = report
+    .public
+    .iter()
+    .chain(&report.unchecked)
+    .map(String::as_str)
+    .filter(|r| under(r))
+    .collect();
+  let guarded = report.guarded.iter().filter(|(r, _)| under(r)).count();
+  if !open.is_empty() {
+    Stated::Fail(format!(
+      "{what} serves routes without a guard: {}",
+      open.join(", ")
+    ))
+  } else if guarded == 0 {
+    Stated::Absent(format!("{what}: no route under {prefix}"))
+  } else {
+    Stated::Pass(format!(
+      "{what}: {guarded} routes under {prefix}, each behind a guard"
+    ))
   }
 }
 
@@ -1103,6 +1318,9 @@ mod tests {
         QUIC_RETRY_ON,
         "id_effect_platform::QuicEndpointConfig::dangerous_no_retry",
       ),
+      (MCP_GUARDED, DANGEROUS_MCP_WRITE_TOOLS),
+      (PROMPTS_NOT_LOGGED, DANGEROUS_LOG_PROMPTS),
+      (TENANT_NOT_FROM_HEADER, DANGEROUS_TENANT_FROM_HEADER),
     ];
     for (probe, id) in cases {
       for other in PROBES {

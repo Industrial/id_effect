@@ -1,0 +1,9 @@
+{
+  "id": "hnd-mvf4xht7-w7txiw",
+  "task_id": "tsk-mvf4xf42-qjodki",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-19T10:52:16.363Z",
+  "agent_id": "b2-axum",
+  "spec_path": "/data/Code/rust/id_effect/.tmp/wt-012/.maestro/specs/releases/0.12/r12-e12-2-axum-ws-sse.md",
+  "to_agent": "cli"
+}

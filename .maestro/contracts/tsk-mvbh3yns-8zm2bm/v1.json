@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-767817",
+  "taskId": "tsk-mvbh3yns-8zm2bm",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T22:13:17.444Z",
+  "lockedAt": "2026-10-16T22:13:17.444Z",
+  "intent": "r09-e4-2-ui-routes",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-be5b5f",
+      "text": "`/openapi.json`, `/docs` (Scalar, D11), `/_routes` route table (method, path, handler name, schemas) behind a feature and an opt-in mount (web.server#8). Book `ch29-02-openapi.md`, example `085_openapi.rs`, integration test over a socket.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-6dafde",
+      "text": "Gate: same + book-snippets; level must reach `documented` (0.8 miss cause)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-00ad5a",
+      "text": "Owns: `crates/id_effect_axum/src/openapi/ui.rs`, `src/route/introspect.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

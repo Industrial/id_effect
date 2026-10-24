@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-101f8f",
+  "taskId": "tsk-mvdf5hvl-qkcn8e",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-18T06:02:53.657Z",
+  "lockedAt": "2026-10-18T06:02:53.657Z",
+  "intent": "r11-sec-adr0013",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-38ce77",
+      "text": "docs/adrs/0013-secure-by-default.md (status Proposed; the owner moves it to Accepted, 0.11.0.md D22) states the ten rules R1–R10 exactly as the 0.11.0.md table \"ADR 0013 — the ten rules\", each with the findings it closes, its enforcement point(s) and the leaf that implements it; it defines \"closed\" for a finding as \"the default path is safe and every escape is a named, recorded dangerous_*/insecure_* opt-out that fails the prod posture check\" (pending the owner's answer to Open question 1).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c66c50",
+      "text": "id_effect::observability::posture: record_dangerous(id: &'static str, reopens: &'static str) records an opt-out once per id, process-wide; dangerous_opt_outs() lists them; no cost on paths that never call it; documented as the hook every dangerous_*/insecure_* API in the workspace calls.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-35f848",
+      "text": "Tests `posture_is_empty_by_default`, `posture_records_each_opt_out_once`, `posture_lists_reason_text`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-da3eb0",
+      "text": "Gate: `cargo nextest run -p id_effect --test posture`; `cargo nextest run -p id_effect --test kernel_alloc`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f1b0b8",
+      "text": "Owns: `docs/adrs/0013-secure-by-default.md`, `crates/id_effect/src/observability/{posture.rs,mod.rs}`, `crates/id_effect/tests/posture.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

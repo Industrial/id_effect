@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 2,
+	"id": "c-6bfbf2",
+	"taskId": "tsk-mvb3399t-pysl4g",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T14:49:43.615Z",
+	"lockedAt": "2026-10-16T14:49:43.615Z",
+	"intent": "0.8 E2.3b — schema follow-ups",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-556071",
+			"text": "#[derive(Schema)] (crates/id_effect_proc_macro/src/derive_schema_parser.rs, built through Schema::make) attaches a SchemaAst via .with_ast(..) built from each field's HasSchema::schema().ast() (struct with field names, optional/nullable fields, enums/unions where the derive supports them), so json_schema_for::<Derived>() is no longer {}; golden tests for a derived struct, a nested derived struct and an enum if supported; existing derive tests unchanged.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-f0c6ca",
+			"text": "Real regular expressions for data.schema #8: a regex-backed validator (e.g. schema::validators::regex(pattern) -> Result<..>) using the regex crate as an optional or default dependency of id_effect (decide and justify; tier-conformance PASS), exporting the same pattern into JSON Schema; the existing caller-supplied-matcher pattern() stays.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-676402",
+			"text": "Book schema chapter updated; cargo test/clippy -D warnings/doc for id_effect and id_effect_proc_macro green with default and all features.",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"riskClass": "medium"
+}

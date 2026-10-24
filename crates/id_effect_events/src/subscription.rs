@@ -40,12 +40,37 @@ pub trait EventLog<E>: Send + Sync {
   /// Up to `limit` events with a position greater than `after` (`0`: from the start), in
   /// position order.
   fn read_all(&self, after: u64, limit: usize) -> Effect<Vec<RecordedEvent<E>>, EventStoreError>;
+
+  /// The log's head: the position of the last event appended (`0` while the log is empty).
+  /// Reading after it ([`read_all`](Self::read_all)`(head, _)`) yields only what is appended
+  /// later, which is how a reader starts "from now".
+  ///
+  /// The provided implementation reads the log to its end with `read_all(0, usize::MAX)` and
+  /// takes the greatest position: correct for every log, but it reads every event (time and
+  /// memory grow with the log, because the returned effect cannot borrow `self` to page). Logs
+  /// that know their head override it; [`MemoryEventStore`](crate::MemoryEventStore) and
+  /// [`SqlEventJournal`](crate::SqlEventJournal) answer in one step.
+  fn head(&self) -> Effect<u64, EventStoreError>
+  where
+    E: Send + 'static,
+  {
+    self
+      .read_all(0, usize::MAX)
+      .map(|events| events.iter().map(|e| e.position).max().unwrap_or(0))
+  }
 }
 
 /// A shared log is a log.
 impl<E, L: EventLog<E> + ?Sized> EventLog<E> for Arc<L> {
   fn read_all(&self, after: u64, limit: usize) -> Effect<Vec<RecordedEvent<E>>, EventStoreError> {
     (**self).read_all(after, limit)
+  }
+
+  fn head(&self) -> Effect<u64, EventStoreError>
+  where
+    E: Send + 'static,
+  {
+    (**self).head()
   }
 }
 

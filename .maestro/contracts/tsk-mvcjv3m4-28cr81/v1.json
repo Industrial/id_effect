@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-436b66",
+  "taskId": "tsk-mvcjv3m4-28cr81",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T15:28:18.695Z",
+  "lockedAt": "2026-10-17T15:28:18.695Z",
+  "intent": "r10-e6-4-redaction-sampling",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-abbeeb",
+      "text": "`RedactionPolicy` (field names, globs, `Secret<T>` values) applied once in `emit_record` before fan-out (#7); `SamplingBackend` (ratio per level + token-bucket rate limit, counts dropped lines) (#8); `LogRecord` gains `target` and becomes `#[non_exhaustive]` (MIGRATION-0.10). First integration tests `redacted_field_never_reaches_any_backend`, `rate_limit_drops_and_counts`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a31e39",
+      "text": "Gate: `cargo nextest run -p id_effect_logger --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-6e847b",
+      "text": "Owns: `crates/id_effect_logger/src/{lib.rs,pipeline.rs,redact.rs,sample.rs}`, `crates/id_effect_logger/tests/pipeline.rs`, `book/src/part6/ch27-00-observability.md` (section)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

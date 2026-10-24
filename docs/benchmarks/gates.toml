@@ -128,6 +128,42 @@ over = "h3_loss/h2_p99"
 limit = 1.00
 noise = 0.05
 
+# --- 0.13 breadth (r13-e-benches, README "Breadth gates (0.13)") ----------------------------
+
+# Eager loading must cost at most 0.45 of the N+1 loop it replaces: 100 parents x 10 children
+# on SQLite in memory, one run (benches/repository_eager.rs in id_effect_sql). 0.45, not the
+# 0.25 D15 wrote before measuring, by owner decision 2026-10-24: sqlx-sqlite's per-row cost puts
+# even two plain reads (orm/flat_100x10) at 0.25-0.29; follow-up F66 brings it back toward 0.25.
+[[gate]]
+id = "orm/eager_100x10"
+kind = "pair"
+over = "orm/n_plus_one_100x10"
+limit = 0.45
+noise = 0
+
+# D15 budgets: measured median x 1.5, in ns, over an empty iteration of the same bench binary
+# (`*/empty_iter`, about 0.2 ns), so the gate is the bench's own time. A `delta` reads the new
+# export only, so neither 0.12 nor a CI base without these benches is needed. Measured in
+# `v0.13.json`; the owner confirmed both numbers on 2026-10-24 (D15); bench.yml re-measures them.
+
+# One plural message with two arguments through a fallback chain, bidi isolation on
+# (benches/format.rs in id_effect_i18n): 330.9 ns measured, budget 496 ns.
+[[gate]]
+id = "i18n/format_plural"
+kind = "delta"
+over = "i18n/empty_iter"
+limit = 496
+noise = 0
+
+# A full page of 50 component rows, escaped, in the basic layout (benches/ui_render.rs in
+# id_effect_axum, feature `ui`): 9,807 ns measured, budget 14,710 ns.
+[[gate]]
+id = "ui/render_list_50"
+kind = "delta"
+over = "ui/empty_iter"
+limit = 14710
+noise = 0
+
 # --- report only ---------------------------------------------------------------------
 
 [[gate]]

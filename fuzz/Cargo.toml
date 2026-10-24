@@ -37,6 +37,12 @@ id_effect_process = { path = "../crates/id_effect_process" }
 id_effect_rpc = { path = "../crates/id_effect_rpc", default-features = false, features = [
   "postcard",
 ] }
+# The 0.13 breadth decoders: admin form bodies, AI tool arguments, vendor SSE events and MCP
+# messages (`mcp` turns on `tools`), keyset page cursors (`repository`), Accept-Language.
+id_effect_admin = { path = "../crates/id_effect_admin" }
+id_effect_ai = { path = "../crates/id_effect_ai", features = ["mcp"] }
+id_effect_i18n = { path = "../crates/id_effect_i18n" }
+id_effect_sql = { path = "../crates/id_effect_sql", features = ["repository"] }
 axum = { version = "0.8", default-features = false, features = ["multipart"] }
 base64 = "0.22.1"
 futures = { version = "0.3", default-features = false, features = ["executor"] }
@@ -164,6 +170,48 @@ bench = false
 [[bin]]
 name = "sse_last_event_id"
 path = "fuzz_targets/sse_last_event_id.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "i18n_accept_language"
+path = "fuzz_targets/i18n_accept_language.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sql_page_cursor"
+path = "fuzz_targets/sql_page_cursor.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mcp_jsonrpc_message"
+path = "fuzz_targets/mcp_jsonrpc_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ai_sse_event"
+path = "fuzz_targets/ai_sse_event.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ai_tool_arguments"
+path = "fuzz_targets/ai_tool_arguments.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "admin_form_body"
+path = "fuzz_targets/admin_form_body.rs"
 test = false
 doc = false
 bench = false

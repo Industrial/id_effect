@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 2,
+	"id": "c-12b6e9",
+	"taskId": "tsk-mvb8iij2-kzsw5d",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T17:21:36.375Z",
+	"lockedAt": "2026-10-16T17:21:36.375Z",
+	"intent": "0.8 W3-E — book snippets",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-4ebdfa",
+			"text": "Every chapter file under crates/id_effect/book/src that contains a rust fence is included in the examples/book-snippets harness (commit e7e7ac1: one module per part; #[cfg(doctest)] #[doc = include_str!(..)] struct per chapter), except the two already compiled by crates/id_effect/src/lib.rs (appendix-e-idiom-guide.md, part4/ch15-05-interleavings.md).",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-a36036",
+			"text": "At least 80 % of all rust fences in the book compile and run (or are no_run) via cargo test --doc -p book_snippets; snippets that describe code that no longer exists are corrected to the 0.8 API (the book must describe what the code does today); a snippet left rust,ignore has a one-line HTML comment reason directly above it.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-955823",
+			"text": "Hidden setup lines (# lines) keep the rendered snippet readable; mdbook build still succeeds (moon run :book or mdbook build crates/id_effect/book).",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"riskClass": "medium"
+}

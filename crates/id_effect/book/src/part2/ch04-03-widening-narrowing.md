@@ -108,6 +108,46 @@ let program: Effect<u8, ()> = child.fork().widen().flat_map(|h| h.join());
 
 For a fallible error type, `.map_err(Into::into)` widens through `From`.
 
+## Env-free effects under any environment: `any_env`
+
+`narrow` lifts into a wider *HList*. Some environments are not HLists: a procedure that runs over
+a bare `DynEnv` (plugin-style wiring, a runtime-checked map of capabilities), or a
+helper generic over an `R` it knows nothing about. An effect that needs nothing at all
+(`Effect<A, E>`, whose `R` is `HNil`) still fits there: `.any_env()` gives it any environment
+type, without reading it.
+
+```rust
+use id_effect::{DynEnv, Effect, Exit, succeed};
+
+// Needs no capability.
+fn audit_count() -> Effect<u32, String> {
+  succeed::<u32, String, id_effect::HNil>(20).map(|n| n + 1)
+}
+
+// A procedure over a bare `DynEnv`. Before `any_env` this took a body that only binds:
+// `Effect::from_ctx(|ctx| async move { ctx.bind(audit_count()).await })`.
+fn procedure() -> Effect<u32, String, DynEnv> {
+  audit_count().any_env()
+}
+
+// Generic over the caller's environment, whatever it is.
+fn in_any<R: Send + Sync + 'static>() -> Effect<u32, String, R> {
+  audit_count().any_env()
+}
+
+let exit = procedure().provide_all(DynEnv::new()).block_on();
+assert!(matches!(exit, Exit::Success(21)));
+let exit = in_any::<DynEnv>()
+  .zip(procedure())
+  .provide_all(DynEnv::new())
+  .block_on();
+assert!(matches!(exit, Exit::Success((21, 21))));
+```
+
+A ready effect is returned as is. Anything else runs under the shared empty environment (one
+`Provide` frame, no allocation per run) on the same fiber, so interrupts, masks and finalizers
+behave exactly as they would without the lift. The `!Send` twin is `LocalEffect::any_env`.
+
 ## Generic helpers
 
 A helper generic over `R` (with a `Selector` bound) fits any environment that has its capability.
@@ -137,6 +177,7 @@ fn signup() -> Effect<(), AppError, caps!(Logger, Db)> {
 |-----------|---------------------|
 | `~sub` in `effect!` | lifts `sub` into the block's `R`, widens its error |
 | `.narrow::<Wide, _>()` | `R` → any `Wide` containing `R` |
+| `.any_env::<R>()` | `HNil` → any `R` (HList or not) |
 | `.provide(t)` / `.provide_some(..)` | removes capabilities from `R` |
 | `.widen()` | `Never` → any `E` |
 | `.map_err(Into::into)` | `E2` → `E` through `From` |

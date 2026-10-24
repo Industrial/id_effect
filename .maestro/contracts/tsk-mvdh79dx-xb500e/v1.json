@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-84f283",
+  "taskId": "tsk-mvdh79dx-xb500e",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-18T07:00:15.424Z",
+  "lockedAt": "2026-10-18T07:00:15.424Z",
+  "intent": "r11-fuzz-ci",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-a27384",
+      "text": "A fuzz/ cargo-fuzz workspace (outside the main workspace, one pinned nightly date, 0.11.0.md D20) with at least 8 targets over public decoders whose input formats do not change in 0.11, chosen from: Schema decode from JSON (id_effect), typed-route path and query decode and form-body decode (id_effect_axum route/decode.rs), cron expression parse (id_effect scheduling), config profile TOML merge (id_effect_config), JWT header/claims decode (id_effect_auth jwt), JWKS document parse (id_effect_auth jwks), otpauth URI parse (id_effect_auth totp). The implementer confirms each target reaches only public API.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5390d6",
+      "text": "Seed corpora committed; .clusterfuzzlite/ (Dockerfile, build.sh, project.yaml); .github/workflows/cflite_pr.yml (PR mode, 5 minutes per target, fails on a new crash) and cflite_batch.yml (nightly batch with stored corpus), SHA-pinned with top-level permissions read; docs/security/fuzzing.md (how to run, how a crash becomes an issue and a regression test).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7740c2",
+      "text": "KPI: `ls fuzz/fuzz_targets/*.rs | wc -l` ≥ 8 at this leaf (≥ 10 after r11-e8-3-reliable-delivery adds mesh_frame and mesh_envelope); no open crash at exit.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d37e3f",
+      "text": "Gate: `cd fuzz && cargo +nightly-<pinned> fuzz build`; `for t in $(cargo +nightly-<pinned> fuzz list); do cargo +nightly-<pinned> fuzz run $t -- -max_total_time=60; done` with no crash; `bash scripts/check-workflows.sh`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-493192",
+      "text": "Owns: `fuzz/**`, `.clusterfuzzlite/**`, `.github/workflows/{cflite_pr.yml,cflite_batch.yml}`, `docs/security/fuzzing.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}
