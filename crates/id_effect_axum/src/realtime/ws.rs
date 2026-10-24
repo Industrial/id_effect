@@ -22,6 +22,12 @@
 //! the socket (1001); 300 s idle timeout (1001). The handshake itself is refused with Problem
 //! Details: **426** (not an upgrade, wrong version), **400** (bad key), **403** (origin).
 //!
+//! One route serves both openings of a socket: the HTTP/1.1 `GET` upgrade (RFC 6455, answered
+//! `101`) and, on an HTTP/2 connection of the TLS host (feature `tls`), the extended `CONNECT`
+//! with `:protocol websocket` (RFC 8441, answered `200`; the socket is one stream, counted
+//! against [`ConnectionLimits::max_concurrent_streams`](crate::ConnectionLimits::max_concurrent_streams)).
+//! The guards, the Origin allowlist, the socket caps and every limit above apply to both alike.
+//!
 //! ```rust
 //! use id_effect::{Effect, Never};
 //! use id_effect_axum::RequestCaps;
@@ -55,7 +61,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes};
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Version, header};
 use axum::response::{IntoResponse, Response};
 use base64::Engine as _;
 use futures_util::{Sink as _, SinkExt as _, StreamExt as _};
@@ -995,6 +1001,71 @@ fn upgrade_required(detail: &str, extra: Option<(HeaderName, &'static str)>) -> 
   res
 }
 
+/// How a client opens a socket.
+#[derive(Debug, PartialEq, Eq)]
+enum Opening {
+  /// RFC 6455: an HTTP/1.1 `GET` with `Upgrade: websocket` and this client key, answered `101`.
+  Upgrade(HeaderValue),
+  /// RFC 8441: an HTTP/2 extended `CONNECT` with `:protocol websocket`, answered `200`.
+  ExtendedConnect,
+}
+
+/// Checks how `req` opens a socket: an HTTP/2 `CONNECT` must be an extended `CONNECT` naming
+/// `websocket`; anything else must carry the RFC 6455 upgrade headers. Both need version 13.
+#[allow(clippy::result_large_err)]
+fn opening<B>(req: &Request<B>) -> Result<Opening, Response> {
+  if req.version() >= Version::HTTP_2 && req.method() == Method::CONNECT {
+    if !names_websocket(req) {
+      return Err(upgrade_required(
+        "an HTTP/2 CONNECT must name the websocket protocol (RFC 8441)",
+        None,
+      ));
+    }
+    websocket_version(req.headers())?;
+    return Ok(Opening::ExtendedConnect);
+  }
+  handshake(req.headers()).map(Opening::Upgrade)
+}
+
+/// Whether the extended `CONNECT` `req` names `:protocol websocket` (hyper records the pseudo
+/// header as an extension when the connection enabled RFC 8441).
+#[cfg(feature = "tls")]
+fn names_websocket<B>(req: &Request<B>) -> bool {
+  req
+    .extensions()
+    .get::<hyper::ext::Protocol>()
+    .is_some_and(|p| p.as_str().eq_ignore_ascii_case("websocket"))
+}
+
+/// Without feature `tls` this crate serves no HTTP/2, so no extended `CONNECT` is accepted.
+#[cfg(not(feature = "tls"))]
+fn names_websocket<B>(_req: &Request<B>) -> bool {
+  false
+}
+
+/// `Sec-WebSocket-Version` must be 13.
+#[allow(clippy::result_large_err)]
+fn websocket_version(headers: &HeaderMap) -> Result<(), Response> {
+  if headers
+    .get(SEC_WEBSOCKET_VERSION)
+    .is_none_or(|v| v.as_bytes() != b"13")
+  {
+    return Err(upgrade_required(
+      "Sec-WebSocket-Version must be 13",
+      Some((SEC_WEBSOCKET_VERSION, "13")),
+    ));
+  }
+  Ok(())
+}
+
+/// `res` for a request of `version`: HTTP/2 forbids the connection-specific `Upgrade` header.
+fn for_version(version: Version, mut res: Response) -> Response {
+  if version >= Version::HTTP_2 {
+    res.headers_mut().remove(header::UPGRADE);
+  }
+  res
+}
+
 /// Checks the RFC 6455 handshake headers; the client key on success.
 #[allow(clippy::result_large_err)]
 fn handshake(headers: &HeaderMap) -> Result<HeaderValue, Response> {
@@ -1006,15 +1077,7 @@ fn handshake(headers: &HeaderMap) -> Result<HeaderValue, Response> {
       None,
     ));
   }
-  if headers
-    .get(SEC_WEBSOCKET_VERSION)
-    .is_none_or(|v| v.as_bytes() != b"13")
-  {
-    return Err(upgrade_required(
-      "Sec-WebSocket-Version must be 13",
-      Some((SEC_WEBSOCKET_VERSION, "13")),
-    ));
-  }
+  websocket_version(headers)?;
   match headers.get(SEC_WEBSOCKET_KEY) {
     Some(key)
       if base64::engine::general_purpose::STANDARD
@@ -1064,9 +1127,10 @@ where
   E: Send + 'static,
   F: FnOnce(&mut S, RequestCaps, WsSocket) -> Effect<(), E, S> + Send + 'static,
 {
-  let key = match handshake(req.headers()) {
-    Ok(key) => key,
-    Err(res) => return res,
+  let version = req.version();
+  let opening = match opening(&req) {
+    Ok(opening) => opening,
+    Err(res) => return for_version(version, res),
   };
   if let Err(rejection) = shared.config.origins.check(req.headers()) {
     tracing::debug!(target: "id_effect_axum::realtime::ws", %rejection, "websocket upgrade refused");
@@ -1085,7 +1149,10 @@ where
     .get::<hyper::upgrade::OnUpgrade>()
     .is_none()
   {
-    return upgrade_required("the connection cannot be upgraded", None);
+    return for_version(
+      version,
+      upgrade_required("the connection cannot be upgraded", None),
+    );
   }
   let on_upgrade = hyper::upgrade::on(&mut req);
   let caps = req
@@ -1114,15 +1181,20 @@ where
     })
     .ensuring(sync(move || drop(permit)));
   drop(crate::EffectExecutor::global().runtime().fork(fiber));
+  // RFC 8441 §5: an extended CONNECT is accepted with a 2xx and no body (or key); the stream
+  // carries the socket from then on.
   let mut res = Response::new(Body::empty());
-  *res.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
-  let headers = res.headers_mut();
-  headers.insert(header::CONNECTION, HeaderValue::from_static("upgrade"));
-  headers.insert(header::UPGRADE, HeaderValue::from_static("websocket"));
-  let accept = tungstenite::handshake::derive_accept_key(key.as_bytes());
-  if let Ok(accept) = HeaderValue::from_str(&accept) {
-    headers.insert(SEC_WEBSOCKET_ACCEPT, accept);
+  if let Opening::Upgrade(key) = opening {
+    let headers = res.headers_mut();
+    headers.insert(header::CONNECTION, HeaderValue::from_static("upgrade"));
+    headers.insert(header::UPGRADE, HeaderValue::from_static("websocket"));
+    let accept = tungstenite::handshake::derive_accept_key(key.as_bytes());
+    if let Ok(accept) = HeaderValue::from_str(&accept) {
+      headers.insert(SEC_WEBSOCKET_ACCEPT, accept);
+    }
+    *res.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
   }
+  let headers = res.headers_mut();
   if let Some(protocol) = protocol.and_then(|p| HeaderValue::from_str(&p).ok()) {
     headers.insert(SEC_WEBSOCKET_PROTOCOL, protocol);
   }
@@ -1130,8 +1202,10 @@ where
 }
 
 /// A typed `GET` route at `path` serving WebSocket upgrades with `handler` (see the
-/// [module docs](self)). Decide its access with `.public()` or `.guard(g)`; the guards (and an
-/// `Authenticate` layer) run on the upgrade request, before the `101`.
+/// [module docs](self)): the HTTP/1.1 upgrade, and on HTTP/2 the extended `CONNECT` of RFC 8441
+/// at the same path (registered once, as `GET`). Decide its access with `.public()` or
+/// `.guard(g)`; the guards (and an `Authenticate` layer) run on the opening request, before the
+/// `101` (or the HTTP/2 `200`).
 ///
 /// Per socket, `handler(&mut state, caps, socket)` builds the effect that serves it, with the
 /// upgrade request's [`RequestCaps`]. Sockets are counted against [`WsConfig::max_sockets`]
@@ -1152,7 +1226,8 @@ where
   });
   let mut info = RouteInfo::new(Method::GET, path);
   info.handler = Some(std::any::type_name::<F>());
-  let method_router = axum::routing::get(move |State(env): State<S>, req: Request| {
+  let opens = axum::routing::MethodFilter::GET.or(axum::routing::MethodFilter::CONNECT);
+  let method_router = axum::routing::on(opens, move |State(env): State<S>, req: Request| {
     let shared = Arc::clone(&shared);
     let f = handler.clone();
     async move { upgrade(&shared, env, req, f) }
@@ -1195,6 +1270,62 @@ mod tests {
       handshake(&headers(&short)).unwrap_err().status(),
       StatusCode::BAD_REQUEST
     );
+  }
+
+  fn h2_connect(protocol: Option<&'static str>, version: Option<&'static str>) -> Request<()> {
+    let mut req = axum::http::Request::builder()
+      .method(Method::CONNECT)
+      .version(Version::HTTP_2)
+      .uri("https://localhost/ws");
+    if let Some(v) = version {
+      req = req.header(SEC_WEBSOCKET_VERSION, v);
+    }
+    let mut req = req.body(()).unwrap();
+    #[cfg(feature = "tls")]
+    if let Some(p) = protocol {
+      req
+        .extensions_mut()
+        .insert(hyper::ext::Protocol::from_static(p));
+    }
+    #[cfg(not(feature = "tls"))]
+    let _ = protocol;
+    req
+  }
+
+  #[test]
+  fn opening_tells_the_upgrade_from_the_extended_connect() {
+    let mut h1 = axum::http::Request::get("/ws").body(()).unwrap();
+    *h1.headers_mut() = headers(&GOOD);
+    assert!(matches!(opening(&h1), Ok(Opening::Upgrade(_))));
+    // An HTTP/2 GET is not an opening: there is no upgrade on HTTP/2.
+    let mut h2_get = axum::http::Request::get("/ws")
+      .version(Version::HTTP_2)
+      .body(())
+      .unwrap();
+    *h2_get.headers_mut() = headers(&GOOD[2..]);
+    let refused = for_version(Version::HTTP_2, opening(&h2_get).unwrap_err());
+    assert_eq!(refused.status(), StatusCode::UPGRADE_REQUIRED);
+    assert!(refused.headers().get(header::UPGRADE).is_none());
+    // On HTTP/1.1 the refusal names the upgrade.
+    let refused = for_version(Version::HTTP_11, opening(&h2_get).unwrap_err());
+    assert_eq!(refused.headers()[header::UPGRADE], "websocket");
+
+    let no_protocol = opening(&h2_connect(None, Some("13"))).unwrap_err();
+    assert_eq!(no_protocol.status(), StatusCode::UPGRADE_REQUIRED);
+    let other = opening(&h2_connect(Some("webtransport"), Some("13"))).unwrap_err();
+    assert_eq!(other.status(), StatusCode::UPGRADE_REQUIRED);
+    #[cfg(feature = "tls")]
+    {
+      assert_eq!(
+        opening(&h2_connect(Some("websocket"), Some("13"))).unwrap(),
+        Opening::ExtendedConnect
+      );
+      let v12 = opening(&h2_connect(Some("websocket"), Some("12"))).unwrap_err();
+      assert_eq!(v12.status(), StatusCode::UPGRADE_REQUIRED);
+      assert_eq!(v12.headers()[SEC_WEBSOCKET_VERSION], "13");
+      let missing = opening(&h2_connect(Some("websocket"), None)).unwrap_err();
+      assert_eq!(missing.status(), StatusCode::UPGRADE_REQUIRED);
+    }
   }
 
   #[test]
