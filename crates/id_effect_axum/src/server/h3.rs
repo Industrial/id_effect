@@ -452,7 +452,9 @@ struct Early {
 
 impl Early {
   /// Whether a request with `method`, whose header section just arrived, must wait for the
-  /// handshake: it arrived as early data and is not admitted from it.
+  /// handshake: it arrived as early data and is not admitted from it. The handshake state is
+  /// the connection's own, settled before any data its completion released can be read, so a
+  /// request sent after the handshake never reads as early.
   fn too_early(&self, method: &Method) -> bool {
     !self.handshake.is_complete() && !admits_early(self.zero_rtt, method)
   }

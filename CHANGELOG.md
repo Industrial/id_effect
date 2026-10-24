@@ -291,10 +291,12 @@
   the platform QUIC endpoint gains a per-route early-data setting,
   `Route::dangerous_allow_early_data` (recorded; refused on the `idm/1` mesh and on any route that
   requires a verified client). Such a route receives connections before their handshake completes
-  through `AlpnRoute::accept_early`, with a `Handshake` to check (`is_complete`, `completed`);
-  `AlpnRoute::accept` keeps delivering completed handshakes only. A connection that sends 0-RTT
-  data on a route without early data is closed with `CLOSE_EARLY_DATA_REFUSED` before its handler
-  sees it (`Refusal::EarlyData`, `EndpointStats::refused_early_data`). 0-RTT stays off by default.
+  through `AlpnRoute::accept_early`, with a `Handshake` to check (`is_complete`, `completed`),
+  read from the connection's own handshake state, so a request sent after the handshake never
+  reads as early data; `AlpnRoute::accept` keeps delivering completed handshakes only. A
+  connection that sends 0-RTT data on a route without early data is closed with
+  `CLOSE_EARLY_DATA_REFUSED` before its handler sees it (`Refusal::EarlyData`,
+  `EndpointStats::refused_early_data`). 0-RTT stays off by default.
   `Http3Options::dangerous_allow_zero_rtt_for_queries` stops being a no-op: early `GET` / `HEAD`
   requests (RPC queries ride `GET`) are served before the handshake completes, every other early
   request is answered `425 Too Early` (RFC 8470) without reaching the router; `OPTIONS` is no

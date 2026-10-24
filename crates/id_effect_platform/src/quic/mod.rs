@@ -83,12 +83,12 @@ pub use config::{
 // r12-e12-3-webtransport: QUIC datagrams on for endpoints that serve WebTransport.
 pub use config::{DEFAULT_DATAGRAM_RECEIVE_BUFFER, MAX_DATAGRAM_RECEIVE_BUFFER};
 pub use congestion::CongestionControl;
-// r13-f-h3-settings: early data per route (F25).
 pub use endpoint::{EndpointStats, QuicEndpoint};
 pub use router::{
   AlpnRoute, AlpnRouter, ClientAuthMode, ClientCertPolicy, Refusal, Route,
   has_verified_client_chain, negotiated_alpn,
 };
+// r13-f-h3-settings: early data per route (F25).
 pub use router::{CLOSE_EARLY_DATA_REFUSED, DANGEROUS_ALLOW_EARLY_DATA, Handshake};
 
 /// ALPN of HTTP/3 (RFC 9114).
