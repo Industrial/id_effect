@@ -16,6 +16,7 @@ all-features = true
 # without a reason that says why the vulnerable code path is unreachable.
 ignore = [
   { id = "RUSTSEC-2023-0071", reason = "rsa (Marvin attack: a timing side channel in RSA private-key operations) arrives via sqlx-mysql (id_effect_sql feature mysql) and openidconnect (id_effect_auth feature oidc); sqlx-mysql only encrypts a password with the server's public key (caching_sha2_password / sha256_password over a non-TLS connection), and no workspace code decrypts or signs with an rsa private key: ID tokens are verified by jsonwebtoken on aws-lc-rs" },
+  { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5 (timing variability in constant-time operations) arrives only via openidconnect 4.0.1 (latest) -> p256/p384 0.13 -> elliptic-curve 0.13 (id_effect_auth feature oidc); no workspace code performs an elliptic-curve private-key operation through it: ID tokens are verified by jsonwebtoken on aws-lc-rs, and signature verification handles public data only. Remove when openidconnect moves to elliptic-curve 0.14 (crypto-bigint 0.7)" },
   { id = "RUSTSEC-2023-0126", reason = "im 15.1.0 OrdSet aliasing (unsound): direct dep of id_effect_fp and id_effect_optics; open debt until im is replaced" },
   { id = "RUSTSEC-2026-0248", reason = "im is unmaintained: direct dep of id_effect_fp and id_effect_optics; open debt until im is replaced" },
   { id = "RUSTSEC-2026-0247", reason = "bitmaps is unmaintained: transitive via im (see RUSTSEC-2026-0248)" },

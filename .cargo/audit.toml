@@ -5,6 +5,9 @@
 #
 # RUSTSEC-2026-0381: webpki-roots 0.26.11 (via sqlx-core 0.8.6) is the semver-trick shim that
 # re-exports webpki-roots 1, resolved to the fixed 1.0.10; its roots are the patched ones.
+# RUSTSEC-2026-0387: crypto-bigint 0.5.5 arrives only via openidconnect 4.0.1 -> p256/p384 0.13;
+# no workspace code does an elliptic-curve private-key operation through it (ID tokens are
+# verified by jsonwebtoken on aws-lc-rs). Remove when openidconnect moves to elliptic-curve 0.14.
 # Keep in sync with deny.toml.
 [advisories]
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0381"]
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0381", "RUSTSEC-2026-0387"]
