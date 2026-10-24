@@ -384,7 +384,7 @@ where
   serve_route(route, app, limits, options, shutdown)
 }
 
-async fn serve_route<F>(
+pub(crate) async fn serve_route<F>(
   route: std::io::Result<AlpnRoute>,
   app: Router,
   limits: ConnectionLimits,
