@@ -570,6 +570,50 @@ jobs:
           RELAY_UDP_BLOCKED_PORT="${RELAY_BLOCKED_PORT}" \
             cargo nextest run --locked -p relay -E 'test(=relay_udp_blocked_falls_back_to_tcp)'
   # ──────────────────────────────────────────────────────────────────────────
+  # Pipeline reference app (0.13 §6 KPI, never cut; r13-w6-pipeline): the multi-tenant
+  # document-intake pipeline on PostgreSQL in the tests' own container, two databases per test
+  # (`acme` on the main one with the job queue, `globex` on its own through the TenantRouter);
+  # ingest by RPC and upload, the extract / classify / embed jobs, the status subscription,
+  # publication through the outbox hook, the MCP server (guarded, Origin-checked) and client.
+  # Deterministic AI only (D8): ScriptedModel and the recorded OpenAI / Anthropic fixtures under
+  # wiremock; no key, no vendor call. r13-w7-pipeline-backoffice adds its steps here.
+  # ──────────────────────────────────────────────────────────────────────────
+  reference-pipeline:
+    name: Reference app (Pipeline)
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    env:
+      ID_EFFECT_REQUIRE_PG: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+      - name: Cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: reference-pipeline
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-nextest
+      # The tests start PostgreSQL with id_effect_test (postgres:17-alpine): pull it up front so
+      # no test times out on a cold pull.
+      - name: Pull PostgreSQL
+        run: docker pull -q postgres:17-alpine
+      - name: Format and lints
+        run: |
+          cargo fmt -p pipeline --check
+          cargo clippy -p pipeline --all-targets --locked -- -D warnings
+      - name: Pipeline KPI (two tenants, two databases, AI stages, outbox hook, RPC, MCP)
+        run: cargo nextest run --locked -p pipeline
+      - name: Tier conformance (id_effect_ai and id_effect_i18n on platform, check P)
+        run: |
+          command -v rg >/dev/null || sudo apt-get install -y -qq ripgrep
+          bash scripts/tier-conformance.sh
+  # ──────────────────────────────────────────────────────────────────────────
   # Leptos recipe (0.13 D4, r13-e9-5-leptos): examples/recipes/leptos-ssr, outside the workspace
   # with its own Cargo.lock. Leptos SSR + hydration on the id_effect axum host, the page's data
   # from an id_effect RPC service through its generated client. No npm: the wasm32-unknown-unknown
@@ -903,6 +947,7 @@ jobs:
       - containers-integration
       - reference-ledger
       - reference-relay
+      - reference-pipeline
       - rpc
       - breadth
       - labs
