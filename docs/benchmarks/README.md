@@ -413,27 +413,29 @@ in `scripts/bench-run.sh`.
 
 | Gate | Kind | Measured (median) | Limit | Result |
 |---|---|---|---|---|
-| `orm/eager_100x10 / orm/n_plus_one_100x10` | `pair`, noise 0 | 1.192 ms / 3.186 ms = **0.374** (re-runs: 0.366, 0.349, 0.334, 0.313; end-to-end gate runs 1.330 / 3.195 ms = 0.416 and, in `v0.13.json`, 1.160 / 3.333 ms = 0.348) | 0.25 | **FAIL** (see below) |
-| `i18n/format_plural − i18n/empty_iter` | `delta`, noise 0 | **330.9 ns** (re-run 321.8 ns, end-to-end 329.3 and 326.6 ns; empty iteration 0.19–0.26 ns) | 496 ns (330.9 × 1.5, D15) | PASS; owner confirms at exit |
-| `ui/render_list_50 − ui/empty_iter` | `delta`, noise 0 | **9,807 ns** (re-run 10,136 ns, end-to-end 10,091 and 10,118 ns; empty iteration 0.19 ns) | 14,710 ns (9,807 × 1.5, D15) | PASS; owner confirms at exit |
+| `orm/eager_100x10 / orm/n_plus_one_100x10` | `pair`, noise 0 | 1.192 ms / 3.186 ms = **0.374** (re-runs: 0.366, 0.349, 0.334, 0.313; end-to-end gate runs 1.330 / 3.195 ms = 0.416 and, in `v0.13.json`, 1.160 / 3.333 ms = 0.348) | 0.45 (owner decision 2026-10-24; D15 wrote 0.25) | PASS (see below) |
+| `i18n/format_plural − i18n/empty_iter` | `delta`, noise 0 | **330.9 ns** (re-run 321.8 ns, end-to-end 329.3 and 326.6 ns; empty iteration 0.19–0.26 ns) | 496 ns (330.9 × 1.5, D15) | PASS; owner confirmed 2026-10-24 |
+| `ui/render_list_50 − ui/empty_iter` | `delta`, noise 0 | **9,807 ns** (re-run 10,136 ns, end-to-end 10,091 and 10,118 ns; empty iteration 0.19 ns) | 14,710 ns (9,807 × 1.5, D15) | PASS; owner confirmed 2026-10-24 |
 
-**The eager-loading pair misses 0.25, and the driver sets the floor.** Eager loading does what it
-should (2 queries instead of 101, 2.7× faster than the N+1 loop), but on `SqliteSqlClient` the
-rows, not the round trips, dominate: sqlx-sqlite returns 1,000 rows in about 670 µs (0.67 µs a
-row, measured with `sqlx::query(…).fetch_all` alone) and a 10-row query about 30 µs. With
-10 children per parent the N+1 loop spends about 2.3 ms on its 99 extra queries and 0.9 ms on the
-same 1,100 rows eager loading reads, so even `orm/flat_100x10` (no relation work at all) is
-0.290 of `n_plus_one`. Eager loading adds about 270 µs over `flat` (1.192 against 0.925 ms): the
-owner key column decoded and rendered to a `String` per child row, the `HashMap` grouping and
-the 100-value `IN` list. Reaching 0.25 needs both a cheaper relation pass (`repository/relations.rs`)
-and fewer microseconds per row in the SQLite driver (`sqlite/`), neither in this leaf's files; or
-an owner decision on the limit (D15 wrote it before measuring). The gate stays at the decided
-0.25 and fails until one of those lands. It is a `pair`, so it reads the head export only, and
-`bench.yml` (`--enforce budget,delta,pair`) fails on it as well. A re-run on 2026-10-22 (01:00 UTC,
-1-minute load 16–30, 1 s warm-up, 4 s measurement) gave the same picture: eager 1.194 ms, N+1
-3.259 ms, flat 0.847 ms, so eager / N+1 = 0.366 and flat / N+1 = 0.260. Even the floor misses 0.25.
-A third run (01:12 UTC, criterion defaults, 1-minute load 29–145, tree `ed8c17ef` plus the
-empty-iteration benches) gave eager 1.128 ms, N+1 3.234 ms, flat 0.937 ms: 0.349, floor 0.290.
+**The eager-loading pair missed 0.25, and the driver sets the floor**, so the owner raised the
+limit to 0.45 for 0.13.0 (decision 1 below); the measurements that led there follow.
+Eager loading does what it should (2 queries instead of 101, 2.7× faster than the N+1 loop),
+but on `SqliteSqlClient` the rows, not the round trips, dominate: sqlx-sqlite returns 1,000 rows
+in about 670 µs (0.67 µs a row, measured with `sqlx::query(…).fetch_all` alone) and a 10-row
+query about 30 µs. With 10 children per parent the N+1 loop spends about 2.3 ms on its 99 extra
+queries and 0.9 ms on the same 1,100 rows eager loading reads, so even `orm/flat_100x10` (no
+relation work at all) is 0.290 of `n_plus_one`. Eager loading adds about 270 µs over `flat`
+(1.192 against 0.925 ms): the owner key column decoded and rendered to a `String` per child
+row, the `HashMap` grouping and the 100-value `IN` list. Reaching 0.25 needs both a cheaper
+relation pass (`repository/relations.rs`) and fewer microseconds per row in the SQLite driver
+(`sqlite/`), neither in this leaf's files; or an owner decision on the limit (D15 wrote it
+before measuring), which was taken: 0.45. It is a `pair`, so it reads the head export only, and
+`bench.yml` (`--enforce budget,delta,pair`) enforces it as well. A re-run on 2026-10-22 (01:00
+UTC, 1-minute load 16–30, 1 s warm-up, 4 s measurement) gave the same picture: eager 1.194 ms,
+N+1 3.259 ms, flat 0.847 ms, so eager / N+1 = 0.366 and flat / N+1 = 0.260.
+Even the floor misses 0.25. A third run (01:12 UTC, criterion defaults, 1-minute load 29–145,
+tree `ed8c17ef` plus the empty-iteration benches) gave eager 1.128 ms, N+1 3.234 ms, flat
+0.937 ms: 0.349, floor 0.290.
 With raw sqlx at about 0.67 µs a row, two statements over 1,100 rows cost about 0.8 ms, already a
 quarter of the N+1 loop, so no change in `relations.rs` alone can reach the limit, and no change
 in this leaf's files (the bench shape is fixed by the leaf: 100 × 10, SQLite in memory) can
@@ -461,36 +463,25 @@ The quietest runs so far, both on 2026-10-24 with tree `70f407ad` and no change 
 a single-bench run at 08:25 UTC (1-minute load 10–14) gave eager 1.196 ms, N+1 3.823 ms, flat
 1.013 ms: **0.313**, floor 0.265; the end-to-end gate run stored as `v0.13.json` (08:26–08:43
 UTC, load 11–20 while `orm/*` ran) gave eager 1.160 ms, N+1 3.333 ms, flat 0.838 ms: **0.348**,
-floor 0.251. Lower load lowers the ratio, as the 0.416 run suggested, but not to the limit.
+floor 0.251. Lower load lowers the ratio, as the 0.416 run suggested, but not to 0.25.
 Eager loading reads the same rows as `flat` and does strictly more with them, and in the seven runs
 it cost 0.05–0.12 of the N+1 loop more than `flat`, while `flat / N+1` itself read 0.251–0.293
-and never below the limit. An idle machine is unlikely to change the verdict; it is still owed
-for the absolute numbers (decision 3).
+and never below 0.25. An idle machine is unlikely to change that; the absolute numbers are
+re-measured by `bench.yml` on the runner (decision 3).
 
-**Open owner decisions (0.13.0 exit, with D15).** None of them is this leaf's to take; each is
-listed in the leaf's report so the exit leaf can put it to the owner.
+**Owner decisions (taken 2026-10-24, with D15).**
 
-1. *Eager pair limit* (release spec `bench_gates.eager`, exit table "eager ≤ 0.25", leaf criterion
-   1). Keep 0.25 and add a leaf for the SQLite driver's per-row cost
-   (`crates/id_effect_sql/src/sqlite/`, which no 0.13 leaf owns; `decode` in `value.rs` copies the
-   storage-class name into a `String` for every value read, a first candidate). Or set the limit
-   from the measurement: the seven runs so far read 0.313–0.416, all on a shared machine, so a
-   limit from them (0.45 would hold every one and still require eager loading to beat the N+1 loop
-   by 2.2×) should be confirmed by an idle-machine or `BENCH_RUNNER` run first. Or change the shape
-   so round trips dominate as they do on a networked database: more parents with fewer children,
-   or PostgreSQL. The gate is not changed without that decision, so until then the leaf's Gate
-   command exits 1, and this pair is its only `budget`, `delta` or `pair` failure (the three
-   `improve` gates fail by construction, below).
-2. *D15 budget numbers and kind* (release spec owner item 8). 496 ns and 14,710 ns are the first
-   measurement × 1.5 on the reference machine under load (above); every later run passes them
-   (i18n 322–329 ns, UI 10,091–10,136 ns). They are absolute, like the secure-stack and unary RPC
-   budgets, so a slower `BENCH_RUNNER` may need them re-measured there; the owner confirms them or
-   replaces them with a runner measurement at the 0.13.0 exit, together with the `delta` kind that
-   carries them (below) in place of the `budget` kind the leaf row names.
-3. *Idle-machine measurement.* The leaf asks for an idle machine; the 0.13.0 build-out shares the
-   reference machine with every other leaf's agent, so the quietest run here (load 9–20) is the best
-   this leaf could get. The owner or the exit leaf re-runs the Gate command on an idle machine or
-   on `BENCH_RUNNER` and replaces `v0.13.json` with that export.
+1. *Eager pair limit* (release spec `bench_gates.eager`, exit table, leaf criterion 1): raised from
+   0.25 to **0.45** for 0.13.0. Eager loading is about 2.9× faster than the N+1 loop, and
+   sqlx-sqlite's per-row cost puts even two plain reads at 0.25–0.29, so 0.25 is below the driver
+   floor; 0.45 holds every run so far (0.313–0.416). Follow-up F66 records the SQLite driver's
+   per-row cost (`crates/id_effect_sql/src/sqlite/`; `decode` in `value.rs` copies the
+   storage-class name into a `String` for every value read, a first candidate) to bring the pair
+   back toward 0.25.
+2. *D15 budget numbers and kind* (release spec owner item 8): confirmed as they are — 496 ns and
+   14,710 ns, as `delta` gates over `*/empty_iter` (below). The CI bench runner re-measures them.
+3. *Idle-machine measurement*: satisfied by `bench.yml` on the runner; `v0.13.json` stays the
+   quietest reference-machine run (load 9–20).
 
 The eight `fixtures/*.json` edits (each fixture carries the eager pair's two ids and the D15
 gates' four at passing values so `--self-test` stays green) fall under `docs/benchmarks/**`, which
@@ -522,7 +513,7 @@ which fail against a release that already has the improvement, as at the 0.10 an
 |---|---|---|---|---|---|
 | `v0.12.json` → first run (2026-10-22, `1a7dcb24`) | all PASS (max `coord/queue_bounded_10k` 1.225) | secure stack +2,759 ns PASS, unary RPC +1,782 ns PASS, batch 0.092 PASS, h3 0.063 PASS (userspace proxies) | 0.856 PASS, 0.978 and 1.031 FAIL (by construction) | eager 0.374 FAIL | i18n +331 ns, UI +9,807 ns PASS |
 | `v0.12.json` → first end-to-end gate run (2026-10-24 07:48 UTC, `f57f10ba`, load 21–180; exit 1) | all PASS (max `coord/queue_bounded_10k` 1.082) | secure stack +2,659 ns PASS, unary RPC +1,812 ns PASS, batch 0.082 PASS, h3 0.047 PASS (userspace proxies) | 0.956, 1.014 and 1.040 FAIL (by construction) | eager 0.416 FAIL | i18n +329 ns, UI +10,091 ns PASS |
-| `v0.12.json` → `v0.13.json` (end-to-end gate run, 2026-10-24 08:26 UTC, `70f407ad`, load 9–20; exit 1) | all PASS (max `coord/channel_spsc_10k` 1.116) | secure stack +2,698 ns PASS, unary RPC +1,768 ns PASS, batch 0.086 PASS, h3 0.064 PASS (userspace proxies) | 1.103, 0.984 and 0.990 FAIL (by construction) | eager 0.348 FAIL | i18n +327 ns, UI +10,118 ns PASS |
+| `v0.12.json` → `v0.13.json` (end-to-end gate run, 2026-10-24 08:26 UTC, `70f407ad`, load 9–20; exit 1) | all PASS (max `coord/channel_spsc_10k` 1.116) | secure stack +2,698 ns PASS, unary RPC +1,768 ns PASS, batch 0.086 PASS, h3 0.064 PASS (userspace proxies) | 1.103, 0.984 and 0.990 FAIL (by construction) | eager 0.348 PASS at 0.45 (FAIL at the earlier 0.25) | i18n +327 ns, UI +10,118 ns PASS |
 
 The streaming group against 0.12, for `r13-f-stream-chunking` (pull path only, "batch throughput
 unchanged within noise"): `stream/pull_map_10k` 0.998, `stream/map_effect_1k` 0.997,
