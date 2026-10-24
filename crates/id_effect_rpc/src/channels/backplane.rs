@@ -857,6 +857,20 @@ mod tests {
   }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  async fn connecting_in_memory_reports_network_failures() {
+    // Two nodes under one name: the second cannot listen.
+    let (id, m) = mesh("dup@bp");
+    let twice = [(id.clone(), m.clone()), (id, m)];
+    let bound = connect_in_memory(&MemoryNetwork::new(), &twice, &cookie()).await;
+    assert!(matches!(bound, Err(ChannelError::Internal(why)) if why.contains("bound")));
+    // A partitioned pair cannot dial.
+    let net = MemoryNetwork::new();
+    net.partition("a@cut", "b@cut");
+    let cut = connect_in_memory(&net, &[mesh("a@cut"), mesh("b@cut")], &cookie()).await;
+    assert!(matches!(cut, Err(ChannelError::Internal(why)) if why.contains("partitioned")));
+  }
+
+  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
   async fn a_session_ends_on_an_undecodable_envelope() {
     let net = MemoryNetwork::new();
     let (a_id, _) = mesh("a@s");
