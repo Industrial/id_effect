@@ -66,10 +66,13 @@ impl Actor {
 /// One change to record.
 #[derive(Clone, Debug)]
 pub(crate) struct Change {
+  #[cfg_attr(not(feature = "audit"), allow(dead_code))]
   action: String,
+  #[cfg_attr(not(feature = "audit"), allow(dead_code))]
   entity: String,
   before: Vec<(&'static str, SqlValue)>,
   after: Vec<(&'static str, SqlValue)>,
+  #[cfg_attr(not(feature = "audit"), allow(dead_code))]
   ids: Option<Vec<String>>,
 }
 
