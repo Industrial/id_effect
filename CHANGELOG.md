@@ -352,11 +352,22 @@
   eager loading and keyset pages; tenant `acme` on the main database, `globex` on its own through
   `TenantRouter`. Deterministic AI only in CI (`ScriptedModel` and recorded OpenAI / Anthropic
   fixtures). CI job `reference-pipeline`.
+- The Pipeline reference app, back office (r13-w7-pipeline-backoffice, D1 stage 5): the admin of
+  `Source`, `Document` and `Label` generated with `id-effect generate admin` (every edit after
+  generation listed in the README), one guarded site per tenant on the tenant's own database,
+  roles `reviewer` (list, view, update labels through the N:M label picker, bulk re-run
+  extraction) and `admin` (all), every change in the hash-chained audit log; an htmx + maud review
+  queue (layout, components, partial updates, form errors bound to fields) in English and German
+  (`Accept-Language` plus a per-user override, translated validation errors,
+  `locales/{en,de}/backoffice.ftl`); CSRF on every post; and the app's prod posture
+  (`pipeline::ui::posture`): clean with zero accepted risks.
 
 ### Changed
 
 - `id_effect_ai` and `id_effect_i18n` move to tier `platform` (r13-w6-pipeline, ADR 0012 check P):
   the Pipeline reference app depends on them and runs them in CI.
+- `id_effect_admin` moves to tier `platform` (r13-w7-pipeline-backoffice, ADR 0012 check P): the
+  Pipeline reference app's back office depends on it and runs it in CI.
 - One rcgen (r13-f-rcgen, 0.12 follow-up F5): `id_effect_platform`, `id_effect_node`,
   `id_effect_axum`, `id_effect_sql`, `id_effect_tool` and `id_effect_kit` move from rcgen 0.13 to
   0.14 (the version instant-acme already brought), so `cargo tree -d` lists rcgen once and the

@@ -578,7 +578,10 @@ jobs:
   # ingest by RPC and upload, the extract / classify / embed jobs, the status subscription,
   # publication through the outbox hook, the MCP server (guarded, Origin-checked) and client.
   # Deterministic AI only (D8): ScriptedModel and the recorded OpenAI / Anthropic fixtures under
-  # wiremock; no key, no vendor call. r13-w7-pipeline-backoffice adds its steps here.
+  # wiremock; no key, no vendor call. The back office (r13-w7-pipeline-backoffice): the admin
+  # generated with `id-effect generate admin`, the htmx + maud review queue in English and German,
+  # CSRF on every post, and the prod posture with zero accepted risks (id_effect_admin on
+  # platform, check P).
   # ──────────────────────────────────────────────────────────────────────────
   reference-pipeline:
     name: Reference app (Pipeline)
@@ -609,9 +612,22 @@ jobs:
         run: |
           cargo fmt -p pipeline --check
           cargo clippy -p pipeline --all-targets --locked -- -D warnings
-      - name: Pipeline KPI (two tenants, two databases, AI stages, outbox hook, RPC, MCP)
+      - name: Pipeline KPI (two tenants, two databases, AI stages, outbox hook, RPC, MCP, back office, prod posture)
         run: cargo nextest run --locked -p pipeline
-      - name: Tier conformance (id_effect_ai and id_effect_i18n on platform, check P)
+      # The README's commands still generate the admin: regenerate it into a scratch copy
+      # without `src/admin` and show what was edited after generation (README "Back office").
+      - name: Back office admin from `id-effect generate admin`
+        run: |
+          scratch="$(mktemp -d)"
+          cp -r examples/reference/pipeline "$scratch/pipeline"
+          rm -r "$scratch/pipeline/src/admin"
+          sed -i '/^pub mod admin;$/d' "$scratch/pipeline/src/lib.rs"
+          for entity in Source Document Label; do
+            cargo run --locked -q -p id_effect_tool --bin id-effect -- \
+              generate admin "$entity" --path "$scratch/pipeline"
+          done
+          diff -ru "$scratch/pipeline/src/admin" examples/reference/pipeline/src/admin || true
+      - name: Tier conformance (id_effect_ai, id_effect_i18n and id_effect_admin on platform, check P)
         run: |
           command -v rg >/dev/null || sudo apt-get install -y -qq ripgrep
           bash scripts/tier-conformance.sh

@@ -4617,6 +4617,7 @@ dependencies = [
  "id_effect",
  "id_effect_kit",
  "id_effect_rpc",
+ "maud",
  "serde_json",
  "tokio",
  "wiremock",
