@@ -31,7 +31,14 @@ Owner: r13-f-eventlog-head. A provided method; implementors outside the workspac
 
 ## Axum: `WsConfig` control-frame cap
 
-Owner: r13-f-ws-credit.
+Owner: r13-f-ws-credit. No signature break (`WsConfig::control_messages_per_second`,
+`WsConfig::classify`, `WsFrameClass` and `DEFAULT_CONTROL_RATE_FACTOR` are new); one behaviour
+change: inbound WebSocket pings and pongs, which 0.12 did not count at all, now count against
+the control cap (default 4 × `messages_per_second`, i.e. 400 per second) and a client above it is
+closed with 1008. Raise it with `.control_messages_per_second(n)` if a client legitimately pings
+faster. The rpc WebSocket transport installs `transport::ws::classify_frame`, so `credit` and
+`ping` frames no longer count against the data rate; a custom `WsConfig` passed to the rpc
+transport gets the same classifier.
 
 ## Axum / platform: `Http3Options` early-data and congestion settings
 
