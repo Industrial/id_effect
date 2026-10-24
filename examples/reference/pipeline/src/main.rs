@@ -13,6 +13,7 @@
 //! | `PIPELINE_MCP_ORIGINS` | browser origins admitted by the MCP endpoints, comma-separated (default none) |
 //! | `PIPELINE_ENRICH_URL`, `PIPELINE_ENRICH_TOOL` | the MCP enrichment server and its tool (default none) |
 //! | `PIPELINE_UPLOAD_DIR` | where uploads are kept (default: in memory) |
+//! | `ID_EFFECT_PROFILE` | the security-posture profile (default `dev`); `prod` refuses to start on a failed probe |
 
 use std::sync::Arc;
 
@@ -102,11 +103,21 @@ async fn start() -> Result<(), String> {
   }
   let app = Arc::new(app);
   let service = router(&app, &keys, &mcp)?;
-
   let worker = stages::worker(&app)
     .map_err(|e| format!("worker: {e}"))?
     .run()
     .provide_all(hlist![app.jobs.clone()]);
+
+  // The startup gate (ADR 0013 R10), once everything is assembled (so every opt-out taken is in
+  // the posture registry) and before the worker runs or a socket is bound: a weakened prod
+  // profile refuses to start.
+  let profile = env("ID_EFFECT_PROFILE").unwrap_or_else(|| "dev".to_owned());
+  let report = pipeline::ui::posture(&app, &mcp, &ai, &profile)?
+    .check()
+    .enforce()
+    .map_err(|refused| refused.to_string())?;
+  eprint!("{report}");
+
   tokio::spawn(async move {
     let _ = run_with_env(HNil, move |_| worker).await;
   });

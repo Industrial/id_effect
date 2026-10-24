@@ -108,6 +108,12 @@ documents in the tenant's, so the jobs wait for the action to commit. `COOKIE_KE
 least 64 bytes) signs the CSRF cookie so every instance accepts the others' sessions; without it
 a key is generated at startup.
 
+**Checked at startup.** Once the app, its routes and the stage worker are assembled, and before
+the worker runs or a socket is bound, the service checks `pipeline::ui::posture` under the
+profile `ID_EFFECT_PROFILE` names (default `dev`) and prints the report. Under `prod` a failed
+probe (an unguarded admin or MCP route, logged prompts, a `dangerous_*` opt-out taken, …) stops
+it: the Pipeline accepts no risk.
+
 **Generated, then edited.** `src/admin/` was produced with:
 
 ```bash
