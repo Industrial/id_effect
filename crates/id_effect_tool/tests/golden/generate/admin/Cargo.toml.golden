@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-id_effect_kit = { version = "0.13.0", features = ["authz", "web"] }
+id_effect_kit = { version = "0.13.0", features = ["admin", "web"] }
 id_effect = "0.13.0"
-# The admin back office (src/admin/, `id-effect generate admin`): guarded entity pages.
-id_effect_admin = "0.13.0"
 id_effect_sql = { version = "0.13.0", features = ["repository"] }

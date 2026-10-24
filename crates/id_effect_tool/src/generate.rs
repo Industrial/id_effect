@@ -31,10 +31,10 @@
 //!
 //! | File | Change |
 //! |---|---|
-//! | `src/admin/document.rs` | new: `admin()`, an `id_effect_admin::EntityAdmin<Document>` with list columns (the id and up to five more fields), a search box (text fields), filters (`bool` fields and text fields named like `status`) and sortable columns; secret-looking fields (`password_hash`, `api_token`, …) excluded from every page; `SLUG`, the offered `ACTIONS`, `register`, `permissions` and tests (deny by default, every page guarded) |
+//! | `src/admin/document.rs` | new: `admin()`, an `id_effect_kit::admin::EntityAdmin<Document>` with list columns (the id and up to five more fields), a search box (text fields), filters (`bool` fields and text fields named like `status`) and sortable columns; secret-looking fields (`password_hash`, `api_token`, …) excluded from every page; `SLUG`, the offered `ACTIONS`, `register`, `permissions` and tests (deny by default, every page guarded) |
 //! | `src/admin/mod.rs` | `pub mod document;`, `document::register(site)?` in `site()` and `document::permissions()?` in `permissions()`; created with `PREFIX`, `site()`, `permissions()`, `policy()` and `router()` when missing |
 //! | `src/lib.rs` | `pub mod admin;`, when missing |
-//! | `Cargo.toml` | `id_effect_admin` at the project's `id_effect` version and `id_effect_kit`'s `authz` feature, when missing; in a `--local-workspace` project also their `[patch.crates-io]` entries |
+//! | `Cargo.toml` | `id_effect_kit`'s `admin` feature (`id_effect_kit::admin`, with `authz`, `ui` and `repository`), when missing; in a `--local-workspace` project also the `[patch.crates-io]` entries of the crates it adds |
 //!
 //! Secure by default (ADR 0013 R1): `router()` mounts the site only with `.guard(g)`, every page
 //! checks `admin.<entity>.<action>` and nobody holds one until a role is granted it. No flag makes
@@ -129,7 +129,7 @@ pub enum GenerateCommand {
   Job(JobArgs),
   /// Add an admin back office for an entity (id_effect_admin): `src/admin/<entity>.rs` with its
   /// list columns, search and filters from the entity's fields, registered in src/admin/mod.rs,
-  /// which mounts the site behind a guard; adds the id_effect_admin dependency.
+  /// which mounts the site behind a guard; turns on id_effect_kit's `admin` feature.
   Admin(AdminArgs),
 }
 
@@ -979,15 +979,17 @@ fn add_patches(
 // ---------------------------------------------------------------------------------------------
 
 /// The path the generated admin code imports `id_effect_admin`'s items from (the `{{admin}}`
-/// variable of `templates/generate/admin`): the crate itself, until `id_effect_kit` has an
-/// `admin` feature and the import becomes `id_effect_kit::admin`.
-pub const ADMIN_IMPORT: &str = "id_effect_admin";
+/// variable of `templates/generate/admin`): the kit's re-export, feature `admin`.
+pub const ADMIN_IMPORT: &str = "id_effect_kit::admin";
+
+/// The kit feature the generated admin needs (it implies `authz`, `ui` and `repository`).
+const ADMIN_FEATURE: &str = "admin";
 
 /// The longest entity type name `generate admin` takes.
 pub const MAX_ENTITY_NAME: usize = 64;
 
-/// The id_effect crates `id_effect_admin` and the kit's `authz` feature add to a project's
-/// dependency graph (a `--local-workspace` project patches each).
+/// The id_effect crates the kit's `admin` feature adds to a project's dependency graph (a
+/// `--local-workspace` project patches each).
 const ADMIN_CRATES: [&str; 4] = [
   "id_effect_admin",
   "id_effect_authz",
@@ -1493,43 +1495,28 @@ impl AdminConfig {
   }
 }
 
-/// Adds `id_effect_admin` and `id_effect_kit`'s `authz` feature to `cargo`, and the crates they
-/// bring to a `[patch.crates-io]` that points id_effect at a checkout. Returns the new text and
-/// what changed; a change it cannot make is pushed on `by_hand`.
+/// Turns on `id_effect_kit`'s `admin` feature in `cargo`, and adds the crates it brings to a
+/// `[patch.crates-io]` that points id_effect at a checkout. Returns the new text and what
+/// changed; a change it cannot make is pushed on `by_hand`.
 fn add_admin_dependencies(cargo: &str, by_hand: &mut Vec<String>) -> (String, Vec<String>) {
   let mut lines: Vec<String> = cargo.lines().map(str::to_owned).collect();
   let mut what = Vec::new();
-  let version = dependency(cargo, "id_effect")
-    .or_else(|| dependency(cargo, "id_effect_kit"))
-    .and_then(version_of)
-    .unwrap_or(ID_EFFECT_VERSION)
-    .to_owned();
-  let dep = format!("id_effect_admin = \"{version}\"");
-  let current = view(&lines);
-  if entry(&current, "dependencies", "id_effect_admin").is_none() {
-    if let Some((start, end)) = table(&current, "dependencies") {
-      let at = entry(&current, "dependencies", "id_effect")
-        .unwrap_or_else(|| last_entry(&current, start, end));
-      let comment =
-        "# The admin back office (src/admin/, `id-effect generate admin`): guarded entity pages.";
-      lines.splice(at + 1..at + 1, [comment.to_owned(), dep.clone()]);
-      what.push(dep);
-    } else {
-      by_hand.push(format!("Cargo.toml: add `{dep}` under [dependencies]"));
-    }
-  }
 
-  // The kit's policies and route guards, which the generated `policy()` and tests use.
+  // The kit's admin (`id_effect_kit::admin`), with the policies, route guards and views the
+  // generated `policy()`, `router()` and tests use.
   let current = view(&lines);
+  let quoted = format!("\"{ADMIN_FEATURE}\"");
   if let Some(i) = entry(&current, "dependencies", "id_effect_kit")
-    && !lines[i].contains("\"authz\"")
+    && !lines[i].contains(&quoted)
   {
-    match with_feature(&lines[i], "authz") {
+    match with_feature(&lines[i], ADMIN_FEATURE) {
       Some(line) => {
         lines[i] = line;
-        what.push("id_effect_kit feature `authz`".to_owned());
+        what.push(format!("id_effect_kit feature `{ADMIN_FEATURE}`"));
       }
-      None => by_hand.push("Cargo.toml: enable id_effect_kit's `authz` feature".to_owned()),
+      None => by_hand.push(format!(
+        "Cargo.toml: enable id_effect_kit's `{ADMIN_FEATURE}` feature"
+      )),
     }
   }
 
@@ -2828,16 +2815,21 @@ mod tests {
       let mut by_hand = Vec::new();
       let (text, what) = add_admin_dependencies("[package]\nname = \"p\"\n", &mut by_hand);
       assert_eq!(text, "[package]\nname = \"p\"\n");
-      assert!(what.is_empty());
-      assert_eq!(by_hand.len(), 1, "{by_hand:?}");
+      assert!(
+        what.is_empty() && by_hand.is_empty(),
+        "{what:?} {by_hand:?}"
+      );
 
       let cargo = "[dependencies]\nid_effect_kit = { version = \"0.9.1\", features = [\n] }\n\n# --local-workspace\n[patch.crates-io]\nid_effect = { path = \"/ws/crates/id_effect\" }\nid_effect_sql = { path = \"/ws/crates/id_effect_sql\" }";
       let mut by_hand = Vec::new();
       let (text, what) = add_admin_dependencies(cargo, &mut by_hand);
-      assert!(text.contains("\nid_effect_admin = \"0.9.1\"\n"), "{text}");
+      assert!(
+        !text.contains("\nid_effect_admin = \""),
+        "no direct dependency: {text}"
+      );
       assert_eq!(
         by_hand,
-        ["Cargo.toml: enable id_effect_kit's `authz` feature"]
+        ["Cargo.toml: enable id_effect_kit's `admin` feature"]
       );
       for name in ["id_effect_admin", "id_effect_authz", "id_effect_axum"] {
         assert!(
@@ -2847,7 +2839,15 @@ mod tests {
       }
       assert_eq!(text.matches("crates/id_effect_sql").count(), 1);
       assert!(!text.ends_with('\n'));
-      assert_eq!(what.len(), 2, "{what:?}");
+      assert_eq!(what.len(), 1, "{what:?}");
+      let (again, what) = add_admin_dependencies(&text, &mut Vec::new());
+      assert_eq!((again, what.len()), (text, 0), "idempotent");
+
+      // A one-line kit entry gets the feature, once.
+      let cargo = "[dependencies]\nid_effect_kit = { version = \"0.9.1\", features = [\"web\"] }\n";
+      let (text, what) = add_admin_dependencies(cargo, &mut Vec::new());
+      assert!(text.contains("features = [\"admin\", \"web\"]"), "{text}");
+      assert_eq!(what, ["id_effect_kit feature `admin`"]);
       let (again, what) = add_admin_dependencies(&text, &mut Vec::new());
       assert_eq!((again, what.len()), (text, 0), "idempotent");
     }

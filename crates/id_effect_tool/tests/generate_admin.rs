@@ -185,7 +185,8 @@ fn generate_admin_is_idempotent() {
     1,
     "{admin}"
   );
-  assert_eq!(after[3].matches("id_effect_admin =").count(), 1);
+  assert_eq!(after[3].matches("\"admin\"").count(), 1);
+  assert!(!after[3].contains("id_effect_admin ="), "{}", after[3]);
 
   // An admin module edited by hand is never overwritten.
   let edited = after[0].replace(".search([", ".search([\"summary\", ");

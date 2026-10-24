@@ -23,6 +23,14 @@
 //! | `id_effect_storage` | `ObjectStore`, `ObjectStorage`, `StorageError`, `LocalStore`, `MemoryStore` | `storage` |
 //! | `id_effect_events` | `EventStore`, `EventStoreError`, `Projection`, `SqlEventJournal` | `events` |
 //! | `id_effect_rpc` | the crate as `rpc` (`#[rpc::service]`), `RpcErrorUnion` (trait and derive), `RpcGroup`, `RpcServer`, `RpcClient`, `Duplex`, `Subscription`, `SubscriptionItem`, `Cursor` | `rpc` |
+//! | `id_effect_process` | `Process`, `ProcessNode`, `ProcessCtx`, `Addr` | `process` (and `cluster`) |
+//! | `id_effect_ai` | `AiConfig`, `AiError`, `ChatMessage`, `ChatRequest`, `ChatResponse`, `LanguageModel`, `LanguageModelService`, `complete`, `complete_stream`, `Tool`, `ToolSet`, `ToolPolicy`, `ToolLoop`, `ToolLoopBudget` | `ai` |
+//! | `id_effect_ai::embeddings` | `Embedder`, `EmbedderService`, `Embedding`, `EmbedRequest`, `embed`, `cosine_similarity`, `top_k_similar` | `embeddings` |
+//! | `id_effect_ai::mcp` | `McpServer`, `McpEndpoint`, `McpClient` | `mcp` |
+//! | `id_effect_axum::ui` | `Markup`, `Render`, `html!`, `Component`, `Layout`, `BasicLayout`, `LayoutLayer`, `HtmlForm`, `FormState`, `HxRequest`, `HxTrigger`, `HxRedirect` | `ui` |
+//! | `id_effect_i18n` | `Catalog`, `Locale`, `CurrentLocale`, `current_locale`, `with_locale`, `translate`, `Args`; with `web`, `LocaleLayer` | `i18n` |
+//! | `id_effect_admin` | `AdminSite`, `AdminDatabase`, `EntityAdmin`, `AdminAction`, `AdminPermission`, `RbacAdminPolicy` | `admin` |
+//! | `id_effect_kit::tenancy` | `Tenancy`, `TenantId`, `TenantResolver`, `CurrentTenant`; with `web`, `TenancyLayer` | `tenancy` |
 //!
 //! Inside `#[rpc::service]`, the procedure attributes need no import: the macro reads
 //! `#[query]`, `#[mutation]`, `#[server_stream]`, `#[client_stream]`, `#[bidi]`,
@@ -42,7 +50,11 @@
 //! at the re-export: `#[from_row(crate = id_effect_kit::sql)]`, `#[entity(crate =
 //! id_effect_kit::sql, …)]`.
 //!
-//! `cluster` adds nothing here; reach for `id_effect_kit::node`. `test` adds nothing either:
+//! `html!` expands to `extern crate maud;`: a project that writes markup keeps `maud` as a
+//! dependency next to the kit. The i18n `Message` and `t` stay out (the `Message` clash above);
+//! reach for `i18n::t`.
+//!
+//! `cluster` adds nothing here beyond the `process` items; reach for `id_effect_kit::node`. `test` adds nothing either:
 //! its helpers stay under `id_effect_kit::test`. Anything else stays one path away under the
 //! crate re-exports (`id_effect_kit::id_effect::…`, `id_effect_kit::axum::…`).
 
@@ -141,3 +153,47 @@ pub use id_effect_rpc::wire::Cursor;
 pub use id_effect_rpc::{
   Duplex, RpcClient, RpcErrorUnion, RpcGroup, RpcServer, Subscription, SubscriptionItem,
 };
+
+#[cfg(feature = "process")]
+pub use id_effect_process::{Addr, Process, ProcessCtx, ProcessNode};
+
+#[cfg(feature = "ai")]
+pub use id_effect_ai::agent::{ToolLoop, ToolLoopBudget};
+#[cfg(feature = "ai")]
+pub use id_effect_ai::tools::{Tool, ToolPolicy, ToolSet};
+#[cfg(feature = "ai")]
+pub use id_effect_ai::{
+  AiConfig, AiError, ChatMessage, ChatRequest, ChatResponse, LanguageModel, LanguageModelService,
+  complete, complete_stream,
+};
+
+#[cfg(feature = "embeddings")]
+pub use id_effect_ai::{
+  EmbedRequest, Embedder, EmbedderService, Embedding, cosine_similarity, embed, top_k_similar,
+};
+
+#[cfg(feature = "mcp")]
+pub use id_effect_ai::mcp::{McpClient, McpEndpoint, McpServer};
+
+#[cfg(feature = "ui")]
+pub use id_effect_axum::ui::{
+  BasicLayout, Component, FormState, HtmlForm, HxRedirect, HxRequest, HxTrigger, Layout,
+  LayoutLayer, Markup, Render, html,
+};
+
+#[cfg(all(feature = "i18n", feature = "web"))]
+pub use id_effect_i18n::axum::LocaleLayer;
+#[cfg(feature = "i18n")]
+pub use id_effect_i18n::{
+  Args, Catalog, CurrentLocale, Locale, current_locale, translate, with_locale,
+};
+
+#[cfg(feature = "admin")]
+pub use id_effect_admin::{
+  AdminAction, AdminDatabase, AdminPermission, AdminSite, EntityAdmin, RbacAdminPolicy,
+};
+
+#[cfg(all(feature = "tenancy", feature = "web"))]
+pub use crate::tenancy::TenancyLayer;
+#[cfg(feature = "tenancy")]
+pub use crate::tenancy::{CurrentTenant, Tenancy, TenantId, TenantResolver};

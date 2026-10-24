@@ -239,3 +239,16 @@ loop answering `tools/list` and `tools/call` without a protocol version) is gone
 
 The `mcp` feature now also enables the optional `rand` dependency (handle and cursor ids), and
 `mcp-http` enables `id_effect_authz/axum` and `id_effect_axum/ws` (for `OriginPolicy`).
+
+## Kit: posture probes, `PROBES` and the generated admin's dependency
+
+Owner: r13-w5-kit-template. The kit gains features `process`, `ai`, `embeddings`, `mcp`, `ui`,
+`i18n`, `admin` and `tenancy` (all off by default, so nothing changes until you turn one on) and
+four posture probes. No shim: the changes are additive except these:
+
+| 0.12 | 0.13 |
+|---|---|
+| `id_effect_kit::posture::PROBES: [&str; 15]` | `[&str; 19]`: "admin guarded", "mcp guarded", "prompts not logged" and "tenant not from header" come before "no unaccepted opt-out". Code that names the array type or indexes it by position updates the length; code that iterates it needs nothing |
+| an opt-out such as `AiConfig::dangerous_log_prompts` failed only "no unaccepted opt-out" | `dangerous_log_prompts`, `McpServer::dangerous_mcp_write_tools` and `TenantResolver::dangerous_tenant_from_header` also fail their own probe; the one entry under `security.accepted_risks` (with a reason) accepts both, so an accepted opt-out needs no new configuration |
+| `id-effect generate admin` added `id_effect_admin = "<version>"` and the kit's `authz` feature, and imported `id_effect_admin::` | it turns on the kit's `admin` feature and imports `id_effect_kit::admin::`. Projects generated before keep working; to switch, replace `id_effect_admin::` with `id_effect_kit::admin::` in `src/admin/`, add `"admin"` to the kit's features and drop the `id_effect_admin` dependency |
+| the `cluster` template depended on `id_effect_process` | it imports `id_effect_kit::process` (the kit's `cluster` feature turns on `process`); an existing project may keep its direct dependency or switch the same way |
