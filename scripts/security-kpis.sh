@@ -15,7 +15,8 @@
 #         Security table of .maestro/specs/releases/0.13.0.md (security_table, which runs
 #         tests/security_compile_fail/tests/surface_013.rs with the compile-fail suite); the
 #         secure-stack and unary RPC deltas from docs/benchmarks/v0.13.json (secure_stack,
-#         unary_rpc).
+#         unary_rpc); the SECURITY.md security-release history against the published GitHub
+#         Security Advisories (security_releases, the sec.supply#7 carry-over).
 #
 # Local KPIs (computed from the checkout; a miss is a FAIL):
 #   open_highs           findings of docs/security/findings.json with severity high and status
@@ -111,6 +112,19 @@
 #                        published crates against the provenance" job green (it runs slsa-verifier
 #                        on every crate downloaded from crates.io) and the release carrying
 #                        id_effect-<VERSION>.intoto.jsonl. Verified = published when it is green.
+#   security_releases    (0.13; sec.supply#7) the "## Security releases" tables of SECURITY.md
+#                        against the repository's published GitHub Security Advisories (GET
+#                        repos/<repo>/security-advisories?state=published, through gh, else curl).
+#                        Local checks (a miss FAILs, also offline): at least one release with a
+#                        row, every row's Finding in docs/security/findings.json, every Advisory
+#                        cell a GHSA id, `pending` or `not a published crate`. Online: every GHSA
+#                        id of SECURITY.md is a published advisory of the repository and every
+#                        published advisory is listed (either miss FAILs). All rows with a
+#                        published advisory (or not a published crate) = pass; rows still
+#                        `pending` with the history consistent = pending (publication is a
+#                        release-automation or owner step, 0.13.0.md carry_over).
+#                        SECURITY_KPIS_ADVISORIES=<file> reads a JSON array of advisories
+#                        ({ghsa_id}) from a file instead of GitHub.
 #
 # Usage: bash scripts/security-kpis.sh [--out FILE] [--offline] [--no-run-tests] [VERSION]
 #        bash scripts/security-kpis.sh --self-test
@@ -123,7 +137,7 @@
 #   --self-test runs the kpi_* and s3_* cases below against fixtures in a temporary directory
 #               (offline, no network).
 # Environment: SECURITY_KPIS_BENCH (bench export), SECURITY_KPIS_REPO (default
-# Industrial/id_effect), SECURITY_KPIS_BESTPRACTICES_ID.
+# Industrial/id_effect), SECURITY_KPIS_BESTPRACTICES_ID, SECURITY_KPIS_ADVISORIES.
 # Output: one `security-kpis: <kpi> <summary> (target ...) pass|FAIL|pending|not measured` line
 # per KPI, then the JSON file (formatted with biome when it is on PATH). Exit status: 0 when no
 # KPI FAILed (pending and not measured do not fail), 1 on a FAIL, 2 on misuse.
@@ -149,6 +163,7 @@ T12_BENCH=""
 RELEASE_BENCH=""
 UNARY_KPI=0
 LOCAL_FUZZ_KPI=0
+RELEASES_KPI=0
 RUN_TABLE_TESTS="${SECURITY_KPIS_RUN_TESTS:-1}"
 UNARY_LIMIT_NS=3000
 BATCH_LIMIT=0.20
@@ -270,6 +285,7 @@ configure_release() {
             RELEASE_BENCH="${root}/docs/benchmarks/v0.13.json"
             UNARY_KPI=1
             LOCAL_FUZZ_KPI=1
+            RELEASES_KPI=1
             ;;
         *) die "no KPI targets for release ${release} (add a case to configure_release)" ;;
     esac
@@ -916,6 +932,91 @@ kpi_slsa() {
           end' --args "${unpublished[@]}"
 }
 
+# sec.supply#7: the "## Security releases" rows of ROOT/SECURITY.md against the published
+# advisories (header). ADVISORIES: a JSON array of advisories ({ghsa_id}) to use instead of
+# GitHub (SECURITY_KPIS_ADVISORIES; the self-test). One page of 100 advisories is read.
+kpi_security_releases() {
+    local root="$1" tmp="$2" advisories="${3:-}" file="$1/SECURITY.md" rows="" ids="" adv=null
+    local reason="" code="" url has_file=false
+    url="repos/${REPO_SLUG}/security-advisories?state=published&per_page=100"
+    if [[ -f "${file}" ]]; then
+        has_file=true
+        # release TAB finding TAB advisory cell, one line per finding row of the section.
+        rows="$(awk -F'|' '
+            /^## / { s = ($0 ~ /^## Security releases[ \t]*$/); next }
+            !s { next }
+            /^### / { v = $0; sub(/^### +/, "", v); sub(/[ \t].*$/, "", v); next }
+            /^\|/ {
+                id = $2; gsub(/^[ \t]+|[ \t]+$/, "", id)
+                if (id !~ /^[HMLS][0-9]+$/) next
+                n = NF; while (n > 2 && $n ~ /^[ \t]*$/) n--
+                cell = $n; gsub(/^[ \t]+|[ \t]+$/, "", cell)
+                print v "\t" id "\t" cell
+            }' "${file}")"
+    fi
+    ids="$(jq -r '.findings[]?.id' "${root}/docs/security/findings.json" 2>/dev/null || true)"
+    if [[ -n "${advisories}" ]]; then
+        if ! adv="$(jq -ce '[.[].ghsa_id]' "${advisories}" 2>/dev/null)"; then
+            adv=null
+            reason="${advisories} is not a JSON array of advisories"
+        fi
+    elif ((OFFLINE)); then
+        reason="offline"
+    else
+        if command -v gh >/dev/null && gh api "${url}" >"${tmp}/advisories.json" 2>/dev/null; then
+            code=200
+        else
+            code="$(http_get "https://api.github.com/${url}" "${tmp}/advisories.json")"
+        fi
+        if [[ "${code}" != 200 ]] || ! adv="$(jq -ce '[.[].ghsa_id]' "${tmp}/advisories.json" 2>/dev/null)"; then
+            adv=null
+            reason="the GitHub security-advisories API was not readable (HTTP ${code})"
+        fi
+    fi
+    jq -n --arg rows "${rows}" --arg ids "${ids}" --argjson adv "${adv}" --arg reason "${reason}" \
+    --arg repo "${REPO_SLUG}" --argjson has_file "${has_file}" '
+        "every Security releases row with a published GHSA (or not a published crate)" as $target
+        | ($ids | split("\n") | map(select(. != ""))) as $known
+        | [$rows | split("\n")[] | select(. != "") | split("\t")
+           | {release: .[0], finding: .[1], cell: (.[2] // "")}
+           | . + {ghsa: ((.cell | capture("(?<g>GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4})") | .g) // null)}
+           | . + {kind: (if .ghsa != null then "ghsa" elif .cell == "pending" then "pending"
+                         elif .cell == "not a published crate" then "exempt" else "bad" end)}] as $r
+        | [$r[] | select(.kind == "ghsa") | .ghsa] as $listed
+        | ([if $has_file then empty else "no SECURITY.md" end]
+           + [if $has_file and ($r | length) == 0 then "no Security releases rows in SECURITY.md" else empty end]
+           + [$r[] | select(.finding as $f | $known | index($f) | not)
+              | "\(.release) \(.finding): not in docs/security/findings.json"]
+           + [$r[] | select(.kind == "bad")
+              | "\(.release) \(.finding): advisory cell \(.cell | @json) is not a GHSA id, pending or not a published crate"]
+           + (if $adv == null then [] else
+                [$r[] | select(.kind == "ghsa" and (.ghsa as $g | $adv | index($g) | not))
+                 | "\(.release) \(.finding): \(.ghsa) is not a published advisory of \($repo)"]
+                + [$adv[] | select(. as $g | $listed | index($g) | not)
+                   | "\(.): published but not listed under Security releases in SECURITY.md"]
+              end)) as $problems
+        | ([$r[] | select(.kind == "pending")] | length) as $pending
+        | ([$r[] | select(.kind == "exempt")] | length) as $exempt
+        | ([$r[] | select(.kind == "ghsa")] | length) as $ghsa
+        | {value: (if $adv == null then null else $ghsa end), target: $target,
+           releases: ($r | map(.release) | unique), rows: ($r | length), ghsa_rows: $ghsa,
+           pending_rows: $pending, not_published_crate_rows: $exempt,
+           published_advisories: $adv, problems: $problems}
+        + if ($problems | length) > 0 then
+            {status: "fail",
+             summary: "\($problems | length) security-release history problems: \($problems | join("; "))"}
+          elif $adv == null then
+            {status: "pending", reason: $reason,
+             summary: "security releases pending: \($reason) (\($r | length) rows, \($pending) with the advisory pending)"}
+          elif $pending > 0 then
+            ("\($pending) of \($r | length) rows await a published GHSA (\($adv | length) published for \($repo)); publishing them is a release-automation or owner step (0.13.0.md carry_over, sec.supply#7)") as $why
+            | {status: "pending", reason: $why, summary: "security releases pending: \($why)"}
+          else
+            {status: "pass",
+             summary: "\($ghsa) rows with a published GHSA, \($exempt) not a published crate; \($adv | length) published advisories, all listed"}
+          end'
+}
+
 # --- report ----------------------------------------------------------------------------------
 
 # Prints one line per KPI of the report JSON on stdin.
@@ -945,6 +1046,10 @@ report() {
     if ((LOCAL_FUZZ_KPI)); then
         order+=(fuzz_local_crashes)
         kpi_fuzz_local_crashes "${root}" >"${tmp}/fuzz_local_crashes.json"
+    fi
+    if ((RELEASES_KPI)); then
+        order+=(security_releases)
+        kpi_security_releases "${root}" "${tmp}" "${SECURITY_KPIS_ADVISORIES:-}" >"${tmp}/security_releases.json"
     fi
     if is_git "${root}"; then
         revision="$(git -C "${root}" rev-parse --short=8 HEAD 2>/dev/null || true)"
@@ -1332,11 +1437,55 @@ YML
     expect kpi_security_table_fuzz_targets "${tmp}/t.json" '.status == "fail" and .problems == ["D: fuzz target delta is not a [[bin]] of fuzz/Cargo.toml"]'
     rm "${fx}/fuzz/fuzz_targets/delta.rs"
 
+    # ── kpi_security_releases (0.13, sec.supply#7) ───────────────────────────────────────────
+    register >"${fx}/docs/security/findings.json"
+    # history H1_CELL [EXTRA_ROW]: a SECURITY.md whose 9.9.1 release lists H1 with H1_CELL.
+    history() {
+        printf '# Security\n\n## Security releases\n\nIntro.\n\n### 9.9.1 (2026-10-18)\n\n'
+        printf '| Finding | Crate | Severity | Issue fixed | Advisory |\n|---|---|---|---|---|\n'
+        printf '| H1 | demo | High | a | %s |\n| H2 | app | High | b | not a published crate |\n' "$1"
+        [[ -z "${2:-}" ]] || printf '%s\n' "$2"
+        printf '\n## Supply chain\n\n| H9 | x | High | outside the section | soon |\n'
+    }
+    # releases H1_CELL ADVISORIES_JSON [EXTRA_ROW]: the KPI into h.json ("" = no advisories file).
+    releases() {
+        history "$1" "${3:-}" >"${fx}/SECURITY.md"
+        if [[ -n "$2" ]]; then
+            printf '%s' "$2" >"${tmp}/adv.json"
+            kpi_security_releases "${fx}" "${tmp}" "${tmp}/adv.json" >"${tmp}/h.json"
+        else
+            kpi_security_releases "${fx}" "${tmp}" >"${tmp}/h.json"
+        fi
+    }
+    releases pending ""
+    expect kpi_security_releases "${tmp}/h.json" '.status == "pending" and .reason == "offline" and .value == null and .rows == 2 and .pending_rows == 1 and .not_published_crate_rows == 1 and .releases == ["9.9.1"] and .problems == []'
+    releases pending '[]'
+    expect kpi_security_releases "${tmp}/h.json" '.status == "pending" and .value == 0 and (.reason | test("^1 of 2 rows await a published GHSA"))'
+    releases '[GHSA-abcd-2345-wxyz](https://github.com/o/r/security/advisories/GHSA-abcd-2345-wxyz)' '[{"ghsa_id": "GHSA-abcd-2345-wxyz"}]'
+    expect kpi_security_releases "${tmp}/h.json" '.status == "pass" and .value == 1 and .ghsa_rows == 1 and .published_advisories == ["GHSA-abcd-2345-wxyz"]'
+    releases pending '[{"ghsa_id": "GHSA-abcd-2345-wxyz"}]'
+    expect kpi_security_releases "${tmp}/h.json" '.status == "fail" and .problems == ["GHSA-abcd-2345-wxyz: published but not listed under Security releases in SECURITY.md"]'
+    releases GHSA-abcd-2345-wxyz '[]'
+    expect kpi_security_releases "${tmp}/h.json" '.status == "fail" and .problems == ["9.9.1 H1: GHSA-abcd-2345-wxyz is not a published advisory of '"${REPO_SLUG}"'"]'
+    releases pending "" '| M99 | demo | Medium | c | soon |'
+    expect kpi_security_releases "${tmp}/h.json" '.status == "fail" and .problems == ["9.9.1 M99: not in docs/security/findings.json", "9.9.1 M99: advisory cell \"soon\" is not a GHSA id, pending or not a published crate"]'
+    printf '# Security\n\n## Security releases\n\nNone yet.\n' >"${fx}/SECURITY.md"
+    kpi_security_releases "${fx}" "${tmp}" >"${tmp}/h.json"
+    expect kpi_security_releases "${tmp}/h.json" '.status == "fail" and .problems == ["no Security releases rows in SECURITY.md"]'
+    rm "${fx}/SECURITY.md"
+    kpi_security_releases "${fx}" "${tmp}" >"${tmp}/h.json"
+    expect kpi_security_releases "${tmp}/h.json" '.status == "fail" and .problems == ["no SECURITY.md"]'
+    echo '{"not": "an array"}' >"${tmp}/adv.json"
+    history pending >"${fx}/SECURITY.md"
+    kpi_security_releases "${fx}" "${tmp}" "${tmp}/adv.json" >"${tmp}/h.json"
+    expect kpi_security_releases "${tmp}/h.json" '.status == "pending" and (.reason | test("not a JSON array of advisories"))'
+    rm "${fx}/SECURITY.md"
+
     # ── kpi_release_0_13_targets ─────────────────────────────────────────────────────────────
     jq -n '{kpis: {compile_fail_cases: {value: 19}}}' >"${fx}/docs/security/kpis-0.12.json"
     out="$(configure_release "${fx}" 0.13
-        echo "${FUZZ_MIN} ${FUZZ_NEW_MIN} ${COMPILE_FAIL_MIN} ${REQUIRED_CASES[*]} ${UNARY_KPI} ${LOCAL_FUZZ_KPI} ${BASELINE#"${fx}"/} ${RELEASE_BENCH#"${fx}"/} ${SECURITY_SPEC#"${fx}"/}")"
-    want="22 5 21 r1_admin_site_without_guard r1_mcp_endpoint_without_access_decision 1 1 docs/security/kpis-0.12.json docs/benchmarks/v0.13.json .maestro/specs/releases/0.13.0.md"
+        echo "${FUZZ_MIN} ${FUZZ_NEW_MIN} ${COMPILE_FAIL_MIN} ${REQUIRED_CASES[*]} ${UNARY_KPI} ${LOCAL_FUZZ_KPI} ${RELEASES_KPI} ${BASELINE#"${fx}"/} ${RELEASE_BENCH#"${fx}"/} ${SECURITY_SPEC#"${fx}"/}")"
+    want="22 5 21 r1_admin_site_without_guard r1_mcp_endpoint_without_access_decision 1 1 1 docs/security/kpis-0.12.json docs/benchmarks/v0.13.json .maestro/specs/releases/0.13.0.md"
     [[ "${out}" == "${want}" ]] || st_fail kpi_release_0_13_targets "want '${want}', got '${out}'" || return 1
     pass=$((pass + 1))
     rm "${fx}/docs/security/kpis-0.12.json"
@@ -1365,7 +1514,7 @@ YML
     fi
     pass=$((pass + 1))
 
-    echo "security-kpis: self-test passed (${pass} checks: kpi_open_highs_counts_open_highs, kpi_register_complete, kpi_register_tests_exist, kpi_adr_rule_enforcement_exists, kpi_fuzz_targets_counted, kpi_compile_fail_cases_counted, kpi_secure_stack_delta, kpi_sha_pinned_actions, s3_no_registry_token_in_workflows, kpi_fuzz_targets_new, kpi_compile_fail_required, kpi_security_table, kpi_t12_benches, kpi_unary_rpc_delta, kpi_fuzz_local_crashes, kpi_security_table_dangerous_tests, kpi_security_table_fuzz_targets, kpi_release_0_13_targets, kpi_online_pending_offline)"
+    echo "security-kpis: self-test passed (${pass} checks: kpi_open_highs_counts_open_highs, kpi_register_complete, kpi_register_tests_exist, kpi_adr_rule_enforcement_exists, kpi_fuzz_targets_counted, kpi_compile_fail_cases_counted, kpi_secure_stack_delta, kpi_sha_pinned_actions, s3_no_registry_token_in_workflows, kpi_fuzz_targets_new, kpi_compile_fail_required, kpi_security_table, kpi_t12_benches, kpi_unary_rpc_delta, kpi_fuzz_local_crashes, kpi_security_table_dangerous_tests, kpi_security_table_fuzz_targets, kpi_security_releases, kpi_release_0_13_targets, kpi_online_pending_offline)"
 }
 
 # --- main ------------------------------------------------------------------------------------
