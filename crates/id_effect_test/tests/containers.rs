@@ -237,7 +237,16 @@ fn keycloak_serves_discovery_for_an_imported_realm() {
   let realm = r#"{"realm": "ledger", "enabled": true}"#;
   let program = using(|kc: Arc<KeycloakContainer>| {
     let address = kc.container().address(8080).unwrap();
-    let discovery = http_get(&address, "/realms/ledger/.well-known/openid-configuration");
+    // Docker's port proxy may accept before Keycloak's listener does (an empty reply, seen on
+    // CI): ask again briefly.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let discovery = loop {
+      let reply = http_get(&address, "/realms/ledger/.well-known/openid-configuration");
+      if reply.contains(" 200 ") || std::time::Instant::now() >= deadline {
+        break reply;
+      }
+      std::thread::sleep(std::time::Duration::from_millis(250));
+    };
     (kc.clone(), discovery)
   })
   .provide_layer(

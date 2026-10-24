@@ -100,7 +100,7 @@ use http_body_util::BodyExt;
 use id_effect::observability::posture::record_dangerous;
 use id_effect_config::{Config, ConfigError};
 use id_effect_platform::quic::{
-  CongestionControl, Handshake, QuicEndpoint, QuicEndpointConfig, QuicLimits, Route,
+  AlpnRoute, CongestionControl, Handshake, QuicEndpoint, QuicEndpointConfig, QuicLimits, Route,
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use tower_service::Service;
@@ -367,8 +367,25 @@ fn io_error(e: impl std::fmt::Display) -> std::io::Error {
 /// # Errors
 ///
 /// When the endpoint already routes `h3` or cannot take the route.
-pub async fn serve_h3<F>(
+///
+/// The route is registered when `serve_h3` is called, before the returned future first runs,
+/// so a client may connect as soon as the call returns (also when the future is spawned).
+pub fn serve_h3<F>(
   endpoint: &QuicEndpoint,
+  app: Router,
+  limits: ConnectionLimits,
+  options: Http3Options,
+  shutdown: F,
+) -> impl Future<Output = std::io::Result<()>> + Send + 'static
+where
+  F: Future<Output = ()> + Send + 'static,
+{
+  let route = endpoint.register(options.route()).map_err(io_error);
+  serve_route(route, app, limits, options, shutdown)
+}
+
+async fn serve_route<F>(
+  route: std::io::Result<AlpnRoute>,
   app: Router,
   limits: ConnectionLimits,
   options: Http3Options,
@@ -377,7 +394,7 @@ pub async fn serve_h3<F>(
 where
   F: Future<Output = ()> + Send + 'static,
 {
-  let route = endpoint.register(options.route()).map_err(io_error)?;
+  let route = route?;
   // Dropping the receiver is the signal; connections watch the sender.
   let (signal_tx, signal_rx) = watch::channel(());
   tokio::spawn(async move {
@@ -804,6 +821,8 @@ impl http_body::Body for H3Body {
 #[derive(Debug)]
 pub(crate) struct HostHttp3 {
   endpoint: QuicEndpoint,
+  /// Registered at bind, so the host accepts HTTP/3 as soon as it has started.
+  route: AlpnRoute,
 }
 
 impl HostHttp3 {
@@ -830,7 +849,10 @@ impl HostHttp3 {
     };
     let config = QuicEndpointConfig::new(identity.clone()).with_limits(quic_limits(limits));
     let endpoint = QuicEndpoint::bind(tcp, config).map_err(io_error)?;
-    Ok(Some(Self { endpoint }))
+    let route = endpoint
+      .register(Http3Options::default().route())
+      .map_err(io_error)?;
+    Ok(Some(Self { endpoint, route }))
   }
 
   /// The UDP port (the TCP one).
@@ -838,7 +860,8 @@ impl HostHttp3 {
     self.endpoint.local_addr().port()
   }
 
-  /// [`serve_h3`] with the default [`Http3Options`], then closes the endpoint.
+  /// [`serve_h3`] on the bound route with the default [`Http3Options`], then closes the
+  /// endpoint.
   pub(crate) async fn serve<F>(
     self,
     app: Router,
@@ -848,8 +871,8 @@ impl HostHttp3 {
   where
     F: Future<Output = ()> + Send + 'static,
   {
-    let served = serve_h3(
-      &self.endpoint,
+    let served = serve_route(
+      Ok(self.route),
       app,
       limits,
       Http3Options::default(),

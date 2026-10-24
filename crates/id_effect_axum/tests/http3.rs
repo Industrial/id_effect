@@ -868,19 +868,14 @@ async fn serve_h3_ends_when_its_endpoint_closes() {
     QuicEndpointConfig::new(ca.issue().identity()),
   )
   .unwrap();
-  let server = {
-    let endpoint = endpoint.clone();
-    tokio::spawn(async move {
-      serve_h3(
-        &endpoint,
-        plain_app(),
-        ConnectionLimits::default(),
-        Http3Options::new(),
-        std::future::pending(),
-      )
-      .await
-    })
-  };
+  // `serve_h3` registers the `h3` route when called, so a client may connect right away.
+  let server = tokio::spawn(serve_h3(
+    &endpoint,
+    plain_app(),
+    ConnectionLimits::default(),
+    Http3Options::new(),
+    std::future::pending(),
+  ));
   let mut h3 = h3_connect(endpoint.local_addr(), ca.roots()).await.unwrap();
   assert_eq!(h3.get("/hello").await.unwrap().body, "hello");
   endpoint.close();
@@ -916,15 +911,15 @@ async fn serve_h3_on_an_endpoint_of_your_own() {
   )
   .unwrap();
   let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-  let server = {
-    let endpoint = endpoint.clone();
-    tokio::spawn(async move {
-      serve_h3(&endpoint, plain_app(), limits, Http3Options::new(), async {
-        let _ = stopped.await;
-      })
-      .await
-    })
-  };
+  let server = tokio::spawn(serve_h3(
+    &endpoint,
+    plain_app(),
+    limits,
+    Http3Options::new(),
+    async {
+      let _ = stopped.await;
+    },
+  ));
   let mut h3 = h3_connect(endpoint.local_addr(), ca.roots()).await.unwrap();
   assert_eq!(h3.get("/hello").await.unwrap().body, "hello");
   // The endpoint routes h3 once: a second server on it is refused.
