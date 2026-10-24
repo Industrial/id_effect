@@ -118,16 +118,44 @@ impl EventLog<MyEvent> for MyStore {
 `events`), `EventSubscription::from_now()` is new; a subscription without it still starts after
 `starting_after` (default `0`), as in 0.12.
 
+## Core: live streams deliver partial chunks
+
+Owner: r13-f-stream-chunking. No signature change; one behaviour change. A pull from
+`Stream::unfold_effect` (and everything built on it: RPC client and server streams,
+subscriptions, queues) now returns the elements that are ready, at least one and at most the
+requested chunk size, instead of waiting until 64 (`DEFAULT_CHUNK_SIZE`) have arrived. Pure and
+bounded sources still yield full chunks. Code that assumed every chunk but the last is full
+should not; group explicitly if it needs fixed-size batches:
+
+```rust,ignore
+// before (0.12): relied on run_for_each seeing chunks of 64 from a live source
+// after (0.13): ask for the batch size you need
+stream.grouped(64).run_for_each(|batch| handle(batch))
+```
+
 ## Axum: `WsConfig` control-frame cap
 
-Owner: r13-f-ws-credit. No signature break (`WsConfig::control_messages_per_second`,
-`WsConfig::classify`, `WsFrameClass` and `DEFAULT_CONTROL_RATE_FACTOR` are new); one behaviour
+Owner: r13-f-ws-credit. No signature break besides the auto traits below
+(`WsConfig::control_messages_per_second`, `WsConfig::classify`, `WsFrameClass` and
+`DEFAULT_CONTROL_RATE_FACTOR` are new); one behaviour
 change: inbound WebSocket pings and pongs, which 0.12 did not count at all, now count against
 the control cap (default 4 × `messages_per_second`, i.e. 400 per second) and a client above it is
 closed with 1008. Raise it with `.control_messages_per_second(n)` if a client legitimately pings
 faster. The rpc WebSocket transport installs `transport::ws::classify_frame`, so `credit` and
 `ping` frames no longer count against the data rate; a custom `WsConfig` passed to the rpc
 transport gets the same classifier.
+
+One auto-trait break (`cargo semver-checks`: `auto_trait_impl_removed`): `WsConfig` now holds the
+classifier hook (a shared `dyn Fn`), so it is no longer `UnwindSafe` / `RefUnwindSafe`. Only code
+that moves a `WsConfig` into `std::panic::catch_unwind` (or requires those bounds on it) notices;
+wrap it:
+
+```rust,ignore
+// before (0.12)
+let result = std::panic::catch_unwind(|| build(&config));
+// after (0.13)
+let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| build(&config)));
+```
 
 ## Axum: WebSockets over HTTP/2 (RFC 8441)
 
@@ -180,6 +208,28 @@ Behavior: a generated client over `HttpTransport` now sends the calls it makes i
 whose `BatchConfig` caps a batch below 50 calls or 1 MiB refuses a larger window with its
 Problem, given to each call of it; raise the server caps or call through
 `RpcTransport::unary`, which still sends one call per request.
+
+## RPC: `WsClient` over `wss://` and postcard
+
+Owner: r13-f-ws-client-tls. Additive (`WsClientConfig`, `WsClient::connect_with`,
+`WsClient::over_postcard`, `WsClient::codec`); `WsClient::connect` keeps its signature and now
+dials `wss://` with the platform's root certificates (there is no "accept invalid certificates"
+option; add a private CA with `WsClientConfig::add_root_certificate_der`).
+
+One auto-trait break (`cargo semver-checks`: `auto_trait_impl_removed`): `WsClient` and `WsCall`
+share connection state that now carries the codec and TLS setup, so they are no longer
+`UnwindSafe` / `RefUnwindSafe`. They stay `Send` and `Sync`. Code that captures them in
+`std::panic::catch_unwind` wraps the closure:
+
+```rust,ignore
+// before (0.12): a ws:// URL only, JSON only
+let client = WsClient::connect("ws://127.0.0.1:8080/rpc").await?;
+let outcome = std::panic::catch_unwind(|| inspect(&client));
+// after (0.13): wss:// verified against the platform roots (or your CA), postcard if asked
+let config = WsClientConfig::new().add_root_certificate_der(ca_der).postcard(schemas);
+let client = WsClient::connect_with("wss://relay.internal/rpc", &config).await?;
+let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| inspect(&client)));
+```
 
 ## RPC / node: session pump, `MeshRpcError::PeerSilent`
 
