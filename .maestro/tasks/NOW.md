@@ -1,10 +1,10 @@
 # NOW
-Updated: 2026-10-21T01:13:47.887Z
+Updated: 2026-10-24T12:06:04.122Z
 
 ## In flight (0)
 None.
 
-## Ready to pick up (39)
+## Ready to pick up (42)
 ### tsk-mvhf59ri-gcmaue . W0: ADR 0015 Breadth batteries + PLAN-OF-PLANS restatement
 Mission: pln-mvhf4op9-yl99n0
 Spec: .maestro/specs/releases/0.13/r13-t0-adr0015.md
@@ -25,7 +25,7 @@ Spec: .maestro/specs/releases/0.13/r13-f-any-env.md
 Mission: pln-mvhf4op9-yl99n0
 Spec: .maestro/specs/releases/0.13/r13-e9-5-views.md
 
-(and 34 more)
+(and 37 more)
 
 
 ## Ready to ship (0)
