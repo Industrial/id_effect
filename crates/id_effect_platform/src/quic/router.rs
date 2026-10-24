@@ -3,10 +3,11 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::task::{Context, Wake, Waker};
 
 use rustls::pki_types::CertificateDer;
 use rustls::sign::CertifiedKey;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{Notify, mpsc};
 
 use super::{
   ALPN_H3, ALPN_MESH, CLOSE_BUSY, CLOSE_CLIENT_CERT_REQUIRED, CLOSE_NO_ROUTE, CongestionControl,
@@ -207,56 +208,131 @@ impl std::fmt::Display for Refusal {
 
 impl std::error::Error for Refusal {}
 
-/// Where a connection's handshake stands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Progress {
-  /// Still running: what the peer sent so far is 0-RTT early data.
-  Pending,
-  /// Complete: the peer holds the session's keys.
-  Complete,
-  /// Failed or timed out; the connection is closed.
-  Failed,
-}
-
 /// The handshake of a connection a route received (see [`AlpnRoute::accept_early`]).
 ///
 /// Connections of a route without early data are delivered with their handshake complete.
 /// On a route with [`Route::dangerous_allow_early_data`] they arrive while it runs: until
 /// [`Self::is_complete`] turns `true`, everything read from them is 0-RTT early data, which an
 /// attacker who captured it can replay (a replayed flight never completes the handshake).
+///
+/// The state is the connection's own (quinn's handshake-completion signal), read in place, not
+/// a copy another task updates later: quinn settles it before it wakes any reader of the data
+/// the completed handshake released, so a request read after the handshake completed never
+/// looks early.
 #[derive(Clone, Debug)]
 pub struct Handshake {
-  progress: watch::Receiver<Progress>,
+  /// `None`: delivered complete.
+  running: Option<Arc<Running>>,
 }
 
 impl Handshake {
   /// A handshake that has completed.
   pub(crate) fn complete() -> Self {
-    // The value outlives the sender: receivers keep reading it.
-    let (_, progress) = watch::channel(Progress::Complete);
-    Self { progress }
-  }
-
-  /// A running handshake and the sender that settles it.
-  pub(crate) fn pending() -> (Self, watch::Sender<Progress>) {
-    let (tx, progress) = watch::channel(Progress::Pending);
-    (Self { progress }, tx)
+    Self { running: None }
   }
 
   /// Whether the handshake has completed. `false` while it runs (what was read is early data)
   /// and after it failed.
   pub fn is_complete(&self) -> bool {
-    *self.progress.borrow() == Progress::Complete
+    self
+      .running
+      .as_ref()
+      .is_none_or(|running| running.poll() == Some(true))
   }
 
   /// Waits until the handshake settles: `true` once it completed, `false` if it failed, timed
   /// out or the endpoint is gone.
   pub async fn completed(&self) -> bool {
-    let mut progress = self.progress.clone();
-    match progress.wait_for(|p| *p != Progress::Pending).await {
-      Ok(p) => *p == Progress::Complete,
-      Err(_) => false,
+    match &self.running {
+      None => true,
+      Some(running) => running.settled().await,
     }
+  }
+}
+
+/// A handshake still running when its connection was handed to the route.
+struct Running {
+  conn: quinn::Connection,
+  state: Mutex<Settling>,
+  /// Wakes every [`Handshake::completed`] waiter when quinn's signal may have settled.
+  notify: Arc<Notify>,
+  /// What quinn's signal wakes: `notify` (never the [`Running`] itself, which holds the signal).
+  waker: Waker,
+}
+
+/// Where a running handshake stands.
+enum Settling {
+  /// quinn's completion signal, not resolved yet (polled outside the task's coop budget, so a
+  /// resolved signal always reads as resolved).
+  Pending(tokio::task::Unconstrained<quinn::ZeroRttAccepted>),
+  /// Resolved: whether the handshake completed (`false`: failed, timed out, or closed).
+  Settled(bool),
+}
+
+impl std::fmt::Debug for Running {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Running")
+      .field("remote", &self.conn.remote_address())
+      .field("settled", &self.poll())
+      .finish()
+  }
+}
+
+impl Running {
+  /// The handshake of `conn`, settled when quinn's `established` resolves.
+  fn new(conn: quinn::Connection, established: quinn::ZeroRttAccepted) -> Arc<Self> {
+    let notify = Arc::new(Notify::new());
+    let waker = Waker::from(Arc::new(Wakeup(Arc::clone(&notify))));
+    Arc::new(Self {
+      conn,
+      state: Mutex::new(Settling::Pending(tokio::task::unconstrained(established))),
+      notify,
+      waker,
+    })
+  }
+
+  /// The outcome once quinn's signal resolved (`Some(true)`: completed), `None` while it runs.
+  fn poll(&self) -> Option<bool> {
+    let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+    let established = match &mut *state {
+      Settling::Settled(done) => return Some(*done),
+      Settling::Pending(established) => established,
+    };
+    let mut cx = Context::from_waker(&self.waker);
+    if std::pin::Pin::new(established).poll(&mut cx).is_pending() {
+      return None;
+    }
+    let done = handshake_completed(&self.conn);
+    *state = Settling::Settled(done);
+    drop(state);
+    self.notify.notify_waiters();
+    Some(done)
+  }
+
+  /// Waits for the outcome.
+  async fn settled(&self) -> bool {
+    loop {
+      let notified = self.notify.notified();
+      let mut notified = std::pin::pin!(notified);
+      notified.as_mut().enable();
+      if let Some(done) = self.poll() {
+        return done;
+      }
+      notified.await;
+    }
+  }
+}
+
+/// The waker quinn's completion signal holds: it wakes the [`Handshake::completed`] waiters.
+struct Wakeup(Arc<Notify>);
+
+impl Wake for Wakeup {
+  fn wake(self: Arc<Self>) {
+    self.0.notify_waiters();
+  }
+
+  fn wake_by_ref(self: &Arc<Self>) {
+    self.0.notify_waiters();
   }
 }
 
@@ -606,26 +682,26 @@ impl AlpnRouter {
       .as_deref()
       .and_then(|alpn| self.early_data(alpn))
       .unwrap_or(false);
-    let progress = if early {
-      let (handshake, progress) = Handshake::pending();
+    // The route reads the handshake from the connection's own signal, as this task does: it
+    // never lags behind the connection (a closed connection settles it as failed).
+    let running = Running::new(conn.clone(), established);
+    if early {
+      let handshake = Handshake {
+        running: Some(Arc::clone(&running)),
+      };
       if !self.deliver(conn.clone(), handshake, counters) {
         return;
       }
       Counters::bump(&counters.early_handovers);
-      Some(progress)
-    } else {
-      None
-    };
-    let settled = tokio::time::timeout_at(deadline, settle(&conn, established, early))
-      .await
-      .unwrap_or_else(|_| Err(Unsettled::Failed("handshake timed out".into())));
-    let refusal = match settled {
+    }
+    // 0-RTT data reaches a route without early data only when the TLS server offers early
+    // data, which it does once a route takes it.
+    let watch_early_data = !early && self.table().entries.iter().any(|e| e.early_data);
+    let settling = within(deadline, settle(&conn, &running, watch_early_data)).await;
+    let refusal = match settling {
       Ok(()) => {
-        match progress {
-          Some(progress) => {
-            progress.send_replace(Progress::Complete);
-          }
-          None => self.dispatch(conn, counters),
+        if !early {
+          self.dispatch(conn, counters);
         }
         return;
       }
@@ -636,9 +712,7 @@ impl AlpnRouter {
         Refusal::EarlyData { remote }
       }
       Err(Unsettled::Failed(reason)) => {
-        if let Some(progress) = progress {
-          progress.send_replace(Progress::Failed);
-        }
+        // Closing settles a running handshake as failed for its route as well.
         conn.close(0u32.into(), b"handshake failed");
         Counters::bump(&counters.handshakes_failed);
         Refusal::Handshake { remote, reason }
@@ -652,41 +726,73 @@ impl AlpnRouter {
 
 /// Why a handshake did not complete into a connection for its route.
 enum Unsettled {
-  /// The peer opened a stream in 0-RTT on a route without early data.
+  /// The peer sent application data in 0-RTT on a route without early data.
   EarlyData,
   /// The handshake failed or timed out.
   Failed(String),
 }
 
-/// Wait for the handshake of `conn` to complete. On a route without `early` data a stream the
-/// peer opens before that was sent in 0-RTT (a server processes 1-RTT packets only once the
-/// handshake completed, RFC 9001 §5.7), and refuses the connection.
+/// [`settle`] by `deadline`.
+async fn within(
+  deadline: tokio::time::Instant,
+  settling: impl Future<Output = Result<(), Unsettled>>,
+) -> Result<(), Unsettled> {
+  tokio::time::timeout_at(deadline, settling)
+    .await
+    .unwrap_or_else(|_| Err(Unsettled::Failed("handshake timed out".into())))
+}
+
+/// How often a handshake on a route without early data looks for 0-RTT application data.
+const EARLY_DATA_PROBE: std::time::Duration = std::time::Duration::from_millis(1);
+
+/// Wait for the `handshake` of `conn` to settle. With `watch_early_data` (a route without early
+/// data on an endpoint whose TLS offers it), application data the peer sends before it
+/// completes refuses the connection ([`Unsettled::EarlyData`]).
+///
+/// That data is read from the connection's frame counters, never by accepting its streams
+/// (an accepted stream would be lost to the route's handler): a server processes 1-RTT
+/// packets only once its handshake completed (RFC 9001 §5.7), so `STREAM` or `DATAGRAM` frames
+/// counted while the handshake is still running came in 0-RTT packets. The counters are read
+/// before the handshake state, which quinn settles in the same step that processes the packet
+/// completing it, so frames counted after completion never read as early.
 async fn settle(
   conn: &quinn::Connection,
-  established: quinn::ZeroRttAccepted,
-  early: bool,
+  handshake: &Running,
+  watch_early_data: bool,
 ) -> Result<(), Unsettled> {
-  let early_stream = async {
-    if early {
-      return std::future::pending::<Result<(), quinn::ConnectionError>>().await;
+  let early_data = async {
+    if !watch_early_data {
+      return std::future::pending().await;
     }
-    tokio::select! {
-      opened = conn.accept_bi() => opened.map(drop),
-      opened = conn.accept_uni() => opened.map(drop),
+    loop {
+      let frames = conn.stats().frame_rx;
+      if frames.stream + frames.datagram > 0 && handshake.poll().is_none() {
+        return;
+      }
+      tokio::time::sleep(EARLY_DATA_PROBE).await;
     }
   };
   tokio::select! {
-    // A completed handshake wins over the streams it releases.
     biased;
-    _ = established => match conn.close_reason() {
-      None => Ok(()),
-      Some(e) => Err(Unsettled::Failed(e.to_string())),
-    },
-    opened = early_stream => match opened {
-      Ok(()) => Err(Unsettled::EarlyData),
-      Err(e) => Err(Unsettled::Failed(e.to_string())),
-    },
+    completed = handshake.settled() => {
+      if completed {
+        Ok(())
+      } else {
+        let reason = conn.close_reason();
+        Err(Unsettled::Failed(reason.map_or_else(|| "handshake failed".into(), |e| e.to_string())))
+      }
+    }
+    () = early_data => Err(Unsettled::EarlyData),
   }
+}
+
+/// Whether the handshake of server-side `conn`, whose completion signal resolved, completed.
+/// quinn resolves the signal when the handshake completes and when the connection is lost or
+/// closed first (its close reason set before). A connection the peer closed after its handshake
+/// completed, before this is asked, has sent `HANDSHAKE_DONE`, which a server sends only once
+/// the handshake completed (RFC 9001 §4.1.2).
+fn handshake_completed(conn: &quinn::Connection) -> bool {
+  conn.close_reason().is_none() || conn.stats().frame_tx.handshake_done > 0
 }
 
 /// The ALPN `conn` negotiated.
@@ -716,23 +822,86 @@ mod tests {
   use crate::quic::{QuicEndpoint, QuicEndpointConfig, QuicLimits, client_config};
   use crate::tls::{NodeCertificate, client_tls_config};
 
-  /// A handshake reads as complete only once it completed; a failed one, or one whose endpoint
-  /// is gone, never does.
+  /// A server-side connection still in its handshake, with quinn's completion signal, and the
+  /// client's side of it.
+  async fn handshaking(
+    server: &quinn::Endpoint,
+    client: &quinn::Endpoint,
+    config: &quinn::ClientConfig,
+  ) -> (quinn::Connection, quinn::ZeroRttAccepted, quinn::Connecting) {
+    let addr = server.local_addr().expect("addr");
+    let dial = client
+      .connect_with(config.clone(), addr, "localhost")
+      .expect("connect");
+    let incoming = server.accept().await.expect("incoming");
+    let Ok((conn, established)) = incoming.accept().expect("accept").into_0rtt() else {
+      panic!("a server-side connection always converts");
+    };
+    (conn, established, dial)
+  }
+
+  /// The running handshake of `conn`, as a route with early data receives it.
+  fn running(conn: quinn::Connection, established: quinn::ZeroRttAccepted) -> Handshake {
+    Handshake {
+      running: Some(Running::new(conn, established)),
+    }
+  }
+
+  /// A handshake reads as complete exactly when the connection's own handshake completed, for
+  /// every holder at once; one whose connection closed before that never does.
   #[tokio::test]
-  async fn handshake_settles_once() {
+  async fn handshake_reads_the_connections_own_state() {
     let done = Handshake::complete();
     assert!(done.is_complete());
     assert!(done.completed().await);
 
-    let (pending, progress) = Handshake::pending();
-    assert!(!pending.is_complete());
-    progress.send_replace(Progress::Failed);
-    assert!(!pending.completed().await);
-    assert!(!pending.is_complete());
+    let cert = NodeCertificate::self_signed("localhost").expect("cert");
+    let identity = Identity::from_certificate(&cert).expect("identity");
+    let router = AlpnRouter::new(1);
+    let _h3 = router.add(Route::h3(), &identity, |_| Ok(())).expect("h3");
+    let crypto =
+      quinn::crypto::rustls::QuicServerConfig::try_from(router.tls(&identity).expect("server tls"))
+        .expect("crypto");
+    let server = quinn::Endpoint::server(
+      quinn::ServerConfig::with_crypto(Arc::new(crypto)),
+      "127.0.0.1:0".parse().expect("addr"),
+    )
+    .expect("server");
+    let tls = client_tls_config(&identity, None, &[cert.cert_sha256()]).expect("tls");
+    let config = client_config(tls, &[ALPN_H3], &QuicLimits::default()).expect("config");
+    let client = quinn::Endpoint::client("127.0.0.1:0".parse().expect("addr")).expect("client");
 
-    let (pending, progress) = Handshake::pending();
-    drop(progress);
-    assert!(!pending.completed().await);
+    // Completes: no task in between updates it (this runtime has one thread, so the drivers
+    // run only while the test awaits).
+    let (conn, established, dial) = handshaking(&server, &client, &config).await;
+    let handshake = running(conn, established);
+    assert!(!handshake.is_complete(), "the client has not answered yet");
+    let other = handshake.clone();
+    let waiter = tokio::spawn(async move { other.completed().await });
+    let _client = dial.await.expect("client handshake");
+    assert!(handshake.completed().await);
+    assert!(handshake.is_complete());
+    assert!(waiter.await.expect("waiter"));
+    assert!(format!("{handshake:?}").contains("Some(true)"));
+
+    // Completed, then closed before anyone asked: still completed.
+    let (conn, established, dial) = handshaking(&server, &client, &config).await;
+    let handshake = running(conn.clone(), established);
+    let _client = dial.await.expect("client handshake");
+    while conn.stats().frame_tx.handshake_done == 0 {
+      tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    conn.close(0u32.into(), b"bye");
+    assert!(handshake.is_complete());
+
+    // Closed first: settled as failed, and stays so.
+    let (conn, established, dial) = handshaking(&server, &client, &config).await;
+    let handshake = running(conn.clone(), established);
+    conn.close(0u32.into(), b"bye");
+    assert!(!handshake.is_complete());
+    assert!(!handshake.completed().await);
+    assert!(!handshake.is_complete());
+    drop(dial);
   }
 
   /// A connection whose ALPN the router does not (or no longer) know is closed.

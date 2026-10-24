@@ -488,6 +488,49 @@ async fn zero_rtt_mutation_gets_425() {
   server.stop().await;
 }
 
+/// A route with early data receives its connections before their handshake completes; a
+/// mutation the client sends right after its handshake completed (1-RTT, released by the
+/// server's completion) is never mistaken for early data: the handshake state the handler
+/// reads is the connection's own, settled before that request can be read.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn zero_rtt_route_serves_mutations_sent_after_handshake() {
+  const DIALS: usize = 40;
+  let ran = Ran::default();
+  let server = Server::start(
+    app(&ran),
+    Http3Options::new().dangerous_allow_zero_rtt_for_queries(),
+  )
+  .await;
+  let client = quinn::Endpoint::client(local()).unwrap();
+  for dial in 0..DIALS {
+    // Awaiting the dial completes the handshake: everything after it is 1-RTT.
+    let conn = client
+      .connect_with(
+        server.early_client(),
+        server.endpoint.local_addr(),
+        "localhost",
+      )
+      .unwrap()
+      .await
+      .unwrap();
+    let send = h3_client(conn.clone()).await;
+    assert_eq!(
+      request(send, Method::POST, Some("{\"amount\":1}")).await,
+      (StatusCode::OK, "written".into()),
+      "dial {dial}"
+    );
+    conn.close(0u32.into(), b"done");
+  }
+  assert_eq!(ran.writes.load(Ordering::SeqCst), DIALS);
+  let stats = server.endpoint.stats();
+  assert_eq!(
+    stats.early_handovers, DIALS as u64,
+    "handed over while running"
+  );
+  assert_eq!(stats.handshakes_failed, 0);
+  server.stop().await;
+}
+
 /// F36: `Http3Options::congestion(Cubic)` (here from the config key
 /// `server.http3.congestion`) runs the `h3` route on CUBIC; the default stays BBR.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
