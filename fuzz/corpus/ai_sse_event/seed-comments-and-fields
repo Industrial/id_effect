@@ -1,0 +1,8 @@
+: keep-alive
+id: 42
+retry: 1000
+event
+data
+data:no-space
+data:  two spaces
+unknown: field

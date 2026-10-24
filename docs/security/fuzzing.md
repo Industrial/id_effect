@@ -28,6 +28,12 @@ the public API only, and checks a documented property besides "does not panic".
 | `rpc_duplex_frame` | `transport::frame::decode`, the frame boundary shared by WebSocket and WebTransport: the `idrpc.json.v1` path, and the `idrpc.postcard.v1` path the server takes (`decode_frame` + `frame::validate`); a `resume` frame's payload through `resume::decode_resume` (`id_effect_rpc`) | a decoded frame is valid and keeps its envelope through a round trip (when the re-encoding fits the cap) |
 | `rpc_resume_cursor` | `resume::decode_cursor` on text and `resume::decode_resume` on a JSON payload (`id_effect_rpc`) | a cursor is a sequence cursor of at most 64 bytes with one spelling; an accepted resume has at most 1,024 distinct call ids, none 0, each with a sequence cursor |
 | `sse_last_event_id` | `LastEventId::parse` (`id_effect_axum`, feature `sse`), then `wire::Cursor::decode` as the RPC SSE transport does | an accepted id is at most 256 bytes of UTF-8 without CR, LF or NUL and unchanged; a cursor from it re-spells to it |
+| `i18n_accept_language` | `negotiate::parse_accept_language`, then `Negotiator::select` with the input as header, cookie and preference (`id_effect_i18n`, 0.13) | a value over 256 bytes is refused whole; an accepted one has at most 32 ranges, best first, weights in `1..=1000`, locales that re-parse to themselves; the chosen locale is always allowlisted |
+| `sql_page_cursor` | `repository::page::PageCursor::decode` on the token and on the base64url of the input (`id_effect_sql`, feature `repository`, 0.13) | a token over 1 KiB is refused before decoding; a cursor has 1 to 8 keys, none NULL or JSON, and round-trips through `encode` and `PageCursor::new` |
+| `mcp_jsonrpc_message` | `mcp::decode_message` and `decode_message_with_limit` (`id_effect_ai`, feature `mcp`, 0.13) | a message over the cap is refused unparsed; an accepted one has a 1 to 256-byte method, a bounded string id and object `params`, and re-encodes to a message of the same kind, method, id and error; refusals map to the parse or invalid-request error |
+| `ai_sse_event` | `stream::decode_sse_event` and the incremental `SseParser` (`id_effect_ai`, 0.13) | input over 1 MiB is refused; an event has a field and no line break inside one; feeding the bytes in two chunks gives the same first event |
+| `ai_tool_arguments` | `tools::decode_arguments`, then `ToolSet::invoke` under the default `ToolPolicy` (`id_effect_ai`, feature `tools`, 0.13) | decoded arguments meet the type's refinements and round-trip through its `Schema`; `invoke` runs a handler exactly when the arguments decode for a registered read tool; unregistered names and write tools run nothing |
+| `admin_form_body` | `forms::decode_form`, then the mass-assignment guard `FormBody::bind` (`id_effect_admin`, 0.13) | a body over 64 KiB is a 413, others decoded have at most 1,024 pairs that round-trip through re-encoding; `bind` keeps exactly the declared fields and reports every other name once, never the CSRF field or `_`-prefixed names |
 
 Some inputs need a format the fuzzer can reach:
 
@@ -38,6 +44,20 @@ Some inputs need a format the fuzzer can reach:
 - `rpc_postcard_frame`: the first byte picks the decoder (byte % 7, in the order of the table
   row); `rpc_duplex_frame`: the first byte picks the codec (even JSON, odd postcard);
   `rpc_batch`: the first two bytes pick the call cap (`1..=64`) and the byte cap (× 256).
+- `mcp_jsonrpc_message`: the first byte also picks a small cap (× 16 bytes) for a second decode;
+  `ai_sse_event`: the first byte picks where the bytes are split into two chunks;
+  `ai_tool_arguments`: the first byte picks the tool name (byte % 5: `lookup`, `discount`, the
+  write tool `wipe`, the unregistered `rm_rf`, the case variant `Lookup`), the rest is the JSON
+  arguments.
+- `sql_page_cursor` decodes the input both as the token and base64url-encoded, so its seeds are
+  plain cursor documents (`{"v":1,"f":…,"k":[…]}`) as well as one token.
+
+The 0.13 seeds (`fuzz/corpus/{i18n_accept_language,sql_page_cursor,mcp_jsonrpc_message,
+ai_sse_event,ai_tool_arguments,admin_form_body}`) cover, besides valid inputs, the bounds: an
+`Accept-Language` of 33 ranges and one over 256 bytes, a cursor of 9 keys and one with a NaN, an
+out-of-range `i16` and a JSON key, an MCP batch and a response carrying `error` too, SSE with CR LF
+and comment lines, a refined-out tool argument, a write tool and an unregistered tool, and a form
+that submits the primary key, the tenant column and invalid escapes.
 
 The 0.12 seeds (`fuzz/corpus/rpc_*`, `sse_last_event_id`) include, besides valid inputs, the
 shapes the bounds exist for: a 500-deep recursive value and a sequence of 2^40 empty elements
@@ -72,11 +92,11 @@ the rest is your local corpus.
 
 - **`.github/workflows/cflite_pr.yml`** runs on pull requests that touch `crates/`, `fuzz/`,
   `.clusterfuzzlite/` or `Cargo.lock`. It builds the targets with AddressSanitizer and fuzzes
-  them for 5 minutes each (`fuzz-seconds: 5100` for the 17 targets; it is split across the
-  targets, so raise it by 300 for each target you add), starting from the stored corpus. A crash
-  the base branch does not have fails the job.
+  them for 5 minutes each (`fuzz-seconds: 6900` for the 23 targets; it is split across the
+  targets, so raise it by 300 for each target you add, and the job's `timeout-minutes` with it),
+  starting from the stored corpus. A crash the base branch does not have fails the job.
 - **`.github/workflows/cflite_batch.yml`** runs nightly (and on demand): 10 minutes per target
-  (`fuzz-seconds: 10200`; raise it by 600 per added target, and the job's `timeout-minutes` with
+  (`fuzz-seconds: 13800`; raise it by 600 per added target, and the job's `timeout-minutes` with
   it), then corpus pruning. The corpus is stored as workflow artifacts, which the next batch and the
   PR job download.
 - `.clusterfuzzlite/Dockerfile` builds on `base-builder-rust` (pinned by digest) with the pinned

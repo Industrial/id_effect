@@ -5645,9 +5645,16 @@ name = "security_compile_fail"
 version = "0.12.0"
 dependencies = [
  "axum",
+ "id_effect_admin",
+ "id_effect_ai",
+ "id_effect_authz",
+ "id_effect_i18n",
  "id_effect_kit",
  "id_effect_rpc",
+ "id_effect_sql",
  "serde_json",
+ "tokio",
+ "tower",
  "trybuild",
 ]
 

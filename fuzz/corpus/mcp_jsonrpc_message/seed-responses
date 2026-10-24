@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":-9223372036854775808,"result":{"tools":[{"name":"lookup","inputSchema":{"type":"object"}}],"nextCursor":"c2"},"error":{"code":-32603,"message":"ignored"}}
