@@ -600,29 +600,35 @@
 
 Planned (`bash scripts/scorecard.sh --targets 0.13.0`, METHOD 2.2, competitor snapshot
 2026-10-14, on the measured 0.12.0 baseline) against measured. The measured column is the blind
-re-score of `r13-x-rescore` (`docs/scorecard/results/v0.13.0.json`, `REPORT-0.13.0.md`); a cell
-reading "re-score" is not measured yet and is filled from that report before the tag.
+re-score of `r13-x-rescore` (`docs/scorecard/results/v0.13.0.json`, `REPORT-0.13.0.md`, tree at
+182d65a6); adjudications and the carry-over are in that report.
 
 | Index | 0.12.0 measured | 0.13.0 planned | 0.13.0 measured |
 |---|---|---|---|
-| Universal (U) | 82.3 (#1) | 85.4 (#1) | re-score |
-| Enterprise (E) | 81.5 (#1) | 85.2 (#1), gate 84.2 | re-score |
-| Runtime (RT) | 85.9 (#1) | 87.8 (#1) | re-score |
-| Rows < 40 | 7 | ≤ 3 | re-score |
-| Rows ≥ 80 | 59 | 60 | re-score |
+| Universal (U) | 82.3 (#1) | 85.4 (#1) | 86.7 (#1) |
+| Enterprise (E) | 81.5 (#1) | 85.2 (#1), gate 84.2 | 86.8 (#1; .NET 78.8) |
+| Runtime (RT) | 85.9 (#1) | 87.8 (#1) | 88.7 (#1) |
+| Rows < 40 | 7 | ≤ 3 | 3 |
+| Rows ≥ 80 | 59 | 60 | 64 |
 
 | Row | 0.12.0 measured | 0.13.0 planned (checks) | Evidence | 0.13.0 measured |
 |---|---|---|---|---|
-| `data.orm` | 63 | 88 (#3 relations + eager loading, #7 lifecycle hooks) | r13-e3-3-relations, r13-e3-3-hooks, r13-e3-3-pagination; Pipeline | re-score |
-| `web.ui` | 1 | 67 (#1 #2 #6 #8; margin #5) | r13-e9-5-views, r13-e9-4-i18n-web; Pipeline back office | re-score |
-| `web.admin` | 1 | 50 (#1 #2 #3 #8; margin #4 #5 #6) | r13-e9-3-admin-core, r13-e9-3-admin-edit, r13-e1-3-generate-admin | re-score |
-| `ai.llm` | 38 | 75 (#3 #5 #6; margin #4 #8) | r13-e9-1-promote, -tools, -embeddings, -mcp; Pipeline | re-score |
-| `eco.i18n` | 1 | 63 (#1 #2 #3 #5 #7) | r13-e9-4-i18n-core, r13-e9-4-i18n-web; Pipeline en/de | re-score |
-| `eco.tenancy` | 75 | 75 kept (margin #8) | r13-e5-5-tenancy, kit `tenancy`; Pipeline `globex` database | re-score |
-| `web.rpc` | 100 | 100 kept | T12 carry leaves; Relay, Ledger | re-score |
-| `web.realtime` | 100 | 100 kept | r13-f-ws-credit, r13-f-ext-connect, r13-f-webtransport-host | re-score |
-| `dist.tls` | 100 | 100 kept | r13-f-rcgen, r13-f-h3-settings, r13-f-mesh-session | re-score |
-| `sec.supply` | 88 | 100 (carried from 0.12: `sec.supply#7`, a published GHSA) | owner step below | re-score |
+| `data.orm` | 63 | 88 (#3 relations + eager loading, #7 lifecycle hooks) | r13-e3-3-relations, r13-e3-3-hooks, r13-e3-3-pagination; Pipeline | 88 (7/8, production) |
+| `web.ui` | 1 | 67 (#1 #2 #6 #8; margin #5) | r13-e9-5-views, r13-e9-4-i18n-web; Pipeline back office | 83 (5/6 scored with #5; #7 Leptos recipe not counted) |
+| `web.admin` | 1 | 50 (#1 #2 #3 #8; margin #4 #5 #6) | r13-e9-3-admin-core, r13-e9-3-admin-edit, r13-e1-3-generate-admin | 88 (7/8 with #4 #5 #6) |
+| `ai.llm` | 38 | 75 (#3 #5 #6; margin #4 #8) | r13-e9-1-promote, -tools, -embeddings, -mcp; Pipeline | 100 (8/8, production) |
+| `eco.i18n` | 1 | 63 (#1 #2 #3 #5 #7) | r13-e9-4-i18n-core, r13-e9-4-i18n-web; Pipeline en/de | 63 (5/8) |
+| `eco.tenancy` | 75 | 75 kept (margin #8) | r13-e5-5-tenancy, kit `tenancy`; Pipeline `globex` database | 88 (7/8 with #8 `TenantRouter`) |
+| `web.rpc` | 100 | 100 kept | T12 carry leaves; Relay, Ledger | 100 |
+| `web.realtime` | 100 | 100 kept | r13-f-ws-credit, r13-f-ext-connect, r13-f-webtransport-host | 100 |
+| `dist.tls` | 100 | 100 kept | r13-f-rcgen, r13-f-h3-settings, r13-f-mesh-session | 100 |
+| `sec.supply` | 88 | 100 (carried from 0.12: `sec.supply#7`, a published GHSA) | owner step below | 88 (miss: 0 published GHSA; carried over to 0.14) |
+| `web.validation` | 88 | 88 (no 0.13 target) | r13-e9-4-i18n-web (`schema` feature); Pipeline | 100 (#8 translated validation messages) |
+| `sec.web` | 88 | 88 (no 0.13 target) | r13-e9-5-views (maud, `ui::trusted_html`); Pipeline | 100 (#8 auto-escaping views) |
+
+`--compare-targets 0.13.0`: ok (measured E 86.8, tool-planned 87.1); `--diff 0.12.0 0.13.0`: ok
+(8 rows up, none down). Level production for the six breadth rows rests on the `reference-pipeline`
+CI job, which had not completed green on the release branch at scoring time.
 
 DX KPIs (`docs/benchmarks/dx-kpis-0.13.json`): K1 24.8 s (≤ 180), K2 1.47 s (≤ 8), K3 634 lines,
 K4 17/20 (≥ 17), K5 90.9 % (≥ 80 %), K6 31.9 s (budget 120 s); kit-feature cold-build deltas
