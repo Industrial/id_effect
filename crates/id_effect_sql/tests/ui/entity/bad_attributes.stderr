@@ -1,4 +1,4 @@
-error: expected `table = ".."`, `tenant = ".."`, `soft_delete = ".."`, `scope = path` or `crate = path` on the struct
+error: expected `table = ".."`, `tenant = ".."`, `soft_delete = ".."`, `scope = path`, `label = ".."`, `belongs_to(..)`, `has_many(..)`, `many_to_many(..)` or `crate = path` on the struct
  --> tests/ui/entity/bad_attributes.rs:4:10
   |
 4 | #[entity(name = "accounts")]
