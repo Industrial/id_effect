@@ -657,7 +657,9 @@ fn recorded() -> (TodosClient<HttpTransport>, Bodies) {
   (TodosService::client(transport), bodies)
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+// One worker: same-tick batching is deterministic on a FIFO executor and only timing-dependent
+// on a multi-thread one (id_effect::request, "The batch window").
+#[tokio::test(flavor = "current_thread")]
 async fn generated_client_batches_same_tick_calls() {
   let (client, bodies) = recorded();
   let both = id_effect::all(
