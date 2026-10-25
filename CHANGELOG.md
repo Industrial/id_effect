@@ -570,6 +570,13 @@
   +1,768 ns (budget 3,000 ns). Open: the scheduled ClusterFuzzLite batch crash in the 0.12 target
   `rpc_duplex_frame` (a `$serde_json::private::RawValue` payload key does not round-trip; owner
   `id_effect_rpc`, carried) and the OpenSSF Scorecard 6.6 (target 7.5, repository settings).
+- `id_effect_rpc` refuses JSON payloads with serde_json's raw-value key
+  (`$serde_json::private::RawValue`) at any depth, as malformed: frames (`transport::frame::decode`,
+  `idrpc.json.v1`), batches, call inputs, NDJSON items, postcard failure values and SSE events.
+  With serde_json's `raw_value` feature on (axum, sqlx) such a member re-encoded first and the next
+  decode replaced the object with the JSON its string held, or failed: the `rpc_duplex_frame`
+  ClusterFuzzLite crash, now closed (`fuzz_rpc_duplex_frame_raw_value_key_is_refused`, seed
+  `fuzz/corpus/rpc_duplex_frame/seed-crash-raw-value-key`).
 
 ### Performance
 

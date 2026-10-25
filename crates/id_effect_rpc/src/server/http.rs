@@ -795,7 +795,8 @@ fn get_input(parts: &Parts) -> Result<Value, String> {
     .map_err(|err| format!("malformed query string: {err}"))?;
   match params.input {
     None => Ok(Value::Null),
-    Some(text) => serde_json::from_str(&text).map_err(|err| format!("malformed rpc input: {err}")),
+    Some(text) => crate::codec::decode_value(text.as_bytes())
+      .map_err(|err| format!("malformed rpc input: {err}")),
   }
 }
 
@@ -838,7 +839,7 @@ async fn read_ndjson(
       if items > max_items {
         return Err(exhausted("max_items"));
       }
-      let item: Value = serde_json::from_slice(line).map_err(|err| {
+      let item: Value = crate::codec::decode_value(line).map_err(|err| {
         CallOutcome::invalid_input(vec![InputIssue {
           path: String::new(),
           message: format!("item {items} is not JSON: {err}"),

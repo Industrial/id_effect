@@ -36,6 +36,7 @@ pub mod postcard;
 #[cfg(feature = "postcard")]
 pub use self::postcard::Postcard;
 pub use json::Json;
+pub(crate) use json::{StrictValue, decode_value};
 
 use std::sync::Arc;
 
@@ -337,7 +338,7 @@ impl ProcedureCodecs {
   /// [`CodecError::Unsupported`] (415).
   pub fn decode_input(&self, codec: CodecId, bytes: &[u8]) -> Result<Value, CodecError> {
     match &self.input {
-      _ if codec.is_self_describing() => codec.decode(bytes),
+      _ if codec.is_self_describing() => codec.decode::<StrictValue>(bytes).map(|strict| strict.0),
       Some(typed) => typed.decode(codec, bytes),
       None => Err(unsupported(codec)),
     }
@@ -452,6 +453,11 @@ mod tests {
       untyped.decode_input(CodecId::Json, b"7").unwrap(),
       Value::from(7)
     );
+    // The `rpc_duplex_frame` raw-value finding: refused in a call input too.
+    assert!(matches!(
+      untyped.decode_input(CodecId::Json, br#"{"x":1,"$serde_json::private::RawValue":"2"}"#),
+      Err(CodecError::Decode(msg)) if msg.contains("is reserved")
+    ));
     assert_eq!(
       untyped
         .encode_output(CodecId::Json, &Value::from("x"))

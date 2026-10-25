@@ -64,6 +64,7 @@ use serde_json::Value;
 use tracing::Instrument as _;
 
 use crate::cancel::{CallControl, effective_deadline, requested_deadline};
+use crate::codec::StrictValue;
 use crate::contract::ProcedureKind;
 use crate::error_union::failure_value;
 use crate::handler::{CallContext, CallOutcome};
@@ -302,8 +303,18 @@ pub fn decode_batch(bytes: &[u8], max_calls: usize, max_bytes: usize) -> Result<
   if count == 0 {
     return Err(BatchError::Empty);
   }
-  let calls: Batch =
+  // Payloads with serde_json's raw-value key are refused (`StrictValue`).
+  let calls: Batch<StrictValue> =
     serde_json::from_slice(bytes).map_err(|err| BatchError::Malformed(err.to_string()))?;
+  let calls: Batch = calls
+    .into_iter()
+    .map(|call| WireCall {
+      id: call.id,
+      tag: call.tag,
+      v: call.v,
+      payload: call.payload.0,
+    })
+    .collect();
   let mut seen = HashSet::with_capacity(calls.len());
   for (index, call) in calls.iter().enumerate() {
     let Some(id) = call.id else {
@@ -641,6 +652,18 @@ mod tests {
       decode_batch(twice, 5, 1024),
       Err(BatchError::DuplicateId { id: 7 })
     );
+  }
+
+  /// The `rpc_duplex_frame` raw-value finding on the batch path: a payload with serde_json's
+  /// raw-value key is malformed, not a member that turns into other JSON once re-encoded.
+  #[test]
+  fn fuzz_rpc_duplex_frame_raw_value_key_is_refused_in_batches() {
+    let bad =
+      br#"[{"id":1,"tag":"A.b","payload":{"a":[{"b":1,"$serde_json::private::RawValue":"2"}]}}]"#;
+    assert!(matches!(
+      decode_batch(bad, 2, 1024),
+      Err(BatchError::Malformed(msg)) if msg.contains("is reserved")
+    ));
   }
 
   #[test]

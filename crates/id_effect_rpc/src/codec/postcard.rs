@@ -738,8 +738,7 @@ fn exit_in(exit: ExitIn) -> Result<WireExit<Vec<u8>, Value>, CodecError> {
   Ok(match exit {
     ExitIn::Success(value) => WireExit::Success { value: value.0 },
     ExitIn::Failure(text) => {
-      let error: Value =
-        serde_json::from_slice(&text.0).map_err(|e| CodecError::Decode(e.to_string()))?;
+      let error = super::decode_value(&text.0)?;
       if !error.get("_tag").is_some_and(Value::is_string) {
         return Err(CodecError::Decode(
           "a failure is a tagged union `{\"_tag\": …}`".to_owned(),

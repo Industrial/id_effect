@@ -259,7 +259,7 @@ impl SseCall {
         return Step::Event(CallEvent::Exit(Err(err)));
       }
     };
-    let value = serde_json::from_str::<Value>(&event.data).ok();
+    let value = crate::codec::decode_value(event.data.as_bytes()).ok();
     if event.name == "exit" {
       state.done = true;
       return Step::Event(CallEvent::Exit(exit_result(value)));
