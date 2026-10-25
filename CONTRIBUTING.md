@@ -51,9 +51,10 @@ A sign-off is a statement; a signature proves who made the commit. Sign your com
 `git commit -S -s` signs and signs off in one step. Commits GitHub creates (squash merges, the web
 editor) are signed by GitHub.
 
-Release tags are signed annotated tags (`git tag -s vX.Y.Z -m "vX.Y.Z"`), never lightweight or
-unsigned tags. The publish workflow refuses a tag that is not a signed annotated tag
-([docs/RELEASING.md](docs/RELEASING.md)); verify one with `git tag -v vX.Y.Z`.
+Release tags are annotated tags (`git tag -a vX.Y.Z -m "vX.Y.Z"`); signing them (`git tag -s`) is
+welcome but not checked: the publish workflow publishes any pushed `v*` tag whose version matches
+the workspace (owner decision 2026-10-24, #118; S6 is an accepted risk,
+[docs/RELEASING.md](docs/RELEASING.md)).
 
 Requiring signed commits is a repository setting, not a check in this repository. Owner actions
 ([0.11.0 D15](.maestro/specs/releases/0.11.0.md)):
