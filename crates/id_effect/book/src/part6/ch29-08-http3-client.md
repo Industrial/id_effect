@@ -5,7 +5,7 @@ and set one flag on the client config. The client keeps every guard of the TCP c
 SSRF policy, the timeouts, the retries and the body cap.
 
 ```toml
-id_effect_platform = { version = "0.12", features = ["http3"] }
+id_effect_platform = { version = "0.13", features = ["http3"] }
 ```
 
 ```rust,ignore

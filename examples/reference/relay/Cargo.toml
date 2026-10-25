@@ -26,7 +26,7 @@ path = "src/main.rs"
 # `process` re-export of the local process layer; QUIC with mutual TLS `mesh-mtls`), room
 # history on an event log (`events`) in PostgreSQL (`sql-pg`), bearer JWTs (`auth`) and
 # principals (`authz`). `tests/manifest.rs` (`relay_depends_on_kit_only`) holds it to that.
-id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", features = [
+id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.13.0", features = [
   "web",
   "rpc",
   "rpc-ws",
@@ -42,8 +42,8 @@ id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", fe
 # The derive and `effect!` macros expand to `::id_effect::` paths, `#[rpc::service]` to
 # `::id_effect_rpc::` paths: keep both crates, with no feature of their own (the kit picks
 # their features).
-id_effect = { path = "../../../crates/id_effect", version = "0.12.0" }
-id_effect_rpc = { path = "../../../crates/id_effect_rpc", version = "0.12.0" }
+id_effect = { path = "../../../crates/id_effect", version = "0.13.0" }
+id_effect_rpc = { path = "../../../crates/id_effect_rpc", version = "0.13.0" }
 axum = "0.8.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -58,7 +58,7 @@ tokio = { version = "1", features = [
 
 [dev-dependencies]
 # Containers (PostgreSQL in its own container) for the tests.
-id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", features = [
+id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.13.0", features = [
   "test",
 ] }
 # tests/contract.rs: `id-effect rpc check` in process. Path-only.

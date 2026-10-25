@@ -17,7 +17,7 @@ service double's calls, a real client's, your own:
 
 ```toml
 [dev-dependencies]
-id_effect_test = { version = "0.12", features = ["fault"] }
+id_effect_test = { version = "0.13", features = ["fault"] }
 ```
 
 The snippets below run their effects with `run_virtual`, the helper from

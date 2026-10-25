@@ -23,7 +23,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Every id_effect battery comes through the kit, one feature each.
-id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", features = [
+id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.13.0", features = [
   "web",
   "openapi",
   "sql-pg",
@@ -55,10 +55,10 @@ id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", fe
 ] }
 # `#[rpc::service]` expands to `::id_effect_rpc::` paths: the RPC crate is named too (the kit's
 # `rpc` feature picks its features).
-id_effect_rpc = { path = "../../../crates/id_effect_rpc", version = "0.12.0", default-features = false }
+id_effect_rpc = { path = "../../../crates/id_effect_rpc", version = "0.13.0", default-features = false }
 # The `Schema` derive expands to `::id_effect::` paths, so the core crate is named too (the kit
 # README's advice).
-id_effect = { path = "../../../crates/id_effect", version = "0.12.0" }
+id_effect = { path = "../../../crates/id_effect", version = "0.13.0" }
 axum = "0.8.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -73,7 +73,7 @@ tower = { version = "0.5", default-features = false, features = ["util"] }
 
 [dev-dependencies]
 # Containers, isolated databases, fixtures and the in-process HTTP client.
-id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.12.0", features = [
+id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.13.0", features = [
   "test",
 ] }
 # tests/oidc.rs plays the browser against Keycloak; tests/config.rs writes Vault secrets;

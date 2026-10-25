@@ -58,12 +58,12 @@ webtransport = ["http3", "dep:h3-webtransport", "h3-quinn/datagram"]
 ui = ["dep:maud"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.12.0", features = [
+id_effect = { path = "../id_effect", version = "0.13.0", features = [
   "schema-serde",
 ] }
-id_effect_config = { path = "../id_effect_config", version = "0.12.0" }
-id_effect_platform = { path = "../id_effect_platform", version = "0.12.0" }
-id_effect_node = { path = "../id_effect_node", version = "0.12.0", optional = true }
+id_effect_config = { path = "../id_effect_config", version = "0.13.0" }
+id_effect_platform = { path = "../id_effect_platform", version = "0.13.0" }
+id_effect_node = { path = "../id_effect_node", version = "0.13.0", optional = true }
 # `multipart`: typed routes and `ValidForm` read the text fields of `multipart/form-data` bodies.
 axum = { version = "0.8.9", features = ["multipart"] }
 http-body = "1"
@@ -113,7 +113,7 @@ tower-http = { version = "0.6.8", default-features = false, features = [
 # `HTTP-date` validators (`Last-Modified` / `If-Modified-Since`); already in tower-http's `fs` tree.
 httpdate = "1.0.3"
 # `middleware::RateLimitLayer`: token buckets on the effect runtime.
-id_effect_resilience = { path = "../id_effect_resilience", version = "0.12.0" }
+id_effect_resilience = { path = "../id_effect_resilience", version = "0.13.0" }
 # `route::Router::into_axum` logs the access report (public routes, opt-outs) at startup;
 # already in axum's dependency tree.
 tracing = "0.1"

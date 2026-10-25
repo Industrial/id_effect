@@ -32,14 +32,14 @@ clap = { version = "4.5", default-features = false, features = [
   "error-context",
 ] }
 # `id-effect migrate`: the migration engine on the PostgreSQL driver, run on a tokio runtime.
-id_effect = { path = "../id_effect", version = "0.12.0" }
-id_effect_sql = { path = "../id_effect_sql", version = "0.12.0", features = [
+id_effect = { path = "../id_effect", version = "0.13.0" }
+id_effect_sql = { path = "../id_effect_sql", version = "0.13.0", features = [
   "pg",
   "migrate",
 ] }
-id_effect_tokio = { path = "../id_effect_tokio", version = "0.12.0" }
+id_effect_tokio = { path = "../id_effect_tokio", version = "0.13.0" }
 # `id-effect rpc gen ts`: the service contract model (`id_effect_rpc::contract`); no client.
-id_effect_rpc = { path = "../id_effect_rpc", version = "0.12.0", default-features = false }
+id_effect_rpc = { path = "../id_effect_rpc", version = "0.13.0", default-features = false }
 # jiff: `migrate new` timestamps and `migrate status` times (same floor as id_effect_sql).
 jiff = "0.2.23"
 # `id-effect dev`: the localhost development CA and its 13-day ECDSA P-256 certificate

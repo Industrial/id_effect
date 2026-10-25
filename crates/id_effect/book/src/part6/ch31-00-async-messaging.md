@@ -9,8 +9,8 @@ Work that should not happen inside a request — sending a receipt, rebuilding a
 | [`id_effect_mail`](https://docs.rs/id_effect_mail) | outgoing mail: SMTP or SendGrid, templates, a preview in the browser | [Mail](./ch31-03-mail.md) |
 
 ```toml
-id_effect_jobs = { version = "0.12", features = ["cron"] }  # `cron` only for cron schedules
-id_effect_messaging = "0.12"
+id_effect_jobs = { version = "0.13", features = ["cron"] }  # `cron` only for cron schedules
+id_effect_messaging = "0.13"
 ```
 
 ## Jobs or messages

@@ -35,7 +35,7 @@ schema = []
 
 [dependencies]
 # No `compute` (rayon, sysinfo): catalogs and the locale capability need only the kernel.
-id_effect = { path = "../id_effect", version = "0.12.0", default-features = false }
+id_effect = { path = "../id_effect", version = "0.13.0", default-features = false }
 # Project Fluent (0.13 decision D5), exact pins: the crates are pre-1.0. fluent-bundle 0.16.0
 # requires fluent-langneg ^0.13, fluent-syntax ^0.12.0 and unic-langid ^0.9, so these pins are the
 # versions it resolves to and the tree keeps one copy of each. CLDR plural rules come through
@@ -46,7 +46,7 @@ fluent-syntax = "=0.12.0"
 unic-langid = "=0.9.6"
 # Feature `axum` (r13-e9-4-i18n-web); the versions id_effect_axum already uses.
 axum = { version = "0.8.9", optional = true }
-id_effect_axum = { path = "../id_effect_axum", version = "0.12.0", optional = true }
+id_effect_axum = { path = "../id_effect_axum", version = "0.13.0", optional = true }
 tower-layer = { version = "0.3.3", optional = true }
 tower-service = { version = "0.3.3", optional = true }
 # Feature `maud` (r13-e9-4-i18n-web), exact pin (pre-1.0); only the `Render` trait.

@@ -3,9 +3,9 @@
 //!
 //! ```toml
 //! [dependencies]
-//! id_effect_kit = { version = "0.12", features = ["web", "otel"] }
+//! id_effect_kit = { version = "0.13", features = ["web", "otel"] }
 //! # The derive and `effect!` macros expand to `::id_effect::` paths; keep the core crate too.
-//! id_effect = "0.12"
+//! id_effect = "0.13"
 //! ```
 //!
 //! ## Features
@@ -65,9 +65,9 @@
 //!
 //! ```toml
 //! [dependencies]
-//! id_effect_kit = { version = "0.12", features = ["web", "sql-pg", "migrate"] }
+//! id_effect_kit = { version = "0.13", features = ["web", "sql-pg", "migrate"] }
 //! [dev-dependencies]
-//! id_effect_kit = { version = "0.12", features = ["test"] }
+//! id_effect_kit = { version = "0.13", features = ["test"] }
 //! ```
 //!
 //! [`graph::LayerGraph`] registers an app's layers by name and renders their dependency edges

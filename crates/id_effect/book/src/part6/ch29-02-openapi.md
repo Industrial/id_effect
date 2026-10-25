@@ -31,7 +31,7 @@ cargo run -p id_effect_axum --features openapi --example 085_openapi -- --serve 
 
 ```toml
 [dependencies]
-id_effect_axum = { version = "0.12", features = ["openapi"] }
+id_effect_axum = { version = "0.13", features = ["openapi"] }
 ```
 
 ## The document comes from the routes

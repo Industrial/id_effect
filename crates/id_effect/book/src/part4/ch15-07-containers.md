@@ -8,7 +8,7 @@ layer's scope closes, whether the test succeeded, failed, panicked or was interr
 
 ```toml
 [dev-dependencies]
-id_effect_test = { version = "0.12", features = ["sql"] } # `sql`: a ready SqlClient over Postgres
+id_effect_test = { version = "0.13", features = ["sql"] } # `sql`: a ready SqlClient over Postgres
 ```
 
 | Image | Running value (the capability) | Connection details |

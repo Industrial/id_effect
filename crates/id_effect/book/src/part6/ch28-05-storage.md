@@ -3,7 +3,7 @@
 `id_effect_storage` gives a service one interface for files and blobs — uploads, exports, avatars, statements — whatever holds them: a directory on the local disk, memory in tests, or an S3-compatible bucket (AWS S3, Cloudflare R2, Ceph, SeaweedFS, ...) in production. Uploads and downloads stream without holding the object in memory, and every backend issues signed, expiring URLs, so clients can fetch or upload an object directly.
 
 ```toml
-id_effect_storage = { version = "0.12", features = ["s3"] }  # `s3` only for the S3 backend
+id_effect_storage = { version = "0.13", features = ["s3"] }  # `s3` only for the S3 backend
 ```
 
 It is built on the [`object_store`](https://crates.io/crates/object_store) crate (the Apache Arrow project's store abstraction). Every operation is a lazy `Effect<_, StorageError>` or a `Stream<_, StorageError>`; `StorageError` separates `NotFound`, `AlreadyExists`, `PermissionDenied` (credentials or policy), `InvalidKey`, `SigningUnavailable`, `Unsupported`, `Config` (a bad root directory, bucket or secret) and `Backend` (I/O, network, protocol).

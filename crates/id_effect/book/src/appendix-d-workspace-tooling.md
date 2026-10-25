@@ -39,13 +39,13 @@ Then name the library in your workspace's `Cargo.toml`, pinned to the id_effect 
 ```toml
 [workspace.metadata.dylint]
 libraries = [
-  { git = "https://github.com/Industrial/id_effect", tag = "v0.12.0", pattern = "lints/id_effect_lints" },
+  { git = "https://github.com/Industrial/id_effect", tag = "v0.13.0", pattern = "lints/id_effect_lints" },
 ]
 ```
 
 A single-package project puts the same table under `[package.metadata.dylint]`. Without the
 metadata, name the library on the command line:
-`cargo dylint --git https://github.com/Industrial/id_effect --tag v0.12.0 --pattern lints/id_effect_lints --all`.
+`cargo dylint --git https://github.com/Industrial/id_effect --tag v0.13.0 --pattern lints/id_effect_lints --all`.
 
 ### Use
 

@@ -1408,7 +1408,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "flume",
  "futures",
@@ -1423,7 +1423,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_axum"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1451,7 +1451,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_config"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "figment",
  "id_effect",
@@ -1464,11 +1464,11 @@ dependencies = [
 
 [[package]]
 name = "id_effect_macro"
-version = "0.12.0"
+version = "0.13.0"
 
 [[package]]
 name = "id_effect_platform"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "bytes",
  "http",
@@ -1483,7 +1483,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_proc_macro"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1492,14 +1492,14 @@ dependencies = [
 
 [[package]]
 name = "id_effect_resilience"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "id_effect",
 ]
 
 [[package]]
 name = "id_effect_rpc"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1524,7 +1524,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_rpc_macros"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "proc-macro2",
  "quote",
