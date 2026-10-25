@@ -55,14 +55,15 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/scorecard.sh --validate --self-test
-          for v in 0.6.0 0.7.0 0.8.0 0.9.0 0.10.0 0.11.0 0.12.0; do
+          for v in 0.6.0 0.7.0 0.8.0 0.9.0 0.10.0 0.11.0 0.12.0 0.13.0; do
             bash scripts/scorecard.sh --json "$v" | diff - "docs/scorecard/results/v$v.json"
           done
           bash scripts/scorecard.sh --diff 0.9.0 0.10.0 --compare-targets 0.10.0
           bash scripts/scorecard.sh --diff 0.10.0 0.11.0 --compare-targets 0.11.0
           bash scripts/scorecard.sh --diff 0.11.0 0.12.0 --compare-targets 0.12.0
+          bash scripts/scorecard.sh --diff 0.12.0 0.13.0 --compare-targets 0.13.0
           bash scripts/scorecard.sh --method 1 --version 0.7.0
-          # No --report 0.11.0 / 0.12.0: those reports end with hand-written release exit notes the
+          # No --report 0.11.0 / 0.12.0 / 0.13.0: those reports end with hand-written release exit notes the
           # generator cannot produce, so regenerating them would always differ.
           bash scripts/scorecard.sh --report 0.7.0 --report 0.8.0 --report 0.9.0 --report 0.10.0 --html --method-compare
           git diff --exit-code docs/scorecard/REPORT-0.7.0.md docs/scorecard/REPORT-0.8.0.md docs/scorecard/REPORT-0.9.0.md docs/scorecard/REPORT-0.10.0.md docs/scorecard/index.html docs/scorecard/REPORT-method-v2.md

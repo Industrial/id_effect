@@ -29,7 +29,7 @@ numbers that gates read are exported to JSON and committed here.
 | `delta` | `rpc/unary_json` over `rpc/axum_json_handler` | new − new ≤ 3000 ns (no noise band; [Unary budget (D5)](#unary-budget-d5)) |
 | `pair` | `rpc/batch_50` over `rpc/sequential_50` | new / new ≤ 0.20 (no noise band; [RPC gates](#rpc-gates-012)) |
 | `pair` | `h3_loss/h3_p99` over `h3_loss/h2_p99` | new / new ≤ 1.00 (noise 0.05; netem in CI, [HTTP/3 under loss](#http3-under-loss-d9)) |
-| `pair` | `orm/eager_100x10` over `orm/n_plus_one_100x10` | new / new ≤ 0.25 (no noise band; [Breadth gates (0.13)](#breadth-gates-013)) |
+| `pair` | `orm/eager_100x10` over `orm/n_plus_one_100x10` | new / new ≤ 0.45 (no noise band; owner decision 2026-10-24, follow-up F66; [Breadth gates (0.13)](#breadth-gates-013)) |
 | `delta` | `i18n/format_plural` over `i18n/empty_iter` | new − new ≤ 496 ns, the measured median × 1.5 (D15; no noise band; [Breadth gates (0.13)](#breadth-gates-013)) |
 | `delta` | `ui/render_list_50` over `ui/empty_iter` | new − new ≤ 14,710 ns, the measured median × 1.5 (D15; no noise band) |
 | `report` | every other listed or exported bench | always (ratio is printed) |

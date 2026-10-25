@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.13.0 — Unreleased — Breadth
+## 0.13.0 — 2026-10-25 — Breadth
+
+The batteries a business application expects (ADR 0015, accepted 2026-10-21): ORM relations,
+eager loading, lifecycle hooks, keyset pagination and multi-tenancy in `id_effect_sql`; an admin
+site (`id_effect_admin`); server-rendered views with htmx (`id_effect_axum` feature `ui`);
+localisation with Fluent (`id_effect_i18n`); and `id_effect_ai` out of `labs/` with tools,
+embeddings and MCP. The Pipeline reference app exercises all of them. The 0.12 follow-ups close
+the call surface (WebSocket credit, extended `CONNECT`, WebTransport in the host, `rcgen`, HTTP/3
+settings, the mesh session). Upgrade with [MIGRATION-0.13.md](docs/MIGRATION-0.13.md).
 
 ### Added
 
@@ -475,17 +483,15 @@
   fuzz targets (6 new), 21 compile-fail cases, secure stack +2698 ns, unary RPC +1768 ns, the 54
   Security-table names present, their 47 tests (52 cases with the SQLite and PostgreSQL variants)
   and the compile-fail suite green, `security_releases` pending (12 of the 13 0.10.1 rows await a
-  published GHSA; none is published). It fails on four KPIs: the scheduled ClusterFuzzLite
-  batch run of 2026-10-24 found a crash in the 0.12 target `rpc_duplex_frame` (a JSON payload key
-  `$serde_json::private::RawValue` does not survive a decode/encode/decode round trip; reproduced
-  on this branch, owner `id_effect_rpc`); the OpenSSF Scorecard is 6.6 (target 7.5; repository
-  settings); and the owner's release-flow decision merged from main (#118: publish from any
-  pushed tag with the registry token, as in 0.10.1) brings back `CARGO_REGISTRY_TOKEN` under
-  `.github` (`registry_token`, S3) and drops the signed-tag check, so the register's S6 test
-  `s6_release_requires_signed_tag` no longer exists (`open_highs` register problem). Both are
-  recorded as an accepted owner decision (2026-10-24), not a regression; `registry_token` passes
-  with `accepted` and the register note once `docs/security/findings.json` records S3 as accepted
-  (release prep). `docs/benchmarks/dx-kpis-0.13.json`:
+  published GHSA; none is published). The scheduled ClusterFuzzLite batch run of 2026-10-24
+  found a crash in the 0.12 target `rpc_duplex_frame`, fixed on this branch (e9032b41, below;
+  `fuzz_open_crashes` is pending until the batch runs on main after the merge). The owner's
+  release-flow decision merged from main (#118: publish from any pushed tag with the registry
+  token, as in 0.10.1) brings back `CARGO_REGISTRY_TOKEN` under `.github` (S3) and drops the
+  signed-tag check (S6); the register records both as accepted (owner decision 2026-10-24), so
+  `registry_token` passes as accepted and `open_highs` passes with 0 register problems. The one
+  failing KPI is the OpenSSF Scorecard, 6.6 (target 7.5; repository settings).
+  `docs/benchmarks/dx-kpis-0.13.json`:
   K1 24.8 s, K2 1.47 s, K3 634 lines, K4 17/20, K5 90.9 %, K6 31.9 s (budget 120 s); cold release
   build delta on the `service` template per kit feature: `ai` −0.1 s, `admin` +3.9 s, `ui` +1.3 s,
   `i18n` +3.3 s (baseline 30.8 s).
@@ -565,11 +571,18 @@
   `ai_sse_event`, `ai_tool_arguments`, `i18n_accept_language`, `mcp_jsonrpc_message`,
   `sql_page_cursor`), 21 compile-fail cases (2 new: `r1_admin_site_without_guard`,
   `r1_mcp_endpoint_without_access_decision`), `surface_013.rs` keeps every Security-table name
-  present, THREAT-MODEL.md boundary B10. 0 open highs (41 findings: 40 closed, 1 accepted), ADR
+  present, THREAT-MODEL.md boundary B10. 0 open highs (41 findings: 38 closed, 3 accepted), ADR
   0013 10/10 rules enforced, secure stack +2,698 ns over bare (budget 5,000 ns), unary RPC
-  +1,768 ns (budget 3,000 ns). Open: the scheduled ClusterFuzzLite batch crash in the 0.12 target
-  `rpc_duplex_frame` (a `$serde_json::private::RawValue` payload key does not round-trip; owner
-  `id_effect_rpc`, carried) and the OpenSSF Scorecard 6.6 (target 7.5, repository settings).
+  +1,768 ns (budget 3,000 ns). The scheduled ClusterFuzzLite batch crash in the 0.12 target
+  `rpc_duplex_frame` is fixed (next bullet, e9032b41); the batch workflow runs on main, so it
+  reports no open crash once this release merges. Open: the OpenSSF Scorecard 6.6 (target 7.5,
+  repository settings).
+- Release flow (owner decision 2026-10-24, #118): a pushed `v*` tag publishes every crate with
+  the `CARGO_REGISTRY_TOKEN` secret of the `crates-io` environment, which also creates the new
+  crates on their first publish; there is no signed-tag check. Findings S3 (long-lived registry
+  token) and S6 (unsigned tags) are recorded as accepted in `docs/security/findings.json` and
+  THREAT-MODEL.md "Accepted risks"; SECURITY.md "Supply chain" and `docs/RELEASING.md` describe
+  the flow. SLSA Build L3 provenance, SBOMs and the digest checks against crates.io stay.
 - `id_effect_rpc` refuses JSON payloads with serde_json's raw-value key
   (`$serde_json::private::RawValue`) at any depth, as malformed: frames (`transport::frame::decode`,
   `idrpc.json.v1`), batches, call inputs, NDJSON items, postcard failure values and SSE events.
@@ -648,17 +661,18 @@ recorded in 0.13 for 0.14.
 
 Not done by the release automation:
 
-- Accept ADR 0015 "Breadth batteries" (D16); it is Proposed, and the exit gate needs Accepted.
-  Review the defaults of D1–D15 and the nine open questions of the release spec.
-- Publish: push the `v0.13.0` tag. `publish.yml` publishes every crate in dependency order with
-  the `CARGO_REGISTRY_TOKEN` secret, including the first publication of `id_effect_ai`,
+- Publish the 0.10.1 GitHub Security Advisories (`sec.supply#7`, carried over to 0.14): each
+  "pending" row of SECURITY.md "Security releases" gets its GHSA id when published.
+- Push the `v0.13.0` tag on the merge commit (`git tag -a v0.13.0 -m "v0.13.0" && git push origin
+  v0.13.0`). `publish.yml` publishes every crate in dependency order with the
+  `CARGO_REGISTRY_TOKEN` secret, including the first publication of `id_effect_ai`,
   `id_effect_admin` and `id_effect_i18n` (crates.io creates them on first publish; no name
-  reservation step).
-- Fix or triage the `rpc_duplex_frame` ClusterFuzzLite crash (owner `id_effect_rpc`) so the
-  "no open crash" KPI passes on the tag.
-- Still open from earlier releases: publish the 0.10.1 GitHub Security Advisories
-  (`sec.supply#7`), accept ADR 0013 (0.11 D22), register the OpenSSF Best Practices badge (0.11
-  D16), allow `sudo tc` (netem) on the bench runner (0.12 D16).
+  reservation and no signed tag).
+- Still open from earlier releases: accept ADR 0013 (0.11 D22), register the OpenSSF Best
+  Practices badge (0.11 D16), allow `sudo tc` (netem) on the bench runner (0.12 D16).
+
+Done: ADR 0015 accepted (D16, 2026-10-21, defaults D1–D15 as written); the eager bench pair limit
+0.45 (F66) and keeping the #118 release flow (2026-10-24).
 
 ## 0.12.0 — 2026-10-20 — One call surface
 

@@ -2,10 +2,12 @@
 
 ## Status
 
-Proposed (2026-10-21). Release 0.13.0 "Breadth", track T9 with E1.3, E3.3 part 2 and E5.5, leaf
-`r13-t0-adr0015`. The owner moves it to Accepted ([0.13.0 D16](../../.maestro/specs/releases/0.13.0.md));
-the 0.13.0 exit gate needs "Accepted" and every rule's enforcement point green at the tag. Until
-then every 0.13 leaf cites this ADR as Proposed. The decisions come from the release spec's "Owner
+Accepted (owner decision D16, 2026-10-21; the defaults of D1–D15 as written). Proposed
+2026-10-21. Release 0.13.0 "Breadth", track T9 with E1.3, E3.3 part 2 and E5.5, leaf
+`r13-t0-adr0015`; acceptance recorded in [0.13.0 D16](../../.maestro/specs/releases/0.13.0.md) and
+PLAN-OF-PLANS §11. The 0.13.0 exit gate needs every rule's enforcement point green at the tag. One
+later owner decision amends a number here: the eager-loading pair limit of §15 is 0.45, not 0.25
+(2026-10-24, follow-up F66). The decisions come from the release spec's "Owner
 decisions" table (D1–D15) and its "Security — ADR 0013 applied to the breadth batteries" table.
 Where those disagree with PLAN-OF-PLANS, PLAN-OF-PLANS wins; where this ADR adds a fact the release
 spec could not know (the MCP revision current on 2026-10-21, the measured 0.12.0 baseline), this
@@ -280,7 +282,8 @@ client batcher drop its per-caller-environment resolver table. The name is Open 
 
 ### 15. Bench budgets: measure first (D15)
 
-The eager-loading pair gate `orm/eager_100x10 / orm/n_plus_one_100x10 ≤ 0.25` is written now: it is a
+The eager-loading pair gate `orm/eager_100x10 / orm/n_plus_one_100x10 ≤ 0.25` (owner decision
+2026-10-24: **0.45**, measured 0.313–0.416; follow-up F66 brings it back toward 0.25) is written now: it is a
 ratio of two measurements of the same stack (SQLite in memory). `i18n/format_plural` and
 `ui/render_list_50` start as `report` gates; `r13-e-benches` writes their budgets after measuring,
 and the owner confirms them at exit (as 0.12 D5). Every 0.12 gate (secure-stack delta ≤ 5 µs, unary
