@@ -897,4 +897,337 @@ mod tests {
       assert!(err.contains(expected), "{src}: {err}");
     }
   }
+
+  fn assert_parts(out: &str, parts: &[&str]) {
+    for part in parts {
+      assert!(out.contains(part), "missing `{part}` in {out}");
+    }
+  }
+
+  #[test]
+  fn has_many_default_name_pluralises_the_snake_case_target() {
+    let out = expand_str("#[entity(has_many(OrderLine))] struct Order { #[entity(id)] id: i64 }");
+    assert!(
+      out
+        .unwrap()
+        .contains("has_many (\"order_lines\" , \"order_id\")")
+    );
+  }
+
+  #[test]
+  fn belongs_to_custom_name_keeps_the_default_key() {
+    let out = expand_str(
+      "#[entity(belongs_to(User, name = \"author\"))] struct Post { #[entity(id)] id: i64, user_id: i64 }",
+    );
+    assert!(
+      out
+        .unwrap()
+        .contains("belongs_to (\"author\" , \"user_id\")")
+    );
+  }
+
+  #[test]
+  fn many_to_many_local_key_alone_keeps_the_default_foreign_key() {
+    let src = "#[entity(many_to_many(Role, through = \"m\", local_key = \"member\"))] struct Team { #[entity(id)] id: i64 }";
+    let out = expand_str(src).unwrap();
+    assert!(out.contains("many_to_many (\"roles\" , \"m\" , \"member\" , \"role_id\")"));
+  }
+
+  #[test]
+  fn entity_without_tenant_or_soft_delete_has_no_filters() {
+    let out = expand_str("struct Plain { #[entity(id)] id: i64 }").unwrap();
+    assert!(out.contains("const TENANT : :: core :: option :: Option < & 'static str > = :: core :: option :: Option :: None ;"));
+    assert!(out.contains("const SOFT_DELETE : :: core :: option :: Option < & 'static str > = :: core :: option :: Option :: None ;"));
+  }
+
+  #[test]
+  fn has_many_rejects_join_table_keys() {
+    let err =
+      expand_str("#[entity(has_many(Line, local_key = \"x\"))] struct S { #[entity(id)] a: i64 }");
+    assert!(err.unwrap_err().contains("in `has_many(..)`"));
+  }
+
+  #[test]
+  fn belongs_to_rejects_a_second_target() {
+    let err =
+      expand_str("#[entity(belongs_to(A, B))] struct S { #[entity(id)] a: i64, a_id: i64 }");
+    assert!(err.unwrap_err().contains("in `belongs_to(..)`"));
+  }
+
+  #[test]
+  fn rel_kind_recognises_only_the_three_relation_attributes() {
+    let path = |s: &str| syn::parse_str::<Path>(s).unwrap();
+    assert_eq!(RelKind::of(&path("belongs_to")), Some(RelKind::BelongsTo));
+    assert_eq!(RelKind::of(&path("has_many")), Some(RelKind::HasMany));
+    assert_eq!(
+      RelKind::of(&path("many_to_many")),
+      Some(RelKind::ManyToMany)
+    );
+    assert_eq!(RelKind::of(&path("has_one")), None);
+    assert_eq!(RelKind::of(&path("crate::has_many")), None);
+    assert_eq!(RelKind::BelongsTo.attr(), "belongs_to");
+    assert_eq!(RelKind::HasMany.attr(), "has_many");
+    assert_eq!(RelKind::ManyToMany.attr(), "many_to_many");
+  }
+
+  #[test]
+  fn snake_case_splits_words_and_unraws() {
+    let snake = |s: &str| snake_case(&syn::parse_str::<Ident>(s).unwrap());
+    assert_eq!(snake("Order"), "order");
+    assert_eq!(snake("OrderLine"), "order_line");
+    assert_eq!(snake("Line2Item"), "line2_item");
+    assert_eq!(snake("already_snake"), "already_snake");
+    assert_eq!(
+      snake_case(&Ident::new_raw("type", Span::call_site())),
+      "type"
+    );
+  }
+
+  #[test]
+  fn type_name_and_option_inner_render_field_types() {
+    let ty = |s: &str| syn::parse_str::<Type>(s).unwrap();
+    assert_eq!(type_name(&ty("Vec<u8>")), "Vec<u8>");
+    assert_eq!(type_name(&ty("&'static str")), "&'static str");
+    assert_eq!(type_name(&ty("Option<Vec<u8>>")), "Option<Vec<u8>>");
+    assert_eq!(
+      type_name(&ty("std::collections::BTreeMap<String, i64>")),
+      "std::collections::BTreeMap<String, i64>"
+    );
+    let inner = |s: &str| option_inner(&ty(s)).map(type_name);
+    assert_eq!(inner("Option<i64>").as_deref(), Some("i64"));
+    assert_eq!(
+      inner("std::option::Option<String>").as_deref(),
+      Some("String")
+    );
+    assert_eq!(inner("Option<Vec<u8>>").as_deref(), Some("Vec<u8>"));
+    assert_eq!(inner("Vec<i64>"), None);
+    assert_eq!(inner("Option<'a>"), None);
+  }
+
+  #[test]
+  fn option_renders_some_and_none() {
+    let lit = LitStr::new("deleted_at", Span::call_site());
+    assert_eq!(
+      option(Some(&lit)).to_string(),
+      ":: core :: option :: Option :: Some (\"deleted_at\")"
+    );
+    assert_eq!(
+      option(None).to_string(),
+      ":: core :: option :: Option :: None"
+    );
+  }
+
+  #[test]
+  fn belongs_to_defaults_name_and_key_from_the_target_path() {
+    let out = expand_str(
+      "#[entity(belongs_to(crate::crm::CustomerAccount))]
+       struct Invoice { #[entity(id)] id: i64, customer_account_id: i64 }",
+    )
+    .unwrap();
+    assert_parts(
+      &out,
+      &[
+        "RelationKind :: BelongsTo { foreign_key : \"customer_account_id\" }",
+        "< crate :: crm :: CustomerAccount as :: id_effect_sql :: repository :: Entity > :: TABLE",
+        "# [allow (dead_code)] fn customer_account () -> :: id_effect_sql :: repository :: Relation < Self , crate :: crm :: CustomerAccount >",
+        "Relation :: belongs_to (\"customer_account\" , \"customer_account_id\")",
+        "the `crate::crm::CustomerAccount` this row's `customer_account_id` references (`belongs_to`)",
+        ". label (\"invoice.customer_account_id\") . relation (\"customer_account\")",
+      ],
+    );
+    assert!(
+      !out.contains("pub fn customer_account"),
+      "a private entity gets private constructors: {out}"
+    );
+  }
+
+  #[test]
+  fn belongs_to_matches_the_renamed_column_not_the_field_name() {
+    let out = expand_str(
+      "#[entity(belongs_to(Customer, foreign_key = \"cust\"))]
+       struct Order {
+         #[entity(id)] id: i64,
+         #[from_row(rename = \"cust\")] customer: i64,
+       }",
+    )
+    .unwrap();
+    assert_parts(
+      &out,
+      &[
+        "FieldMeta :: new (\"customer\" , \"cust\" , \"i64\") . nullable (false) . editable (false) . label (\"order.customer\") . relation (\"customer\")",
+        "Relation :: belongs_to (\"customer\" , \"cust\")",
+      ],
+    );
+    let err = expand_str(
+      "#[entity(belongs_to(Customer, foreign_key = \"customer\"))]
+       struct Order { #[entity(id)] id: i64, #[from_row(rename = \"cust\")] customer: i64 }",
+    )
+    .unwrap_err();
+    assert!(
+      err.contains("`belongs_to` foreign key `customer` is not a column"),
+      "{err}"
+    );
+  }
+
+  #[test]
+  fn has_many_takes_an_explicit_foreign_key_on_the_target() {
+    let out = expand_str(
+      "#[entity(has_many(Line, foreign_key = \"parent\"))]
+       pub(crate) struct Order { #[entity(id)] id: i64 }",
+    )
+    .unwrap();
+    assert_parts(
+      &out,
+      &[
+        "RelationMeta :: new (\"lines\" , :: id_effect_sql :: repository :: RelationKind :: HasMany { foreign_key : \"parent\" }",
+        "pub (crate) fn lines () -> :: id_effect_sql :: repository :: Relation < Self , Line >",
+        "Relation :: has_many (\"lines\" , \"parent\")",
+        "the `Line` rows whose `parent` is this row's id (`has_many`)",
+      ],
+    );
+  }
+
+  #[test]
+  fn has_many_foreign_key_never_marks_a_field_as_a_relation() {
+    let out = expand_str(
+      "#[entity(has_many(Node, foreign_key = \"node_id\", name = \"children\"))]
+       struct Node { #[entity(id)] id: i64, node_id: Option<i64> }",
+    )
+    .unwrap();
+    assert_parts(
+      &out,
+      &[
+        "FieldMeta :: new (\"node_id\" , \"node_id\" , \"i64\") . nullable (true)",
+        "fn children ()",
+      ],
+    );
+    assert!(
+      !out.contains(". label (\"node.node_id\") . relation"),
+      "only belongs_to keys are field relations: {out}"
+    );
+  }
+
+  #[test]
+  fn many_to_many_documents_its_join_table_and_defaults_its_keys() {
+    let out = expand_str(
+      "#[entity(many_to_many(Tag, through = \"post_tags\"))]
+       struct BlogPost { #[entity(id)] id: i64 }",
+    )
+    .unwrap();
+    assert_parts(
+      &out,
+      &[
+        "RelationKind :: ManyToMany { through : \"post_tags\" , local_key : \"blog_post_id\" , foreign_key : \"tag_id\" }",
+        "Relation :: many_to_many (\"tags\" , \"post_tags\" , \"blog_post_id\" , \"tag_id\")",
+        "the `Tag` rows paired with this row in `post_tags` (`many_to_many`)",
+      ],
+    );
+  }
+
+  #[test]
+  fn relations_keep_their_declared_order() {
+    let out = expand_str(
+      "#[entity(has_many(Zeta), belongs_to(Alpha, name = \"owner\"))]
+       #[entity(many_to_many(Mid, through = \"j\"))]
+       struct Doc { #[entity(id)] id: i64, alpha_id: i64 }",
+    )
+    .unwrap();
+    let at = |needle: &str| {
+      out
+        .find(needle)
+        .unwrap_or_else(|| panic!("{needle}: {out}"))
+    };
+    let (zetas, owner, mids) = (
+      at("RelationMeta :: new (\"zetas\""),
+      at("RelationMeta :: new (\"owner\""),
+      at("RelationMeta :: new (\"mids\""),
+    );
+    assert!(zetas < owner && owner < mids, "{out}");
+    let (f_zetas, f_owner, f_mids) = (at("fn zetas ()"), at("fn owner ()"), at("fn mids ()"));
+    assert!(f_zetas < f_owner && f_owner < f_mids, "{out}");
+  }
+
+  #[test]
+  fn relation_constructors_carry_the_entity_generics() {
+    let out = expand_str(
+      "#[entity(has_many(Line))]
+       pub struct Holder<T> where T: Clone { #[entity(id)] id: i64, t: T }",
+    )
+    .unwrap();
+    assert_parts(
+      &out,
+      &[
+        "# [automatically_derived] impl < T > Holder < T > where T : Clone {",
+        "pub fn lines () -> :: id_effect_sql :: repository :: Relation < Self , Line >",
+        "Relation :: has_many (\"lines\" , \"holder_id\")",
+      ],
+    );
+  }
+
+  #[test]
+  fn relation_names_must_be_unique_identifiers_across_kinds() {
+    let err = expand_str(
+      "#[entity(belongs_to(Customer, name = \"party\"), has_many(Line, name = \"party\"))]
+       struct S { #[entity(id)] a: i64, customer_id: i64 }",
+    )
+    .unwrap_err();
+    assert!(err.contains("two relations are named `party`"), "{err}");
+    let err =
+      expand_str("#[entity(has_many(Line, name = \"type\"))] struct S { #[entity(id)] a: i64 }")
+        .unwrap_err();
+    assert!(
+      err.contains("relation name `type` must be an identifier"),
+      "{err}"
+    );
+  }
+
+  #[test]
+  fn field_labels_default_to_entity_and_unraw_field_name() {
+    let out = expand_str(
+      "struct TaxRate {
+         #[entity(id, label = \"rates.key\")] id: i64,
+         r#type: String,
+         #[entity(label = \"rates.pct\")] percent: f64,
+       }",
+    )
+    .unwrap();
+    assert_parts(
+      &out,
+      &[
+        "FieldMeta :: new (\"id\" , \"id\" , \"i64\") . nullable (false) . editable (false) . label (\"rates.key\")",
+        "FieldMeta :: new (\"type\" , \"type\" , \"String\") . nullable (false) . editable (false) . label (\"tax_rate.type\")",
+        "FieldMeta :: new (\"percent\" , \"percent\" , \"f64\") . nullable (false) . editable (false) . label (\"rates.pct\")",
+        "const LABEL : & 'static str = \"tax_rate\" ;",
+      ],
+    );
+  }
+
+  #[test]
+  fn soft_delete_column_is_never_editable_but_may_carry_a_label() {
+    let err = expand_str(
+      "#[entity(soft_delete = \"removed\")]
+       struct S { #[entity(id)] a: i64, #[entity(editable)] removed: Option<i64> }",
+    )
+    .unwrap_err();
+    assert!(
+      err.contains("tenant and soft-delete columns are never `editable`"),
+      "{err}"
+    );
+    let out = expand_str(
+      "#[entity(soft_delete = \"removed\", tenant = \"org\")]
+       struct S {
+         #[entity(id)] a: i64,
+         #[entity(label = \"s.removed\")] removed: Option<i64>,
+         #[entity(editable)] #[from_row(rename = \"title\")] org: String,
+       }",
+    )
+    .unwrap();
+    assert_parts(
+      &out,
+      &[
+        "FieldMeta :: new (\"removed\" , \"removed\" , \"i64\") . nullable (true) . editable (false) . label (\"s.removed\")",
+        "FieldMeta :: new (\"org\" , \"title\" , \"String\") . nullable (false) . editable (true)",
+      ],
+    );
+  }
 }

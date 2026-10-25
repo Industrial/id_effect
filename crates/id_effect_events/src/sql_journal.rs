@@ -547,7 +547,7 @@ mod tests {
     assert_eq!(latest_from(&[]).expect("empty"), 0);
   }
 
-  // A stub client over `TestSqlClient` whose transactions fail the journal insert with scripted
+  // A test client over `TestSqlClient` whose transactions fail the journal insert with scripted
   // errors (a unique violation is what a concurrent writer causes), and whose `LATEST_SQL`
   // outside a transaction (read after the rollback) answers a scripted version.
 
