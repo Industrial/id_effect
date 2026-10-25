@@ -160,10 +160,10 @@ and everyone else.
 |---|---|---|---|---|---|
 | T | A moved action tag or a floating toolchain changes what CI runs; `curl \| bash` installers (S1). | Every `uses:` pinned by full commit SHA with a version comment (the one exception is the SLSA generator, a reusable workflow that verifies its own `@vX.Y.Z` ref); `dtolnay/rust-toolchain` pinned with an explicit toolchain, and `rust-toolchain.toml`; the moon `curl \| bash` installer and the unchecked mdBook download replaced by pinned releases checked against their sha256; Dependabot keeps the pins current. | R10 | `s1_every_action_pinned_by_sha` (`scripts/check-workflows.sh --self-test`); `scripts/check-workflows.sh` over every workflow in moon-ci | closed (a6a97637; `publish.yml` edd5e5b8) |
 | E | Workflows ran with the default token permissions; Dependabot auto-merge approved its own pull requests (S2). | Top-level `permissions: contents: read` (or `{}`) in every workflow, write grants only on the jobs that need them; `dependabot-auto-merge.yml` approves nothing and enables auto-merge only for patch and minor updates, so GitHub merges after the required `CI Pass` check and a CODEOWNERS review. | R10 | `s2_every_workflow_least_privilege`, `s2_dependabot_does_not_self_approve` (`scripts/check-workflows.sh --self-test`) | closed (a6a97637) |
-| S, E | A leaked long-lived `CARGO_REGISTRY_TOKEN` publishes a malicious crate (S3). | crates.io trusted publishing only: `rust-lang/crates-io-auth-action` exchanges the publish job's GitHub OIDC token for a 30-minute crates.io token, one per half of the publish order; no workflow reads a registry secret ([docs/RELEASING.md](docs/RELEASING.md), "crates.io authentication"). The secret itself is deleted by the owner after the first trusted publish (0.11.0 D15). | — | `grep -rn CARGO_REGISTRY_TOKEN .github` finds nothing; `publish.yml` | closed in the workflow (edd5e5b8); owner steps open: trusted publisher on every crate, then delete the secret ([docs/RELEASING.md](docs/RELEASING.md) "Owner steps" 3 and 7) |
+| S, E | A leaked long-lived `CARGO_REGISTRY_TOKEN` publishes a malicious crate (S3). | The token is the `CARGO_REGISTRY_TOKEN` secret of the `crates-io` GitHub environment, read only by the `publish` job of `publish.yml` and handed to cargo on stdin (`.github/scripts/publish-crate.sh`); every uploaded `.crate` is checked against its SLSA-attested sha256 and the `verify` job re-checks crates.io (S5). 0.11.0 replaced it with trusted publishing (edd5e5b8); #118 (3e9104ed) restored the token flow ([docs/RELEASING.md](docs/RELEASING.md), "crates.io authentication"). | — | `s3_no_registry_token_in_workflows` (`scripts/security-kpis.sh`, passes as accepted); `publish.yml` | **accepted** (owner decision 2026-10-24, #118; see "Accepted risks") |
 | T | Provenance attested crates re-downloaded from crates.io, not the files CI built; `Cargo.lock` was not committed (S5). | `Cargo.lock` committed and CI builds `--locked` (a6a97637). The publish workflow runs `cargo package --locked`, signs SLSA Build L3 provenance over the built `.crate` files and SBOMs (slsa-github-generator), checks every uploaded `.crate` against its attested sha256, and a `verify` job downloads every crate from crates.io, compares the digest and runs `slsa-verifier` (0.11.0 D12, D13). | — | `s5_attested_digest_matches_published_crate` (`publish.yml`, `verify` job) | closed (a6a97637, edd5e5b8); first exercised by the 0.11.0 release |
 | T | Memory-safety and parser bugs nobody looked for (S4). | CodeQL for Rust and Actions (`.github/workflows/codeql.yml`); eleven cargo-fuzz targets (including `mesh_frame` and `mesh_envelope`, be6af99d) under ClusterFuzzLite on PRs and nightly (`fuzz/`, `.github/workflows/cflite_pr.yml`, `cflite_batch.yml`, [docs/security/fuzzing.md](docs/security/fuzzing.md)); the compile-fail suite for the type-enforced rules (`tests/security_compile_fail`, 17 cases, 8c317aa8, [docs/security/compile-fail.md](docs/security/compile-fail.md)). Miri and loom are later E11.4 parts (0.12 → 0.18). | R4 | CodeQL green; fuzz targets with no open crash | closed for SAST and fuzzing (572ec2bd, b7809387); Miri/loom deferred |
-| R | A contribution of unknown origin; unsigned commits and tags (S6). | DCO sign-off enforced on every pull request (`.github/workflows/dco.yml`, step `s6_dco_check_rejects_unsigned_off_commit` on a fixture); the publish workflow refuses a lightweight or unverified release tag (`verify-versions`, step `s6_release_requires_signed_tag`); "require signed commits" on protected branches is an owner action ([CONTRIBUTING.md](CONTRIBUTING.md), "Signed commits and tags"). | — | `s6_dco_check_rejects_unsigned_off_commit`; `s6_release_requires_signed_tag` | DCO closed (d6c22982); signed tags closed (edd5e5b8); signed commits: owner action D15, open (2026-10-19: no signature rule on `main`, no ruleset on `release/*`) |
+| R | A contribution of unknown origin; unsigned commits and tags (S6). | DCO sign-off enforced on every pull request (`.github/workflows/dco.yml`, step `s6_dco_check_rejects_unsigned_off_commit` on a fixture); a pushed `v*` tag publishes without a signature check (#118, 3e9104ed, which removed the 0.11.0 `s6_release_requires_signed_tag` step); "require signed commits" on protected branches is an optional owner setting ([CONTRIBUTING.md](CONTRIBUTING.md), "Signed commits and tags"). | — | `s6_dco_check_rejects_unsigned_off_commit` | DCO closed (d6c22982); unsigned tags **accepted** (owner decision 2026-10-24, #118; see "Accepted risks") |
 | I | Users do not know which versions get fixes; no threat model (S7). | [SECURITY.md](SECURITY.md) lists 0.11.x and 0.10.x and the security-release history; this file. | — | review at each release (Maintenance) | closed (d6c22982) |
 | T | A vulnerable or unlicensed dependency. | `cargo deny check` on every PR and push (`deny.toml`, ci.yml `deny` job) and a daily `cargo audit` (`.github/workflows/audit.yml`); every ignore carries a written reason. | — | `cargo deny check` | mitigated; see L6 and the debts below |
 
@@ -323,6 +323,24 @@ human confirmation, and treat model output shown to users as untrusted text (the
   exit sweep (2026-10-19, `release/0.11.0` at 6c0053aa: `rsa` 0.9.10; parents `openidconnect`
   4.0.1 and `sqlx-mysql` 0.8.6; the `git grep` finds only the test helper; no private-key use).
 
+### S3 and S6 — the token release flow (#118)
+
+- **What:** a pushed `v*` tag publishes every crate with the long-lived `CARGO_REGISTRY_TOKEN`
+  secret of the `crates-io` environment (S3); the tag is not checked for a signature (S6). New
+  crates (0.13.0: `id_effect_ai`, `id_effect_admin`, `id_effect_i18n`) are created by their first
+  publish.
+- **Why accepted:** owner decision 2026-10-24: keep main's GitHub Actions release flow (#118,
+  3e9104ed) rather than the 0.11.0 trusted-publishing and signed-tag flow (edd5e5b8) with its
+  per-crate owner steps.
+- **What still holds:** DCO sign-off on every pull request; actions pinned by SHA and read-only
+  default permissions (S1, S2); SLSA Build L3 provenance over the packaged files, each upload
+  checked against its attested sha256 and every published crate re-verified by `slsa-verifier`
+  (S5). Only the `publish` job reads the secret, and only on stdin.
+- **Recorded:** `docs/security/findings.json` (S3 and S6 `accepted`), [SECURITY.md](SECURITY.md)
+  "Supply chain", [docs/RELEASING.md](docs/RELEASING.md).
+- **Re-check each release:** the decision stands, the token is scoped to publishing these crates,
+  and `.github` reads it only in `publish.yml` and `publish-crate.sh`.
+
 ### Trusted cluster (ADR 0009)
 
 A member that holds the mesh cookie (and, with mTLS, a certificate the cluster trusts) is trusted
@@ -385,10 +403,10 @@ nobody reads "closed" as "nothing left to do".
 - **`channels::attach_session` without RPC.** It drops mesh RPC calls as unverified (fails
   closed); a node that serves mesh RPC over a channels session link attaches it with
   `attach_session_rpc` (F33).
-- **Owner actions (D15).** Trusted publisher on every crate, deletion of `CARGO_REGISTRY_TOKEN`
-  after the first trusted publish (S3), a registered tag-signing key and "require signed commits"
-  on protected branches (S6) are repository settings the owner does; status in
-  [docs/RELEASING.md](docs/RELEASING.md) ("Owner steps") and [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Release flow.** The 0.11.0 owner actions (D15: trusted publisher, deleting the token, a
+  tag-signing key) no longer apply: the owner kept the token flow of #118 on 2026-10-24, and S3 and
+  S6 are accepted risks (above). "Require signed commits" on protected branches stays an optional
+  owner setting ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Findings register
 
@@ -433,10 +451,10 @@ regression tests are in the boundary tables above.
 | L6 | B8 | — | **accepted** | see "Accepted risks" (re-checked 2026-10-19) |
 | S1 | B8 | R10 | closed | a6a97637 (r11-sc-pin-permissions), edd5e5b8 (`publish.yml`) |
 | S2 | B8 | R10 | closed | a6a97637 (r11-sc-pin-permissions) |
-| S3 | B8 | — | closed in the workflow; owner steps open | edd5e5b8 (r11-sc-publish); owner action D15 |
+| S3 | B8 | — | **accepted** | see "Accepted risks" (owner decision 2026-10-24, #118 3e9104ed) |
 | S4 | B8 | R4 | closed (SAST, fuzzing) | 572ec2bd (r11-sc-sast-scorecard), b7809387 (r11-fuzz-ci); mesh targets be6af99d; Miri/loom later E11.4 |
 | S5 | B8 | — | closed | a6a97637 (r11-sc-pin-permissions), edd5e5b8 (r11-sc-publish) |
-| S6 | B8 | — | closed except signed commits | DCO d6c22982 (r11-sc-dco-docs); signed tag edd5e5b8 (r11-sc-publish); signed commits: owner action D15 |
+| S6 | B8 | — | DCO closed; unsigned tags **accepted** | DCO d6c22982 (r11-sc-dco-docs); see "Accepted risks" (owner decision 2026-10-24, #118 3e9104ed) |
 | S7 | B8 | — | closed | d6c22982 (r11-sc-dco-docs) |
 
 Rules without a finding row of their own are still enforced. R8 covers the mesh mTLS work

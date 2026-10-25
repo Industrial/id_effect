@@ -32,7 +32,8 @@ crates and the `examples/` are not.
 
 | Version | Supported |
 |---|---|
-| 0.12.x | Yes: all fixes, including security fixes |
+| 0.13.x | Yes: all fixes, including security fixes |
+| 0.12.x | Security fixes only (high and critical), until 2027-01-23 (90 days after the 0.13.0 release) |
 | 0.11.x | Security fixes only (high and critical), until 2027-01-18 (90 days after the 0.12.0 release) |
 | 0.10.x | Security fixes only (high and critical), until 2027-01-17 (90 days after the 0.11.0 release); use 0.10.1 or later (see [Security releases](#security-releases)) |
 | 0.9.x | Security fixes only, until 2027-01-16 |
@@ -105,18 +106,22 @@ GHSA id and link when the advisory is published (step 3 of "Advisory publication
   and builds `--locked`; workflows run with read-only default permissions
   (`scripts/check-workflows.sh` enforces this). Pull requests need a DCO sign-off
   ([CONTRIBUTING.md](CONTRIBUTING.md)).
-- From 0.11.0 a release is a **signed annotated tag**; the publish workflow
+- A release is a pushed `v*` tag; the publish workflow
   ([.github/workflows/publish.yml](.github/workflows/publish.yml),
-  [docs/RELEASING.md](docs/RELEASING.md)) refuses a lightweight or unverified one. It packages
-  every crate with `cargo package --locked`, writes one CycloneDX SBOM per crate, and signs
-  **SLSA Build L3** provenance over those `.crate` and `.cdx.json` files with the
+  [docs/RELEASING.md](docs/RELEASING.md)) checks that the tag equals every publishable version
+  (it does not check a tag signature). It packages every crate with `cargo package --locked`,
+  writes one CycloneDX SBOM per crate, and signs **SLSA Build L3** provenance over those `.crate`
+  and `.cdx.json` files with the
   [slsa-github-generator](https://github.com/slsa-framework/slsa-github-generator) (keyless,
-  Sigstore). It publishes the same files to crates.io with **trusted publishing** (a short-lived
-  OIDC-exchanged token; no workflow reads a stored registry token), checks each upload against
-  its attested sha256, then downloads every crate from crates.io and runs `slsa-verifier` on it
-  before it creates the GitHub Release. The release carries the `.crate` files, the SBOMs
-  (`<crate>-<version>.cdx.json`) and the provenance (`id_effect-<version>.intoto.jsonl`). Verify a
-  crate yourself with:
+  Sigstore). It publishes the same files to crates.io in dependency order with the
+  `CARGO_REGISTRY_TOKEN` secret of the `crates-io` GitHub environment (handed to cargo on stdin;
+  the token also creates a new crate on its first publish), checks each upload against its
+  attested sha256, then downloads every crate from crates.io and runs `slsa-verifier` on it before
+  it creates the GitHub Release. The long-lived token (S3) and the unsigned tag (S6) are accepted
+  risks: the owner kept this flow (#118) on 2026-10-24 instead of the 0.11.0 trusted-publishing
+  and signed-tag flow ([THREAT-MODEL.md](THREAT-MODEL.md), "Accepted risks"). The release
+  carries the `.crate` files, the SBOMs (`<crate>-<version>.cdx.json`) and the provenance
+  (`id_effect-<version>.intoto.jsonl`). Verify a crate yourself with:
 
   ```bash
   curl -fsSLO https://static.crates.io/crates/id_effect/id_effect-<version>.crate

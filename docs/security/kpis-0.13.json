@@ -2,33 +2,32 @@
 	"schema": "id_effect security-kpis v1",
 	"method": "scripts/security-kpis.sh (header)",
 	"release": "0.13.0",
-	"workspace_version": "0.12.0",
+	"workspace_version": "0.13.0",
 	"measured_at": "2026-10-24T18:17:42Z",
 	"revision": "d2e43340",
 	"offline": false,
 	"pass": false,
-	"failed": [
-		"open_highs",
+	"failed": ["openssf_scorecard"],
+	"pending": [
+		"adr_0013_status",
+		"best_practices",
 		"fuzz_open_crashes",
-		"registry_token",
-		"openssf_scorecard"
+		"security_releases",
+		"slsa"
 	],
-	"pending": ["adr_0013_status", "best_practices", "slsa", "security_releases"],
 	"kpis": {
 		"open_highs": {
 			"value": 0,
 			"target": 0,
-			"status": "fail",
+			"status": "pass",
 			"register": "docs/security/findings.json",
 			"findings": 41,
-			"closed": 40,
-			"accepted": 1,
+			"closed": 38,
+			"accepted": 3,
 			"open": 0,
-			"problems": [
-				"S6: regression test s6_release_requires_signed_tag not found in the code"
-			],
-			"summary": "0 open highs; 41 findings: 40 closed, 1 accepted, 0 open; 1 register problems",
-			"owner_decision": "owner decision 2026-10-24: keep the #118 release flow (a pushed v* tag publishes with CARGO_REGISTRY_TOKEN, no signed-tag check); accepted, not a regression to fix; the register problem is S6 naming s6_release_requires_signed_tag, the check #118 removed"
+			"problems": [],
+			"summary": "0 open highs; 41 findings: 38 closed, 3 accepted, 0 open; 0 register problems",
+			"owner_decision": "owner decision 2026-10-24 (#118): S3 and S6 recorded as accepted in docs/security/findings.json at release prep; S6 no longer names the removed s6_release_requires_signed_tag"
 		},
 		"adr_0013_enforcement": {
 			"value": 10,
@@ -92,10 +91,11 @@
 		"fuzz_open_crashes": {
 			"value": null,
 			"target": "0",
-			"status": "fail",
-			"run": "https://github.com/Industrial/id_effect/actions/runs/40073553661",
-			"date": "2026-10-24T07:17:32Z",
-			"summary": "the latest batch run concluded failure: https://github.com/Industrial/id_effect/actions/runs/40073553661"
+			"status": "pending",
+			"run": "https://github.com/Industrial/id_effect/actions/runs/40173339047",
+			"date": "2026-10-25T07:35:24Z",
+			"fixed": "e9032b41",
+			"summary": "the one open crash (rpc_duplex_frame, runs 40073553661 and 40173339047 on main at cec5c04b) is fixed on release/0.13.0 by e9032b41 (decoded JSON payloads refuse serde_json raw-value key; the crash input is a seed of fuzz/corpus/rpc_duplex_frame); the batch runs on main, so it reads 0 open crashes once release/0.13.0 merges"
 		},
 		"compile_fail_cases": {
 			"value": 21,
@@ -166,9 +166,10 @@
 				".github/workflows/publish.yml",
 				".github/scripts/publish-crate.sh"
 			],
-			"status": "fail",
-			"summary": "2 files under .github mention CARGO_REGISTRY_TOKEN",
-			"owner_decision": "owner decision 2026-10-24: keep the #118 release flow (a pushed v* tag publishes with CARGO_REGISTRY_TOKEN, no signed-tag check); accepted, not a regression to fix"
+			"summary": "2 files under .github mention CARGO_REGISTRY_TOKEN; S3 accepted in the register: owner decision 2026-10-24 (#118): keep main's GitHub Actions release flow, in which a pushed v* tag publishes with the CARGO_REGISTRY_TOKEN secret of the crates-io environment (handed to cargo on stdin by .github/scripts/publish-crate.sh) and new crates are created by their first publish. Trusted publishing (0.11.0, edd5e5b8) was replaced by #118 (3e9104ed). s3_no_registry_token_in_workflows in scripts/security-kpis.sh passes as accepted while this record stands.",
+			"status": "pass",
+			"accepted": true,
+			"reason": "owner decision 2026-10-24 (#118): keep main's GitHub Actions release flow, in which a pushed v* tag publishes with the CARGO_REGISTRY_TOKEN secret of the crates-io environment (handed to cargo on stdin by .github/scripts/publish-crate.sh) and new crates are created by their first publish. Trusted publishing (0.11.0, edd5e5b8) was replaced by #118 (3e9104ed). s3_no_registry_token_in_workflows in scripts/security-kpis.sh passes as accepted while this record stands."
 		},
 		"openssf_scorecard": {
 			"value": 6.6,
@@ -349,7 +350,8 @@
 			"testcase_base64": "AHsiaWQiOjAsImtpbmQiOiJyZXN1bWUiLCJwYXlsb2FkIjp7InNnPXNob2xscyI6W3siaX9/f39/IjoyMjFFMywia2NhY2VsZCI6Mywia2koZCI6MTIyRTMsImNlbmdsX2QiOjIyMjIyRTMsIiRzZXJkZV9qc29uOjpwcml2YXRlOjpSYXdWYWx1ZSI6IlsgICAzICAgICAsIDNlMiAgICAsICAyMmUyICAgICwgIDEgICAsID1ISEgifV19fQ==",
 			"reproduced": "release/0.13.0 at cd34f85f: `cargo fuzz run rpc_duplex_frame crash-c9ad0c2807b0d3d42e15d1e1f639cfca228e67ac -- -runs=1` exits 77 with the same panic",
 			"cause": "serde_json's `raw_value` feature is on in the workspace (axum, sqlx-core, sqlx-postgres) and in fuzz/. A JSON payload object whose key \"$serde_json::private::RawValue\" is not its first key decodes as an ordinary map entry; re-encoding sorts the keys (BTreeMap), so that key comes first and the next decode treats the object as raw JSON text and parses its string value. An invalid string fails the decode (this crash); a valid one replaces the whole object with attacker-chosen JSON after one decode/encode/decode round trip",
-			"owner": "id_effect_rpc (transport::frame JSON payloads); another agent fixes the RawValue key and marks this KPI fixed. Not fixed by r13-w8-kpis (outside its files)"
+			"owner": "id_effect_rpc (transport::frame JSON payloads)",
+			"fixed": "e9032b41 fix(rpc): refuse the serde_json raw-value key in decoded JSON payloads (rpc_duplex_frame fuzz crash), with the crash input as a corpus seed; release/0.13.0. The 2026-10-25 batch run on main (40173339047, still cec5c04b) reproduces the same panic on the pre-fix code"
 		},
 		"openssf_scorecard": "6.6 on main (2026-10-21) against >= 7.5. Below 10: Code-Review 0, CII-Best-Practices 0, Signed-Releases 0, Vulnerabilities 1, Security-Policy 3, Contributors 3, Branch-Protection 4, SAST 7, Pinned-Dependencies 9; repository settings and owner steps (0.11.0 D16), not code of this release",
 		"bench_source": "secure_stack and unary_rpc read docs/benchmarks/v0.13.json (r13-e-benches, sha 70f407ad; `stale` true because crates changed after the benched commit). The idle-machine bench run owed at the 0.13.0 exit replaces it",
@@ -358,7 +360,7 @@
 			"kpis": ["registry_token", "open_highs"],
 			"decision": "owner decision 2026-10-24: keep the #118 release flow (a pushed v* tag publishes with CARGO_REGISTRY_TOKEN, no signed-tag check); accepted, not a regression to fix. (3e9104ed, #118, merged from main at 432ac57c): v0.11.0 and v0.12.0 could not publish with a GitHub-verified signed tag and crates.io trusted publishing (no signing key registered, no trusted publishers, trusted publishing cannot create a crate first version), so the release flow is back to the 0.10.1 one: any pushed v* tag, publish job logs in with the CARGO_REGISTRY_TOKEN secret of the crates-io environment. The rest of the 0.11 pipeline stays (pre-publish tests, packaging validation, SBOMs, SLSA provenance, digest checks against crates.io, GitHub Release). Not reverted",
 			"measured": "registry_token: 2 files under .github mention CARGO_REGISTRY_TOKEN (.github/workflows/publish.yml, .github/scripts/publish-crate.sh; target 0, finding S3). open_highs: 0 open highs, but the register names the S6 regression test s6_release_requires_signed_tag, which the signed-tag check took with it",
-			"follow_up": "release prep records S3 and S6 as accepted (#118) in docs/security/findings.json and updates SECURITY.md \"Supply chain\"; r13-w8-kpis leaves both alone. scripts/security-kpis.sh then passes registry_token with `accepted` and the register note (S3 accepted), and open_highs once S6 no longer names the removed test; until then both FAIL as measured"
+			"follow_up": "done at release prep (r13-release-prep, on d5eec340): docs/security/findings.json records S3 and S6 as accepted (#118), SECURITY.md \"Supply chain\" and THREAT-MODEL.md describe the token flow; re-measured offline: registry_token pass (accepted), open_highs pass (0 register problems)"
 		}
 	}
 }
