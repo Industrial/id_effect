@@ -187,6 +187,11 @@ const OPT_OUTS: &[(&str, &str, &str)] = &[
     "id_effect_axum::server::h3::Http3Options::dangerous_allow_zero_rtt_for_queries",
   ),
   (
+    "id_effect_platform/src/quic/router.rs",
+    "dangerous_allow_early_data",
+    "id_effect_platform::quic::Route::dangerous_allow_early_data",
+  ),
+  (
     "id_effect_platform/src/quic/config.rs",
     "dangerous_no_retry",
     "id_effect_platform::QuicEndpointConfig::dangerous_no_retry",
@@ -361,6 +366,8 @@ fn every_0_12_opt_out_is_listed_and_recorded() {
   );
   let identity =
     Identity::from_certificate(&NodeCertificate::self_signed("localhost").unwrap()).unwrap();
+  let _ = id_effect_platform::quic::Route::h3().dangerous_allow_early_data();
+  check("dangerous_allow_early_data");
   let _ = QuicEndpointConfig::new(identity.clone()).dangerous_no_retry();
   check("dangerous_no_retry");
   let _ = QuicEndpointConfig::new(identity).dangerous_raise_limits();

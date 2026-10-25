@@ -50,6 +50,7 @@ REQUIRED=(
     "crates/id_effect_ai/src/mcp/server.rs:dangerous_mcp_write_tools"
     "crates/id_effect_authz/src/tenant.rs:dangerous_tenant_from_header"
     "crates/id_effect_admin/src/audit.rs:dangerous_without_audit"
+    "crates/id_effect_platform/src/quic/router.rs:dangerous_allow_early_data"
 )
 
 # Reads every file given; prints `file:line: problem` and `checked <n> <direct> <delegated>`.
