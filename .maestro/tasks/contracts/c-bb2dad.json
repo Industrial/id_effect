@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-bb2dad",
+  "taskId": "tsk-mvcpeyei-jtr1wv",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T18:27:33.978Z",
+  "lockedAt": "2026-10-17T18:27:33.978Z",
+  "intent": "r10-e1-5-dev",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-866e78",
+      "text": "`id-effect dev [--services] [--watch PATH…]`: polls mtimes (D4), `cargo build`, restarts the child with `ID_EFFECT_PROFILE=dev` after SIGTERM + drain (#2, #3, fault.reload#1); a failed build keeps the old child and prints the errors; `--services` runs `docker compose up -d` once. Tests `edit_triggers_rebuild_and_restart`, `build_error_keeps_previous_child`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-8c287b",
+      "text": "Gate: `cargo nextest run -p id_effect_tool`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0fe81c",
+      "text": "Owns: `crates/id_effect_tool/src/dev.rs`, `src/cli.rs` (`Dev` variant), `crates/id_effect_tool/tests/dev.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

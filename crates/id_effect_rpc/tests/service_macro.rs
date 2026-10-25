@@ -596,6 +596,254 @@ async fn http_transport_carries_queries_and_mutations() {
   assert!(err.to_string().contains("connection refused"));
 }
 
+/// Every request body a [`Recording`] client sent.
+type Bodies = Arc<std::sync::Mutex<Vec<Value>>>;
+
+/// Every request's headers a [`Recording`] client sent.
+type SentHeaders = Arc<std::sync::Mutex<Vec<Vec<(String, String)>>>>;
+
+/// [`AxumHttp`] that keeps every request body and header list it sends.
+struct Recording {
+  inner: AxumHttp,
+  bodies: Bodies,
+  headers: SentHeaders,
+}
+
+impl HttpClient for Recording {
+  fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError> {
+    let body = serde_json::from_slice(req.body.as_deref().unwrap_or_default()).expect("json");
+    self.bodies.lock().unwrap().push(body);
+    self.headers.lock().unwrap().push(req.headers.clone());
+    self.inner.execute(req)
+  }
+
+  fn execute_stream(&self, req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError> {
+    self.inner.execute_stream(req)
+  }
+}
+
+/// An [`HttpTransport`] over a recording client; `staff` adds `x-staff: yes` server side.
+fn recording(staff: bool) -> (HttpTransport, Bodies, SentHeaders) {
+  let bodies = Bodies::default();
+  let headers = SentHeaders::default();
+  let router = TodosService::mount(id_effect_axum::route::Router::new(), Store::default());
+  let app: axum::Router = router.with_state(DynEnv::new()).into_axum();
+  let app = if staff {
+    app.layer(axum::middleware::from_fn(
+      |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+        req
+          .headers_mut()
+          .insert("x-staff", HeaderValue::from_static("yes"));
+        next.run(req).await
+      },
+    ))
+  } else {
+    app
+  };
+  let http = Recording {
+    inner: AxumHttp { app, down: false },
+    bodies: bodies.clone(),
+    headers: headers.clone(),
+  };
+  let transport = HttpTransport::new(
+    RpcClient::new("http://rpc.test"),
+    HttpClientService::new(http),
+  );
+  (transport, bodies, headers)
+}
+
+fn recorded() -> (TodosClient<HttpTransport>, Bodies) {
+  let (transport, bodies, _) = recording(true);
+  (TodosService::client(transport), bodies)
+}
+
+// One worker: same-tick batching is deterministic on a FIFO executor and only timing-dependent
+// on a multi-thread one (id_effect::request, "The batch window").
+#[tokio::test(flavor = "current_thread")]
+async fn generated_client_batches_same_tick_calls() {
+  let (client, bodies) = recorded();
+  let both = id_effect::all(
+    vec![
+      client.get(1).map(|t| t.title),
+      client.add(NewTodo { title: "z".into() }).map(|t| t.title),
+    ],
+    id_effect::Concurrency::Unbounded,
+  );
+  assert_eq!(run(both).await.unwrap(), ["milk", "z"]);
+  let sent = bodies.lock().unwrap().clone();
+  assert_eq!(sent.len(), 1, "one request: {sent:?}");
+  let calls = sent[0].as_array().expect("a batch array");
+  let mut tags: Vec<_> = calls
+    .iter()
+    .map(|c| (c["tag"].to_string(), c["v"].clone()))
+    .collect();
+  tags.sort_by(|a, b| a.0.cmp(&b.0));
+  assert_eq!(
+    tags,
+    [
+      ("\"Todos.add\"".to_owned(), json!(1)),
+      ("\"Todos.get\"".to_owned(), json!(1))
+    ]
+  );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn generated_client_lone_call_is_plain_envelope() {
+  let (client, bodies) = recorded();
+  assert_eq!(
+    run(client.get(8)).await.unwrap_err().typed(),
+    Some(&TodoError::NotFound { id: 8 })
+  );
+  let sent = bodies.lock().unwrap().clone();
+  assert_eq!(sent.len(), 1);
+  assert_eq!(sent[0]["tag"], "Todos.get");
+  assert_eq!(sent[0]["v"], 1);
+  assert_eq!(sent[0]["payload"], 8);
+}
+
+/// The values of `name` in one request's headers.
+fn values<'a>(headers: &'a [(String, String)], name: &str) -> Vec<&'a str> {
+  headers
+    .iter()
+    .filter(|(n, _)| n.eq_ignore_ascii_case(name))
+    .map(|(_, v)| v.as_str())
+    .collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn http_transport_attaches_bearer() {
+  // No staff middleware: the guard sees `x-staff` only because the transport sends it.
+  let (transport, bodies, headers) = recording(false);
+  let transport = transport
+    .with_header("X-Staff", "yes")
+    .unwrap()
+    .with_bearer(id_effect_config::Secret::new("tok-123".to_owned()))
+    .unwrap();
+  let client = TodosService::client(transport.clone());
+  let both = id_effect::all(
+    vec![
+      client.get(1).map(|t| t.title),
+      client.add(NewTodo { title: "z".into() }).map(|t| t.title),
+    ],
+    id_effect::Concurrency::Unbounded,
+  );
+  assert_eq!(run(both).await.unwrap(), ["milk", "z"]);
+  // The unbatched path (`RpcTransport::unary`) carries them too.
+  let call = TransportCall {
+    tag: "Todos.add".to_owned(),
+    version: 1,
+    kind: ProcedureKind::Mutation,
+    payload: json!({"title": "q"}),
+  };
+  assert!(matches!(
+    transport.unary(call).await,
+    Ok(WireExit::Success { .. })
+  ));
+  let sent = headers.lock().unwrap().clone();
+  assert_eq!(bodies.lock().unwrap().len(), sent.len());
+  assert!(!sent.is_empty());
+  for request in &sent {
+    assert_eq!(values(request, "authorization"), ["Bearer tok-123"]);
+    assert_eq!(values(request, "x-staff"), ["yes"]);
+    assert_eq!(values(request, "x-rpc"), ["1"]);
+    assert_eq!(values(request, "content-type"), ["application/json"]);
+  }
+}
+
+#[test]
+fn http_transport_rejects_invalid_header() {
+  use rpc::service::HttpHeaderError;
+  let (transport, ..) = recording(false);
+  let header = |name: &str, value: &str| transport.clone().with_header(name, value).map(|_| ());
+  for name in ["", "bad header", "x:y", "x\r\ny", "café"] {
+    assert_eq!(
+      header(name, "v"),
+      Err(HttpHeaderError::InvalidName(name.to_owned())),
+      "{name:?}"
+    );
+  }
+  for value in ["a\r\nx-rpc: 0", "a\nb", "nul\0", "del\u{7f}", "café"] {
+    let err = header("X-Tenant", value).unwrap_err();
+    assert_eq!(
+      err,
+      HttpHeaderError::InvalidValue {
+        name: "x-tenant".to_owned()
+      }
+    );
+    assert!(!err.to_string().contains(value), "{err}");
+  }
+  assert!(header("x-tenant", "acme corp\tA-1").is_ok());
+  let bearer = |token: &str| {
+    transport
+      .clone()
+      .with_bearer(id_effect_config::Secret::new(token.to_owned()))
+      .map(|_| ())
+  };
+  for token in ["", "tok\r\nx-rpc: 0"] {
+    let err = bearer(token).unwrap_err();
+    assert_eq!(
+      err,
+      HttpHeaderError::InvalidValue {
+        name: "authorization".to_owned()
+      }
+    );
+    assert!(!err.to_string().contains("tok"));
+  }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn http_transport_cannot_override_rpc_header() {
+  use rpc::service::HttpHeaderError;
+  let (transport, _, headers) = recording(true);
+  for name in ["x-rpc", "X-RPC", "Content-Type", "content-length", "Host"] {
+    assert_eq!(
+      transport.clone().with_header(name, "0").map(|_| ()),
+      Err(HttpHeaderError::Reserved(name.to_ascii_lowercase())),
+      "{name}"
+    );
+  }
+  assert!(
+    HttpHeaderError::Reserved("x-rpc".to_owned())
+      .to_string()
+      .contains("reserved")
+  );
+  // A later value of a name replaces the earlier one; the CSRF header stays the transport's.
+  let transport = transport
+    .with_header("x-tenant", "a")
+    .unwrap()
+    .with_header("X-Tenant", "b")
+    .unwrap();
+  let client = TodosService::client(transport);
+  assert_eq!(
+    run(client.add(NewTodo { title: "y".into() }))
+      .await
+      .unwrap()
+      .id,
+    9
+  );
+  let sent = headers.lock().unwrap().clone();
+  assert_eq!(sent.len(), 1);
+  assert_eq!(values(&sent[0], "x-rpc"), ["1"]);
+  assert_eq!(values(&sent[0], "content-type"), ["application/json"]);
+  assert_eq!(values(&sent[0], "x-tenant"), ["b"]);
+}
+
+#[test]
+fn http_transport_bearer_redacted_in_debug() {
+  let (transport, ..) = recording(false);
+  let transport = transport
+    .with_header("x-api-key", "plain-key-42")
+    .unwrap()
+    .with_bearer(id_effect_config::Secret::new("tok-very-secret".to_owned()))
+    .unwrap();
+  let shown = format!("{transport:?}");
+  assert!(!shown.contains("tok-very-secret"), "{shown}");
+  assert!(!shown.contains("plain-key-42"), "{shown}");
+  assert!(shown.contains("authorization") && shown.contains("x-api-key"));
+  let client = TodosService::client(transport);
+  assert!(!format!("{:#?}", client.transport()).contains("tok-very-secret"));
+}
+
 // ---------------------------------------------------------------------------------------------
 // Wire faults on the client side
 // ---------------------------------------------------------------------------------------------

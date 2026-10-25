@@ -1,0 +1,25 @@
+# The Pipeline's dependencies for a local run (`docker compose up -d`): one PostgreSQL server with
+# the main database (`pipeline`: tenant `acme` and the job queue) and `globex`'s own database.
+# The tests do not use this file: they start their own container (id_effect_test).
+#
+#   PIPELINE_DATABASE_URL=postgres://pipeline:pipeline@127.0.0.1:55432/pipeline
+#   PIPELINE_TENANT_DATABASE_GLOBEX=postgres://pipeline:pipeline@127.0.0.1:55432/globex
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: pipeline
+      POSTGRES_PASSWORD: pipeline
+      POSTGRES_DB: pipeline
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - type: bind
+        source: ./fixtures/compose-initdb.sql
+        target: /docker-entrypoint-initdb.d/10-globex.sql
+        read_only: true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pipeline -d pipeline"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

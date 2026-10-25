@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-3e3e19",
+  "taskId": "tsk-mvcjv3bz-jrd70e",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T17:57:38.522Z",
+  "lockedAt": "2026-10-17T17:57:38.522Z",
+  "intent": "r10-e4-4-container-docs",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-1087b2",
+      "text": "S3-compatible container pinned per D11; the conformance tests run against it; chapter + example.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-bfff75",
+      "text": "Gate: `<docker> -p id_effect_storage -p id_effect_test --all-features`; `bash scripts/tier-conformance.sh id_effect_storage`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-cbfa8a",
+      "text": "Owns: `crates/id_effect_test/src/containers/s3.rs` (+ one `mod` line), `crates/id_effect_storage/tests/s3.rs`, `book/src/part6/ch28-05-storage.md`, `crates/id_effect_storage/examples/010_storage.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

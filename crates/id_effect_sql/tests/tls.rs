@@ -17,7 +17,7 @@ use id_effect::{Cause, Effect, Exit};
 use id_effect_sql::{SqlError, SqlValue};
 use id_effect_tokio::TokioRuntime;
 use rcgen::{
-  BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair,
+  BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
   KeyUsagePurpose,
 };
 
@@ -31,17 +31,18 @@ struct Pki {
   other_ca_pem: String,
 }
 
-fn ca(name: &str) -> (rcgen::Certificate, KeyPair) {
+fn ca(name: &str) -> (rcgen::Certificate, Issuer<'static, KeyPair>) {
   let key = KeyPair::generate().expect("CA key");
   let mut params = CertificateParams::new(Vec::<String>::new()).expect("CA params");
   params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
   params.distinguished_name.push(DnType::CommonName, name);
   params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-  (params.self_signed(&key).expect("CA certificate"), key)
+  let cert = params.self_signed(&key).expect("CA certificate");
+  (cert, Issuer::new(params, key))
 }
 
 fn pki() -> Pki {
-  let (ca_cert, ca_key) = ca("id_effect_sql test CA");
+  let (ca_cert, ca_issuer) = ca("id_effect_sql test CA");
   let key = KeyPair::generate().expect("server key");
   let mut params = CertificateParams::new(vec!["localhost".to_owned()]).expect("server params");
   params
@@ -50,7 +51,7 @@ fn pki() -> Pki {
   params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
   params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
   let server = params
-    .signed_by(&key, &ca_cert, &ca_key)
+    .signed_by(&key, &ca_issuer)
     .expect("server certificate");
   Pki {
     ca_pem: ca_cert.pem(),

@@ -6,7 +6,7 @@
 - **`repository`** (includes `query`): `#[derive(Entity)]` maps a struct to a table, and `Repository<T>` runs its CRUD statements with optimistic locking and global filters (soft delete, tenant, custom scopes).
 
 ```toml
-id_effect_sql = { version = "0.12", features = ["pg", "repository"] }
+id_effect_sql = { version = "0.13", features = ["pg", "repository"] }
 ```
 
 ## The query builder (feature `query`)
@@ -364,6 +364,10 @@ assert_eq!(
 ```
 
 [Tenancy and the audit log](ch30-07-audit-tenancy.md) shows the whole request path: from the authenticated principal to `CurrentTenant`, the filtered repository and an audit record in the same transaction.
+
+## Relations
+
+`#[entity(belongs_to(..))]`, `has_many(..)` and `many_to_many(.., through = "..")` declare relations between entities, and `repo.with(Order::lines())` loads them with the rows in one query per relation (no N+1), each child re-scoped by its own tenant and soft-delete filters. [Relations and eager loading](ch28-06-relations.md) covers them, with the field metadata (`Entity::FIELDS`) generic tools read.
 
 ## Dialects
 

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "id": "c-b4e562",
+  "taskId": "tsk-mvg7dsl7-vj0q93",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-20T04:48:47.847Z",
+  "lockedAt": "2026-10-20T04:48:47.847Z",
+  "intent": "r12-t0-migration-guide",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-7bc956",
+      "text": "docs/MIGRATION-0.12.md has one section per cargo semver-checks break with its shim and a before/after snippet: id_effect_node::transport::certs → id_effect_platform::tls (deprecated re-export for one minor); axum HostConfig / ConnectionLimits TLS and HTTP/3 fields; id_effect_platform HttpClientConfig::http3; QUIC mesh ALPN idm/1 (0.11 nodes are refused); labs RpcGroup::register → #[rpc::service] (and the low-level RpcGroup with .public()/.guard()); OpenAPI 3.0 → 3.1 output of id_effect_rpc; the service template config key server.http3.enabled.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-1e503b",
+      "text": "CHANGELOG.md 0.12.0 section with Added / Changed / Security / Scorecard subsections; the Scorecard section quotes REPORT-0.12.0 (E, RT, red rows, web.rpc, web.realtime, dist.tls); the Security section lists every call-surface default from the release spec Security table.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0194d9",
+      "text": "Gate: `cargo semver-checks` output ⊆ the MIGRATION-0.12 list (diff recorded in the leaf evidence)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-b7ca40",
+      "text": "Owns: `docs/MIGRATION-0.12.md`, `CHANGELOG.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "l1-exit",
+  "lockedBy": "l1-exit",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "low"
+}

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-bd9972",
+  "taskId": "tsk-mvbh3y7e-zu7pb4",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T21:22:20.927Z",
+  "lockedAt": "2026-10-16T21:22:20.927Z",
+  "intent": "r09-e3-3-sea-query",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-26bf6a",
+      "text": "`select/insert/update/delete` builders from sea-query rendered per backend dialect; values bridged to `SqlValue` (D3); `query_as::<T: FromRow>(raw_sql)` (#6).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-05014a",
+      "text": "Gate: `cargo nextest run -p id_effect_sql --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2c7894",
+      "text": "Owns: `crates/id_effect_sql/src/query/**`, feature `query`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

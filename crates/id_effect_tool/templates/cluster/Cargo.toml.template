@@ -5,12 +5,12 @@ edition = "2024"
 publish = false
 
 [dependencies]
-# One front door to id_effect: a feature per battery (web, sql-pg, otel, cluster).
+# One front door to id_effect: a feature per battery (web, sql-pg, otel, cluster). `cluster`
+# also brings `id_effect_kit::process` (`Process`, `ProcessNode`, `NodeName`: the local process
+# layer the mesh distributes).
 id_effect_kit = { version = "{{id_effect_version}}", features = [{{kit_features}}] }
 # The derive and `effect!` macros expand to `::id_effect::` paths; keep the core crate too.
 id_effect = "{{id_effect_version}}"
-# `Process`, `ProcessNode`, `NodeName`: the local process layer the mesh distributes.
-id_effect_process = "{{id_effect_version}}"
 postcard = { version = "1", features = ["alloc"] }
 # The dev certificates of local runs (`dev_certificates`), on aws-lc-rs like the mesh's TLS.
 rcgen = { version = "0.13", default-features = false, features = ["aws_lc_rs", "pem"] }

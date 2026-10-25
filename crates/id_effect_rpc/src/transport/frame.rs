@@ -28,7 +28,7 @@
 
 use serde_json::Value;
 
-use crate::codec::CodecId;
+use crate::codec::{CodecId, StrictValue};
 use crate::wire::{CallId, Frame, FrameKind, MAX_FRAME_BYTES};
 
 /// Why bytes are not a frame (or a frame is not sendable).
@@ -77,9 +77,30 @@ pub fn decode(bytes: &[u8], codec: CodecId) -> Result<Frame, FrameError> {
   if bytes.len() > MAX_FRAME_BYTES {
     return Err(FrameError::TooLarge { len: bytes.len() });
   }
-  let frame: Frame<Value> = codec
-    .decode(bytes)
+  // A payload with serde_json's raw-value key is refused: re-encoding would move it first, and the
+  // next decode would read the object as the JSON text its string holds.
+  let Frame {
+    id,
+    kind,
+    flags,
+    tag,
+    v,
+    cursor,
+    credits,
+    payload,
+  } = codec
+    .decode::<Frame<StrictValue>>(bytes)
     .map_err(|err| FrameError::Malformed(err.to_string()))?;
+  let frame: Frame<Value> = Frame {
+    id,
+    kind,
+    flags,
+    tag,
+    v,
+    cursor,
+    credits,
+    payload: payload.map(|strict| strict.0),
+  };
   validate(&frame)?;
   Ok(frame)
 }
@@ -251,6 +272,40 @@ mod tests {
       .with_payload(Value::from(1));
     let bytes = encode(&ok, CodecId::Json).unwrap();
     assert_eq!(decode(&bytes, CodecId::Json).unwrap(), ok);
+  }
+
+  /// The `rpc_duplex_frame` crash of the 0.13 batch run (docs/security/kpis-0.13.json,
+  /// `fuzz/corpus/rpc_duplex_frame/seed-crash-raw-value-key`): serde_json's raw-value key, not
+  /// first in its object, decoded as a member; the re-encoded frame put it first and no longer
+  /// decoded (or, with a valid string, decoded to other JSON). Refused now, wherever it sits.
+  #[test]
+  fn fuzz_rpc_duplex_frame_raw_value_key_is_refused() {
+    let crash: &[u8] = b"{\"id\":0,\"kind\":\"resume\",\"payload\":{\"sg=sholls\":[{\"i\x7f\x7f\x7f\x7f\x7f\":221E3,\"kcaceld\":3,\"ki(d\":122E3,\"cengl_d\":22222E3,\"$serde_json::private::RawValue\":\"[   3     , 3e2    ,  22e2    ,  1   , =HHH\"}]}}";
+    let refused = |bytes: &[u8]| match decode(bytes, CodecId::Json) {
+      Err(FrameError::Malformed(msg)) => assert!(msg.contains("is reserved"), "{msg}"),
+      other => panic!("{}: {other:?}", String::from_utf8_lossy(bytes)),
+    };
+    refused(crash);
+    for text in [
+      // Not first: would turn into `[1]` after one encode/decode.
+      r#"{"id":1,"kind":"item","payload":{"a":1,"$serde_json::private::RawValue":"[1]"}}"#,
+      // First: serde_json's `Value` would read it as raw JSON text on the first decode.
+      r#"{"id":1,"kind":"item","payload":{"$serde_json::private::RawValue":"[1]"}}"#,
+      // Escaped, nested in an array.
+      "{\"id\":1,\"kind\":\"item\",\"payload\":[{\"\\u0024serde_json::private::RawValue\":\"1\"}]}",
+      r#"{"id":0,"kind":"hello","payload":{"x":{"y":{"$serde_json::private::RawValue":"{}"}}}}"#,
+    ] {
+      refused(text.as_bytes());
+    }
+    // Other keys, `$` ones included, keep decoding, and decode/encode/decode is stable.
+    let ok = br#"{"id":1,"kind":"item","payload":{"z":[1,2.5,-3,null,true,"s"],"$ref":{"a":{}},"$serde_json::private::Number":"1"}}"#;
+    let frame = decode(ok, CodecId::Json).unwrap();
+    let again = decode(&encode(&frame, CodecId::Json).unwrap(), CodecId::Json).unwrap();
+    assert_eq!(again, frame);
+    assert_eq!(
+      frame.payload.unwrap()["z"],
+      serde_json::json!([1, 2.5, -3, null, true, "s"])
+    );
   }
 
   #[test]

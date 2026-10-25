@@ -33,6 +33,11 @@
 //! realtime layer's ([`WsConfig`], passed in [`RpcWsConfig::socket`]). The route is public; each
 //! call runs its procedure's own guards on the upgrade request's head.
 //!
+//! **Rate.** `credit` and `ping` frames are control frames ([`classify_frame`]): they do not count
+//! against the socket's message rate, so a client reading a fast stream is not throttled by its
+//! own credits, but against their own finite cap ([`WsConfig::control_messages_per_second`],
+//! default 4× the message rate; above it the socket closes with 1008).
+//!
 //! **Connection.** The server sends `hello` first (session, codec, `max_frame`, credit `window`).
 //! Then, per call id: a `call` frame opens it (at most [`RpcWsConfig::max_calls`] open at once,
 //! beyond which the call's `exit` is `ResourceExhausted { limit: "calls" }`); `item` / `end` carry
@@ -94,7 +99,7 @@ use futures_util::StreamExt as _;
 use futures_util::future::{Either, select};
 use futures_util::stream::FuturesUnordered;
 use id_effect::{DynEnv, Effect, Exit, HNil, Never, from_async};
-use id_effect_axum::realtime::ws::{self as realtime, WsConfig, WsMessage, WsSocket};
+use id_effect_axum::realtime::ws::{self as realtime, WsConfig, WsFrameClass, WsMessage, WsSocket};
 use id_effect_axum::route::{Endpoint, Problem, Public};
 use id_effect_axum::{EffectExecutor, RequestCaps};
 use serde_json::Value;
@@ -129,6 +134,46 @@ const MAX_GRANTED: usize = 1 << 20;
 /// Encoded frames queued for the socket before the calls writing them wait.
 const OUTBOX: usize = 64;
 
+/// The largest message [`classify_frame`] decodes: an encoded `credit` or `ping` frame is far
+/// smaller, so a larger message is data without a look at its bytes.
+const CONTROL_FRAME_MAX_BYTES: usize = 256;
+
+/// How the socket's limiter counts an inbound message (the [`WsConfig::classify`] hook every
+/// [`RpcWsConfig`] installs): a well-formed `credit` or `ping` frame (JSON, or postcard when that
+/// codec is built) of at most 256 bytes is [`WsFrameClass::Control`], everything else
+/// [`WsFrameClass::Data`]. Install it on the [`WsConfig`] of a socket served through
+/// [`realtime::serve_io`] and [`serve_socket`].
+///
+/// ```rust
+/// use id_effect_axum::realtime::ws::{WsFrameClass, WsMessage};
+/// use id_effect_rpc::transport::ws::classify_frame;
+///
+/// let credit = WsMessage::from(r#"{"id":1,"kind":"credit","credits":16}"#);
+/// assert_eq!(classify_frame(&credit), WsFrameClass::Control);
+/// let item = WsMessage::from(r#"{"id":1,"kind":"item","payload":1}"#);
+/// assert_eq!(classify_frame(&item), WsFrameClass::Data);
+/// ```
+pub fn classify_frame(msg: &WsMessage) -> WsFrameClass {
+  let bytes = msg.as_bytes();
+  if bytes.len() > CONTROL_FRAME_MAX_BYTES {
+    return WsFrameClass::Data;
+  }
+  let kind = frame::decode(bytes, CodecId::Json)
+    .map(|frame| frame.kind)
+    .ok();
+  #[cfg(feature = "postcard")]
+  let kind = kind.or_else(|| {
+    crate::codec::postcard::decode_frame(bytes)
+      .ok()
+      .filter(|frame| frame::validate(frame).is_ok())
+      .map(|frame| frame.kind)
+  });
+  match kind {
+    Some(FrameKind::Credit | FrameKind::Ping) => WsFrameClass::Control,
+    _ => WsFrameClass::Data,
+  }
+}
+
 const TARGET: &str = "id_effect_rpc::transport::ws";
 
 /// `rpc.transport` of this transport's spans.
@@ -152,7 +197,7 @@ pub struct RpcWsConfig {
 impl Default for RpcWsConfig {
   fn default() -> Self {
     Self {
-      socket: WsConfig::default(),
+      socket: WsConfig::default().classify(classify_frame),
       max_calls: DEFAULT_MAX_CALLS,
       window: INITIAL_CREDITS,
       resume: ResumeStore::new(ResumeConfig::default()),
@@ -167,10 +212,12 @@ impl RpcWsConfig {
   }
 
   /// The socket's limits and origin allowlist (default [`WsConfig::default`]: every browser
-  /// origin refused). Its subprotocols are replaced by the codecs this build knows.
+  /// origin refused). Its subprotocols are replaced by the codecs this build knows, and its frame
+  /// classification by [`classify_frame`] (`credit` and `ping` frames count against the control
+  /// cap, not the message rate).
   #[must_use]
   pub fn socket(mut self, socket: WsConfig) -> Self {
-    self.socket = socket;
+    self.socket = socket.classify(classify_frame);
     self
   }
 
@@ -282,18 +329,22 @@ fn offered_codec(headers: &HeaderMap) -> Option<CodecId> {
   )
 }
 
-fn is_upgrade(headers: &HeaderMap) -> bool {
-  headers
-    .get_all(header::UPGRADE)
-    .iter()
-    .filter_map(|v| v.to_str().ok())
-    .any(|v| v.trim().eq_ignore_ascii_case("websocket"))
+/// Whether `parts` opens a socket: an HTTP/1.1 upgrade, or an HTTP/2 extended `CONNECT`
+/// (RFC 8441; the route takes no other `CONNECT`).
+fn is_upgrade(parts: &Parts) -> bool {
+  parts.method == axum::http::Method::CONNECT
+    || parts
+      .headers
+      .get_all(header::UPGRADE)
+      .iter()
+      .filter_map(|v| v.to_str().ok())
+      .any(|v| v.trim().eq_ignore_ascii_case("websocket"))
 }
 
 /// Refuses an upgrade that offers no codec, and records the request head for the calls' guards.
 async fn admit(request: Request, next: Next) -> Response {
   let (mut parts, body) = request.into_parts();
-  if is_upgrade(&parts.headers) && offered_codec(&parts.headers).is_none() {
+  if is_upgrade(&parts) && offered_codec(&parts.headers).is_none() {
     let offer = subprotocols().collect::<Vec<_>>().join(", ");
     return Problem::new(StatusCode::UNSUPPORTED_MEDIA_TYPE)
       .with_title("Unsupported subprotocol")
@@ -1347,7 +1398,67 @@ mod tests {
     let socket = WsConfig::default().messages_per_second(7);
     let config = RpcWsConfig::default().socket(socket);
     assert_eq!(config.socket_config().message_rate(), 7);
+    assert_eq!(config.socket_config().control_message_rate(), 28);
     assert_eq!(config.calls_limit(), DEFAULT_MAX_CALLS);
+    // Both the default socket and a configured one classify credits as control.
+    let credit = WsMessage::from(r#"{"id":1,"kind":"credit","credits":1}"#);
+    for config in [RpcWsConfig::default(), config] {
+      assert_eq!(
+        config.socket_config().frame_class(&credit),
+        WsFrameClass::Control
+      );
+    }
+  }
+
+  #[test]
+  fn credit_and_ping_frames_are_control() {
+    let class = |text: &str| classify_frame(&WsMessage::from(text));
+    assert_eq!(
+      class(r#"{"id":7,"kind":"credit","flags":0,"credits":16}"#),
+      WsFrameClass::Control
+    );
+    assert_eq!(class(r#"{"id":0,"kind":"ping"}"#), WsFrameClass::Control);
+    // Every other kind, and anything that is not a well-formed frame, is data.
+    for data in [
+      r#"{"id":0,"kind":"pong"}"#,
+      r#"{"id":1,"kind":"item","payload":1}"#,
+      r#"{"id":1,"kind":"call","tag":"A.b","payload":null}"#,
+      r#"{"id":1,"kind":"end"}"#,
+      r#"{"id":1,"kind":"credit","credits":0}"#,
+      r#"{"id":1,"kind":"ping"}"#,
+      r#"{"id":0,"kind":"credit","credits":1}"#,
+      r#"{"id":1,"kind":"credit","flags":4,"credits":1}"#,
+      "credit",
+    ] {
+      assert_eq!(class(data), WsFrameClass::Data, "{data}");
+    }
+    // A message above 256 bytes is data without being decoded.
+    let padded = format!(
+      r#"{{"id":1,"kind":"credit","credits":1}}{}"#,
+      " ".repeat(CONTROL_FRAME_MAX_BYTES)
+    );
+    assert_eq!(class(&padded), WsFrameClass::Data);
+    assert_eq!(
+      class(&padded[..CONTROL_FRAME_MAX_BYTES]),
+      WsFrameClass::Control
+    );
+  }
+
+  #[cfg(feature = "postcard")]
+  #[test]
+  fn postcard_credit_frames_are_control() {
+    use crate::codec::postcard::encode_frame;
+    let id = CallId::new(3).unwrap();
+    let credit = encode_frame(&Frame::<Vec<u8>>::credit(id, 8)).unwrap();
+    let ping = encode_frame(&Frame::<Vec<u8>>::new(CallId::CONNECTION, FrameKind::Ping)).unwrap();
+    let item = encode_frame(&Frame::new(id, FrameKind::Item).with_payload(vec![1_u8])).unwrap();
+    // A credit on the connection id decodes but is not a valid frame.
+    let invalid = encode_frame(&Frame::<Vec<u8>>::credit(CallId::CONNECTION, 8)).unwrap();
+    let class = |bytes: Vec<u8>| classify_frame(&WsMessage::from(bytes));
+    assert_eq!(class(credit), WsFrameClass::Control);
+    assert_eq!(class(ping), WsFrameClass::Control);
+    assert_eq!(class(item), WsFrameClass::Data);
+    assert_eq!(class(invalid), WsFrameClass::Data);
   }
 
   #[test]
@@ -1374,17 +1485,30 @@ mod tests {
     assert_eq!((a.principal(), b.principal()), (Some("ada"), None));
   }
 
+  /// The head of a `method` request carrying `headers`.
+  fn head(method: axum::http::Method, headers: &HeaderMap) -> Parts {
+    let mut req = axum::http::Request::builder()
+      .method(method)
+      .body(())
+      .unwrap();
+    *req.headers_mut() = headers.clone();
+    req.into_parts().0
+  }
+
   #[test]
   fn subprotocols_are_negotiated_from_headers() {
+    use axum::http::Method;
     let mut headers = HeaderMap::new();
     assert_eq!(offered_codec(&headers), None);
-    assert!(!is_upgrade(&headers));
+    assert!(!is_upgrade(&head(Method::GET, &headers)));
+    // An HTTP/2 extended CONNECT opens a socket without an `Upgrade` header (RFC 8441).
+    assert!(is_upgrade(&head(Method::CONNECT, &headers)));
     headers.append(header::UPGRADE, "WebSocket".parse().unwrap());
     headers.append(
       SEC_WEBSOCKET_PROTOCOL,
       "chat, idrpc.json.v1".parse().unwrap(),
     );
-    assert!(is_upgrade(&headers));
+    assert!(is_upgrade(&head(Method::GET, &headers)));
     assert_eq!(offered_codec(&headers), Some(CodecId::Json));
     let offered = subprotocols().collect::<Vec<_>>();
     assert_eq!(offered[0], "idrpc.json.v1");

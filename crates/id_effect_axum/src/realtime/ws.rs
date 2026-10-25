@@ -14,10 +14,19 @@
 //!
 //! Secure defaults (see [`WsConfig`]): an `Origin` allowlist that refuses every browser origin
 //! until configured ([`super::origin`]); frames and messages of at most 64 KiB (close 1009);
-//! 100 inbound messages per second per socket (close 1008); 16 sockets per client IP and
+//! 100 inbound messages per second per socket (close 1008); control frames (WebSocket pings and
+//! pongs, and the messages a [`WsConfig::classify`] hook calls [`WsFrameClass::Control`], such as
+//! a protocol's flow-control credits) leave that rate and have their own cap, 4× the message rate
+//! (close 1008 too); 16 sockets per client IP and
 //! 10 000 per endpoint (**429** before the upgrade); a ping every 20 s, two missed pongs close
 //! the socket (1001); 300 s idle timeout (1001). The handshake itself is refused with Problem
 //! Details: **426** (not an upgrade, wrong version), **400** (bad key), **403** (origin).
+//!
+//! One route serves both openings of a socket: the HTTP/1.1 `GET` upgrade (RFC 6455, answered
+//! `101`) and, on an HTTP/2 connection of the TLS host (feature `tls`), the extended `CONNECT`
+//! with `:protocol websocket` (RFC 8441, answered `200`; the socket is one stream, counted
+//! against [`ConnectionLimits::max_concurrent_streams`](crate::ConnectionLimits::max_concurrent_streams)).
+//! The guards, the Origin allowlist, the socket caps and every limit above apply to both alike.
 //!
 //! ```rust
 //! use id_effect::{Effect, Never};
@@ -52,7 +61,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes};
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Version, header};
 use axum::response::{IntoResponse, Response};
 use base64::Engine as _;
 use futures_util::{Sink as _, SinkExt as _, StreamExt as _};
@@ -84,6 +93,9 @@ pub const DEFAULT_MISSED_PONGS: u32 = 2;
 pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 /// Default inbound message rate per socket: 100 per second (burst 100).
 pub const DEFAULT_MESSAGES_PER_SECOND: u32 = 100;
+/// Default inbound control frame rate per socket, as a multiple of the message rate: 4 (ADR 0013
+/// R4; [`WsConfig::control_messages_per_second`]).
+pub const DEFAULT_CONTROL_RATE_FACTOR: u32 = 4;
 /// Default sockets per client IP: 16.
 pub const DEFAULT_MAX_SOCKETS_PER_IP: usize = super::DEFAULT_MAX_CONNECTIONS_PER_IP;
 /// Default sockets per endpoint: 10 000.
@@ -102,6 +114,9 @@ pub struct WsConfig {
   max_frame_bytes: usize,
   max_message_bytes: usize,
   messages_per_second: u32,
+  /// `None`: [`DEFAULT_CONTROL_RATE_FACTOR`] × `messages_per_second`.
+  control_per_second: Option<u32>,
+  classifier: Option<Classifier>,
   ping_interval: Duration,
   missed_pongs: u32,
   idle_timeout: Duration,
@@ -121,6 +136,8 @@ impl Default for WsConfig {
       max_frame_bytes: DEFAULT_MAX_MESSAGE_BYTES,
       max_message_bytes: DEFAULT_MAX_MESSAGE_BYTES,
       messages_per_second: DEFAULT_MESSAGES_PER_SECOND,
+      control_per_second: None,
+      classifier: None,
       ping_interval: DEFAULT_PING_INTERVAL,
       missed_pongs: DEFAULT_MISSED_PONGS,
       idle_timeout: DEFAULT_IDLE_TIMEOUT,
@@ -184,6 +201,36 @@ impl WsConfig {
   #[must_use]
   pub fn messages_per_second(mut self, n: u32) -> Self {
     self.messages_per_second = n.max(1);
+    self
+  }
+
+  /// At most `n` (at least 1) inbound control frames per second per socket, bursts of up to `n`;
+  /// above it the socket closes with 1008. Control frames are WebSocket pings and pongs and the
+  /// messages the [`classify`](Self::classify) hook calls [`WsFrameClass::Control`]; they do not
+  /// count against [`messages_per_second`](Self::messages_per_second). Default:
+  /// [`DEFAULT_CONTROL_RATE_FACTOR`] × the message rate (it follows later changes of the message
+  /// rate until this is set).
+  #[must_use]
+  pub fn control_messages_per_second(mut self, n: u32) -> Self {
+    self.control_per_second = Some(n.max(1));
+    self
+  }
+
+  /// Classify inbound data messages for the per-socket limiter: a message `classify` calls
+  /// [`WsFrameClass::Control`] counts against the control cap
+  /// ([`control_messages_per_second`](Self::control_messages_per_second)) instead of the message
+  /// rate, so a protocol's own flow-control frames (credits, application pings) do not throttle
+  /// its data. Default: every message is [`WsFrameClass::Data`].
+  ///
+  /// The hook runs on the connection driver for every inbound message, before it is queued: keep
+  /// it cheap (look at small messages only) and conservative (call a message control only when
+  /// it is a well-formed control frame). Classified messages still reach the handler unchanged.
+  #[must_use]
+  pub fn classify<F>(mut self, classify: F) -> Self
+  where
+    F: Fn(&WsMessage) -> WsFrameClass + Send + Sync + 'static,
+  {
+    self.classifier = Some(Classifier(Arc::new(classify)));
     self
   }
 
@@ -268,6 +315,23 @@ impl WsConfig {
     self.messages_per_second
   }
 
+  /// Inbound control frames per second per socket.
+  pub fn control_message_rate(&self) -> u32 {
+    self.control_per_second.unwrap_or_else(|| {
+      self
+        .messages_per_second
+        .saturating_mul(DEFAULT_CONTROL_RATE_FACTOR)
+    })
+  }
+
+  /// How the limiter counts `msg` (see [`classify`](Self::classify)).
+  pub fn frame_class(&self, msg: &WsMessage) -> WsFrameClass {
+    self
+      .classifier
+      .as_ref()
+      .map_or(WsFrameClass::Data, |classify| (classify.0)(msg))
+  }
+
   /// The ping interval and the missed pongs that close the socket.
   pub fn heartbeat_settings(&self) -> (Duration, u32) {
     (self.ping_interval, self.missed_pongs)
@@ -299,6 +363,26 @@ impl WsConfig {
       .cap
       .clone()
       .unwrap_or_else(|| ConnectionCap::new(self.max_sockets, self.max_sockets_per_ip))
+  }
+}
+
+/// How the per-socket limiter counts an inbound message ([`WsConfig::classify`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum WsFrameClass {
+  /// Application data: counted against [`WsConfig::messages_per_second`].
+  Data,
+  /// Protocol control (flow-control credits, application pings): counted against
+  /// [`WsConfig::control_messages_per_second`].
+  Control,
+}
+
+/// A [`WsConfig::classify`] hook.
+#[derive(Clone)]
+struct Classifier(Arc<dyn Fn(&WsMessage) -> WsFrameClass + Send + Sync>);
+
+impl fmt::Debug for Classifier {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str("Classifier(..)")
   }
 }
 
@@ -501,6 +585,9 @@ pub enum WsClose {
   MessageTooBig,
   /// Inbound messages above the rate; closed with 1008.
   RateLimited,
+  /// Inbound control frames above their own cap ([`WsConfig::control_messages_per_second`]);
+  /// closed with 1008.
+  ControlRateLimited,
   /// The client broke the protocol; closed with 1002.
   ProtocolError,
   /// A text message that is not UTF-8; closed with 1007.
@@ -521,6 +608,7 @@ impl WsClose {
       WsClose::HeartbeatTimeout => (CloseCode::Away, "heartbeat timeout"),
       WsClose::MessageTooBig => (CloseCode::Size, "message too big"),
       WsClose::RateLimited => (CloseCode::Policy, "message rate exceeded"),
+      WsClose::ControlRateLimited => (CloseCode::Policy, "control frame rate exceeded"),
       WsClose::ProtocolError => (CloseCode::Protocol, "protocol error"),
       WsClose::InvalidData => (CloseCode::Invalid, "invalid utf-8"),
       WsClose::ClientClosed(_) | WsClose::ClientGone => return None,
@@ -582,6 +670,8 @@ struct Driver<T> {
   outbox_open: bool,
   done: oneshot::Receiver<bool>,
   rate: Rate,
+  /// Control frames' own meter (pings, pongs, classified control messages).
+  control: Rate,
   awaiting_pong: bool,
   missed: u32,
   next_ping: Instant,
@@ -684,9 +774,13 @@ where
         Event::Frame(Message::Text(text)) => self.inbound(now, WsMessage::Text(text.to_string())),
         Event::Frame(Message::Binary(bytes)) => self.inbound(now, WsMessage::Binary(bytes)),
         Event::Frame(Message::Ping(_) | Message::Pong(_)) => {
-          self.awaiting_pong = false;
-          self.missed = 0;
-          None
+          if self.control.admit(now) {
+            self.awaiting_pong = false;
+            self.missed = 0;
+            None
+          } else {
+            Some(WsClose::ControlRateLimited)
+          }
         }
         Event::Frame(Message::Close(frame)) => {
           // tungstenite queued the echo; flush it, bounded.
@@ -721,10 +815,15 @@ where
     }
   }
 
-  /// An inbound data message: rate-checked, then queued for the handler.
+  /// An inbound data message: rate-checked (on the meter of its class), then queued for the
+  /// handler.
   fn inbound(&mut self, now: Instant, msg: WsMessage) -> Option<WsClose> {
-    if !self.rate.admit(now) {
-      return Some(WsClose::RateLimited);
+    let (meter, limited) = match self.cfg.frame_class(&msg) {
+      WsFrameClass::Data => (&mut self.rate, WsClose::RateLimited),
+      WsFrameClass::Control => (&mut self.control, WsClose::ControlRateLimited),
+    };
+    if !meter.admit(now) {
+      return Some(limited);
     }
     self.last_activity = now;
     self.awaiting_pong = false;
@@ -859,6 +958,7 @@ where
             outbox_open: true,
             done: done_rx,
             rate: Rate::per_second(cfg.messages_per_second),
+            control: Rate::per_second(cfg.control_message_rate()),
             awaiting_pong: false,
             missed: 0,
             next_ping: now + cfg.ping_interval,
@@ -901,6 +1001,71 @@ fn upgrade_required(detail: &str, extra: Option<(HeaderName, &'static str)>) -> 
   res
 }
 
+/// How a client opens a socket.
+#[derive(Debug, PartialEq, Eq)]
+enum Opening {
+  /// RFC 6455: an HTTP/1.1 `GET` with `Upgrade: websocket` and this client key, answered `101`.
+  Upgrade(HeaderValue),
+  /// RFC 8441: an HTTP/2 extended `CONNECT` with `:protocol websocket`, answered `200`.
+  ExtendedConnect,
+}
+
+/// Checks how `req` opens a socket: an HTTP/2 `CONNECT` must be an extended `CONNECT` naming
+/// `websocket`; anything else must carry the RFC 6455 upgrade headers. Both need version 13.
+#[allow(clippy::result_large_err)]
+fn opening<B>(req: &Request<B>) -> Result<Opening, Response> {
+  if req.version() >= Version::HTTP_2 && req.method() == Method::CONNECT {
+    if !names_websocket(req) {
+      return Err(upgrade_required(
+        "an HTTP/2 CONNECT must name the websocket protocol (RFC 8441)",
+        None,
+      ));
+    }
+    websocket_version(req.headers())?;
+    return Ok(Opening::ExtendedConnect);
+  }
+  handshake(req.headers()).map(Opening::Upgrade)
+}
+
+/// Whether the extended `CONNECT` `req` names `:protocol websocket` (hyper records the pseudo
+/// header as an extension when the connection enabled RFC 8441).
+#[cfg(feature = "tls")]
+fn names_websocket<B>(req: &Request<B>) -> bool {
+  req
+    .extensions()
+    .get::<hyper::ext::Protocol>()
+    .is_some_and(|p| p.as_str().eq_ignore_ascii_case("websocket"))
+}
+
+/// Without feature `tls` this crate serves no HTTP/2, so no extended `CONNECT` is accepted.
+#[cfg(not(feature = "tls"))]
+fn names_websocket<B>(_req: &Request<B>) -> bool {
+  false
+}
+
+/// `Sec-WebSocket-Version` must be 13.
+#[allow(clippy::result_large_err)]
+fn websocket_version(headers: &HeaderMap) -> Result<(), Response> {
+  if headers
+    .get(SEC_WEBSOCKET_VERSION)
+    .is_none_or(|v| v.as_bytes() != b"13")
+  {
+    return Err(upgrade_required(
+      "Sec-WebSocket-Version must be 13",
+      Some((SEC_WEBSOCKET_VERSION, "13")),
+    ));
+  }
+  Ok(())
+}
+
+/// `res` for a request of `version`: HTTP/2 forbids the connection-specific `Upgrade` header.
+fn for_version(version: Version, mut res: Response) -> Response {
+  if version >= Version::HTTP_2 {
+    res.headers_mut().remove(header::UPGRADE);
+  }
+  res
+}
+
 /// Checks the RFC 6455 handshake headers; the client key on success.
 #[allow(clippy::result_large_err)]
 fn handshake(headers: &HeaderMap) -> Result<HeaderValue, Response> {
@@ -912,15 +1077,7 @@ fn handshake(headers: &HeaderMap) -> Result<HeaderValue, Response> {
       None,
     ));
   }
-  if headers
-    .get(SEC_WEBSOCKET_VERSION)
-    .is_none_or(|v| v.as_bytes() != b"13")
-  {
-    return Err(upgrade_required(
-      "Sec-WebSocket-Version must be 13",
-      Some((SEC_WEBSOCKET_VERSION, "13")),
-    ));
-  }
+  websocket_version(headers)?;
   match headers.get(SEC_WEBSOCKET_KEY) {
     Some(key)
       if base64::engine::general_purpose::STANDARD
@@ -970,9 +1127,10 @@ where
   E: Send + 'static,
   F: FnOnce(&mut S, RequestCaps, WsSocket) -> Effect<(), E, S> + Send + 'static,
 {
-  let key = match handshake(req.headers()) {
-    Ok(key) => key,
-    Err(res) => return res,
+  let version = req.version();
+  let opening = match opening(&req) {
+    Ok(opening) => opening,
+    Err(res) => return for_version(version, res),
   };
   if let Err(rejection) = shared.config.origins.check(req.headers()) {
     tracing::debug!(target: "id_effect_axum::realtime::ws", %rejection, "websocket upgrade refused");
@@ -991,7 +1149,10 @@ where
     .get::<hyper::upgrade::OnUpgrade>()
     .is_none()
   {
-    return upgrade_required("the connection cannot be upgraded", None);
+    return for_version(
+      version,
+      upgrade_required("the connection cannot be upgraded", None),
+    );
   }
   let on_upgrade = hyper::upgrade::on(&mut req);
   let caps = req
@@ -1020,15 +1181,20 @@ where
     })
     .ensuring(sync(move || drop(permit)));
   drop(crate::EffectExecutor::global().runtime().fork(fiber));
+  // RFC 8441 §5: an extended CONNECT is accepted with a 2xx and no body (or key); the stream
+  // carries the socket from then on.
   let mut res = Response::new(Body::empty());
-  *res.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
-  let headers = res.headers_mut();
-  headers.insert(header::CONNECTION, HeaderValue::from_static("upgrade"));
-  headers.insert(header::UPGRADE, HeaderValue::from_static("websocket"));
-  let accept = tungstenite::handshake::derive_accept_key(key.as_bytes());
-  if let Ok(accept) = HeaderValue::from_str(&accept) {
-    headers.insert(SEC_WEBSOCKET_ACCEPT, accept);
+  if let Opening::Upgrade(key) = opening {
+    let headers = res.headers_mut();
+    headers.insert(header::CONNECTION, HeaderValue::from_static("upgrade"));
+    headers.insert(header::UPGRADE, HeaderValue::from_static("websocket"));
+    let accept = tungstenite::handshake::derive_accept_key(key.as_bytes());
+    if let Ok(accept) = HeaderValue::from_str(&accept) {
+      headers.insert(SEC_WEBSOCKET_ACCEPT, accept);
+    }
+    *res.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
   }
+  let headers = res.headers_mut();
   if let Some(protocol) = protocol.and_then(|p| HeaderValue::from_str(&p).ok()) {
     headers.insert(SEC_WEBSOCKET_PROTOCOL, protocol);
   }
@@ -1036,8 +1202,10 @@ where
 }
 
 /// A typed `GET` route at `path` serving WebSocket upgrades with `handler` (see the
-/// [module docs](self)). Decide its access with `.public()` or `.guard(g)`; the guards (and an
-/// `Authenticate` layer) run on the upgrade request, before the `101`.
+/// [module docs](self)): the HTTP/1.1 upgrade, and on HTTP/2 the extended `CONNECT` of RFC 8441
+/// at the same path (registered once, as `GET`). Decide its access with `.public()` or
+/// `.guard(g)`; the guards (and an `Authenticate` layer) run on the opening request, before the
+/// `101` (or the HTTP/2 `200`).
 ///
 /// Per socket, `handler(&mut state, caps, socket)` builds the effect that serves it, with the
 /// upgrade request's [`RequestCaps`]. Sockets are counted against [`WsConfig::max_sockets`]
@@ -1058,7 +1226,8 @@ where
   });
   let mut info = RouteInfo::new(Method::GET, path);
   info.handler = Some(std::any::type_name::<F>());
-  let method_router = axum::routing::get(move |State(env): State<S>, req: Request| {
+  let opens = axum::routing::MethodFilter::GET.or(axum::routing::MethodFilter::CONNECT);
+  let method_router = axum::routing::on(opens, move |State(env): State<S>, req: Request| {
     let shared = Arc::clone(&shared);
     let f = handler.clone();
     async move { upgrade(&shared, env, req, f) }
@@ -1103,6 +1272,62 @@ mod tests {
     );
   }
 
+  fn h2_connect(protocol: Option<&'static str>, version: Option<&'static str>) -> Request<()> {
+    let mut req = axum::http::Request::builder()
+      .method(Method::CONNECT)
+      .version(Version::HTTP_2)
+      .uri("https://localhost/ws");
+    if let Some(v) = version {
+      req = req.header(SEC_WEBSOCKET_VERSION, v);
+    }
+    let mut req = req.body(()).unwrap();
+    #[cfg(feature = "tls")]
+    if let Some(p) = protocol {
+      req
+        .extensions_mut()
+        .insert(hyper::ext::Protocol::from_static(p));
+    }
+    #[cfg(not(feature = "tls"))]
+    let _ = protocol;
+    req
+  }
+
+  #[test]
+  fn opening_tells_the_upgrade_from_the_extended_connect() {
+    let mut h1 = axum::http::Request::get("/ws").body(()).unwrap();
+    *h1.headers_mut() = headers(&GOOD);
+    assert!(matches!(opening(&h1), Ok(Opening::Upgrade(_))));
+    // An HTTP/2 GET is not an opening: there is no upgrade on HTTP/2.
+    let mut h2_get = axum::http::Request::get("/ws")
+      .version(Version::HTTP_2)
+      .body(())
+      .unwrap();
+    *h2_get.headers_mut() = headers(&GOOD[2..]);
+    let refused = for_version(Version::HTTP_2, opening(&h2_get).unwrap_err());
+    assert_eq!(refused.status(), StatusCode::UPGRADE_REQUIRED);
+    assert!(refused.headers().get(header::UPGRADE).is_none());
+    // On HTTP/1.1 the refusal names the upgrade.
+    let refused = for_version(Version::HTTP_11, opening(&h2_get).unwrap_err());
+    assert_eq!(refused.headers()[header::UPGRADE], "websocket");
+
+    let no_protocol = opening(&h2_connect(None, Some("13"))).unwrap_err();
+    assert_eq!(no_protocol.status(), StatusCode::UPGRADE_REQUIRED);
+    let other = opening(&h2_connect(Some("webtransport"), Some("13"))).unwrap_err();
+    assert_eq!(other.status(), StatusCode::UPGRADE_REQUIRED);
+    #[cfg(feature = "tls")]
+    {
+      assert_eq!(
+        opening(&h2_connect(Some("websocket"), Some("13"))).unwrap(),
+        Opening::ExtendedConnect
+      );
+      let v12 = opening(&h2_connect(Some("websocket"), Some("12"))).unwrap_err();
+      assert_eq!(v12.status(), StatusCode::UPGRADE_REQUIRED);
+      assert_eq!(v12.headers()[SEC_WEBSOCKET_VERSION], "13");
+      let missing = opening(&h2_connect(Some("websocket"), None)).unwrap_err();
+      assert_eq!(missing.status(), StatusCode::UPGRADE_REQUIRED);
+    }
+  }
+
   #[test]
   fn protocols_pick_ours_in_order() {
     let h = headers(&[
@@ -1128,6 +1353,21 @@ mod tests {
       .protocols(["p"]);
     assert_eq!((c.max_frame(), c.max_message()), (125, 125));
     assert_eq!(c.message_rate(), 1);
+    // The control cap follows the message rate until it is set.
+    assert_eq!(c.control_message_rate(), DEFAULT_CONTROL_RATE_FACTOR);
+    assert_eq!(c.frame_class(&WsMessage::from("x")), WsFrameClass::Data);
+    let c = c
+      .control_messages_per_second(0)
+      .classify(|_| WsFrameClass::Control);
+    assert_eq!(c.control_message_rate(), 1);
+    assert_eq!(c.frame_class(&WsMessage::from("x")), WsFrameClass::Control);
+    assert!(format!("{c:?}").contains("Classifier(..)"));
+    assert_eq!(
+      WsConfig::new()
+        .messages_per_second(u32::MAX)
+        .control_message_rate(),
+      u32::MAX
+    );
     assert_eq!(c.heartbeat_settings(), (Duration::from_millis(1), 1));
     assert_eq!(c.idle(), Duration::from_millis(1));
     assert_eq!(c.socket_limits(), (1, 1));
@@ -1154,6 +1394,7 @@ mod tests {
     assert_eq!(WsClosed.to_string(), "the websocket is closed");
     assert_eq!(WsClose::MessageTooBig.code(), Some(1009));
     assert_eq!(WsClose::RateLimited.code(), Some(1008));
+    assert_eq!(WsClose::ControlRateLimited.code(), Some(1008));
     assert_eq!(WsClose::ProtocolError.code(), Some(1002));
     assert_eq!(WsClose::InvalidData.code(), Some(1007));
     assert_eq!(WsClose::HandlerFailed.code(), Some(1011));
@@ -1167,5 +1408,184 @@ mod tests {
     assert!(r.admit(t0) && r.admit(t0));
     assert!(!r.admit(t0));
     assert!(r.admit(t0 + Duration::from_millis(500)));
+  }
+
+  #[test]
+  fn origins_replace_the_policy() {
+    let app = OriginPolicy::allow(["https://app.example"]).unwrap();
+    let c = WsConfig::new().origins(app);
+    assert!(c.origin_policy().allows("https://app.example"));
+    let c = c.origins(OriginPolicy::deny_all());
+    assert!(!c.origin_policy().allows("https://app.example"));
+  }
+
+  #[test]
+  fn channel_socket_yields_its_inbox_and_ends_with_it() {
+    let exec = id_effect::TestExecutor::new();
+    let (in_tx, in_rx) = mpsc::channel(4);
+    let (out_tx, _out_rx) = mpsc::channel(4);
+    let ip = IpAddr::from([127, 0, 0, 1]);
+    let socket = WsSocket::from_channels(in_rx, out_tx, Some("p".to_owned()), Some(ip));
+    assert_eq!(socket.protocol(), Some("p"));
+    assert_eq!(socket.client_ip(), Some(ip));
+    in_tx.try_send(WsMessage::from("a")).unwrap();
+    in_tx.try_send(WsMessage::from("b")).unwrap();
+    drop(in_tx);
+    let seen: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
+    let done: Slot<()> = Arc::new(std::sync::Mutex::new(None));
+    let (incoming, _sender) = socket.into_parts::<Never, HNil>();
+    let into = Arc::clone(&seen);
+    let finished = Arc::clone(&done);
+    let run = incoming
+      .run_for_each_effect(move |msg: WsMessage| {
+        into
+          .lock()
+          .unwrap()
+          .push(msg.as_text().unwrap_or_default().to_owned());
+        succeed(())
+      })
+      .map(move |()| *finished.lock().unwrap() = Some(()));
+    drop(run.fork_root(Arc::new(exec.clone())));
+    exec.run_until_stalled();
+    assert_eq!(*seen.lock().unwrap(), ["a", "b"]);
+    assert_eq!(done.lock().unwrap().take(), Some(()), "the stream ended");
+  }
+
+  #[test]
+  fn within_gives_up_on_the_executor_clock() {
+    let exec = id_effect::TestExecutor::new();
+    let clock: Arc<dyn Executor> = Arc::new(exec.clone());
+    let slot: Slot<Option<()>> = Arc::new(std::sync::Mutex::new(None));
+    let out = Arc::clone(&slot);
+    let eff: Effect<(), Never, HNil> = from_async(move || async move {
+      let r = within(&clock, Duration::from_secs(1), std::future::pending::<()>()).await;
+      *out.lock().unwrap() = Some(r);
+      Ok(())
+    });
+    drop(eff.fork_root(Arc::new(exec.clone())));
+    exec.run_until_stalled();
+    assert!(slot.lock().unwrap().is_none(), "still waiting");
+    exec.advance(Duration::from_secs(1));
+    exec.run_until_stalled();
+    assert_eq!(slot.lock().unwrap().take(), Some(None));
+  }
+
+  type Slot<T> = Arc<std::sync::Mutex<Option<T>>>;
+  type Client = WebSocketStream<tokio::io::DuplexStream>;
+
+  /// Runs `fut` as a fiber on `exec` until it stalls; it must have completed by then.
+  fn drive<T, F>(exec: &id_effect::TestExecutor, fut: F) -> T
+  where
+    T: Send + 'static,
+    F: Future<Output = T> + Send + 'static,
+  {
+    let slot: Slot<T> = Arc::new(std::sync::Mutex::new(None));
+    let out = Arc::clone(&slot);
+    let eff: Effect<(), Never, HNil> = from_async(move || async move {
+      let v = fut.await;
+      *out.lock().unwrap() = Some(v);
+      Ok(())
+    });
+    drop(eff.fork_root(Arc::new(exec.clone())));
+    exec.run_until_stalled();
+    let v = slot.lock().unwrap().take();
+    v.expect("the step completed")
+  }
+
+  /// A session on the test clock whose handler drops every message, and the client end.
+  fn session(exec: &id_effect::TestExecutor, config: &WsConfig) -> (Slot<WsClose>, Client) {
+    let (server_io, client_io) = tokio::io::duplex(1 << 20);
+    let closed: Slot<WsClose> = Arc::new(std::sync::Mutex::new(None));
+    let out = Arc::clone(&closed);
+    let server = serve_io(server_io, config, |socket: WsSocket| {
+      let (incoming, _out) = socket.into_parts::<Never, HNil>();
+      incoming.run_for_each_effect(|_| succeed(()))
+    })
+    .map(move |close| *out.lock().unwrap() = Some(close));
+    drop(server.fork_root(Arc::new(exec.clone())));
+    let client = drive(exec, async move {
+      WebSocketStream::from_raw_socket(client_io, Role::Client, None).await
+    });
+    (closed, client)
+  }
+
+  /// Sends `msgs` at one instant, then reads up to the server's close frame (its code and
+  /// reason; `None` when the server did not close).
+  fn send_all(
+    exec: &id_effect::TestExecutor,
+    mut client: Client,
+    msgs: Vec<Message>,
+    expect_close: bool,
+  ) -> (Client, Option<(u16, String)>) {
+    use futures_util::{SinkExt as _, StreamExt as _};
+    drive(exec, async move {
+      for msg in msgs {
+        client.send(msg).await.unwrap();
+      }
+      let mut close = None;
+      while expect_close && let Some(Ok(msg)) = client.next().await {
+        if let Message::Close(Some(frame)) = msg {
+          close = Some((u16::from(frame.code), frame.reason.to_string()));
+          break;
+        }
+      }
+      (client, close)
+    })
+  }
+
+  #[test]
+  fn r4_classified_control_frames_have_own_cap() {
+    let exec = id_effect::TestExecutor::new();
+    let config = WsConfig::default().messages_per_second(2).classify(|msg| {
+      if msg.as_text() == Some("credit") {
+        WsFrameClass::Control
+      } else {
+        WsFrameClass::Data
+      }
+    });
+    assert_eq!(config.control_message_rate(), 8);
+    let (closed, client) = session(&exec, &config);
+    // At one instant: the two data messages the rate allows, and eight control frames (six
+    // classified credits, a ping and a pong) beside them.
+    let mut burst = vec![Message::text("a"), Message::text("b")];
+    burst.extend((0..6).map(|_| Message::text("credit")));
+    burst.extend([Message::Ping(Bytes::new()), Message::Pong(Bytes::new())]);
+    let (client, close) = send_all(&exec, client, burst, false);
+    assert_eq!(close, None);
+    assert!(
+      closed.lock().unwrap().is_none(),
+      "control frames left the data rate"
+    );
+    // A ninth control frame at the same instant is over the control cap.
+    let (_client, close) = send_all(&exec, client, vec![Message::text("credit")], true);
+    assert_eq!(close, Some((1008, "control frame rate exceeded".into())));
+    exec.run_until_stalled();
+    assert_eq!(
+      closed.lock().unwrap().take(),
+      Some(WsClose::ControlRateLimited)
+    );
+  }
+
+  #[test]
+  fn r4_ping_flood_closes_1008() {
+    let exec = id_effect::TestExecutor::new();
+    let config = WsConfig::default().control_messages_per_second(3);
+    let (closed, client) = session(&exec, &config);
+    let pings = (0..3).map(|_| Message::Ping(Bytes::new())).collect();
+    let (client, close) = send_all(&exec, client, pings, false);
+    assert_eq!(close, None);
+    // The cap refills at its rate.
+    exec.advance(Duration::from_secs(1));
+    let pings = (0..3).map(|_| Message::Ping(Bytes::new())).collect();
+    let (client, close) = send_all(&exec, client, pings, false);
+    assert_eq!(close, None);
+    assert!(closed.lock().unwrap().is_none());
+    let (_client, close) = send_all(&exec, client, vec![Message::Ping(Bytes::new())], true);
+    assert_eq!(close, Some((1008, "control frame rate exceeded".into())));
+    exec.run_until_stalled();
+    assert_eq!(
+      closed.lock().unwrap().take(),
+      Some(WsClose::ControlRateLimited)
+    );
   }
 }

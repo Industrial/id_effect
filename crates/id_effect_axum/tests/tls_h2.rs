@@ -33,7 +33,7 @@ const WAIT: Duration = Duration::from_secs(5);
 /// A test CA issuing `localhost` certificates.
 struct Ca {
   cert: rcgen::Certificate,
-  key: KeyPair,
+  issuer: rcgen::Issuer<'static, KeyPair>,
 }
 
 /// A leaf certificate: PEM chain, PEM key and the leaf's SHA-256.
@@ -52,13 +52,14 @@ impl Ca {
       .push(DnType::CommonName, "id_effect test CA");
     let key = KeyPair::generate().unwrap();
     let cert = params.self_signed(&key).unwrap();
-    Self { cert, key }
+    let issuer = rcgen::Issuer::new(params, key);
+    Self { cert, issuer }
   }
 
   fn issue(&self) -> Leaf {
     let params = CertificateParams::new(vec!["localhost".to_owned()]).unwrap();
     let key = KeyPair::generate().unwrap();
-    let cert = params.signed_by(&key, &self.cert, &self.key).unwrap();
+    let cert = params.signed_by(&key, &self.issuer).unwrap();
     Leaf {
       chain_pem: cert.pem(),
       key_pem: key.serialize_pem(),

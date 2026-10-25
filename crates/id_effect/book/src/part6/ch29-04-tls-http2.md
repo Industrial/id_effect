@@ -35,7 +35,7 @@ Build with the `tls` feature:
 
 ```toml
 [dependencies]
-id_effect_axum = { version = "0.12", features = ["tls"] }
+id_effect_axum = { version = "0.13", features = ["tls"] }
 ```
 
 Then point the host at a PEM certificate chain (leaf first) and its private key:

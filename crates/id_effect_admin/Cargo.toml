@@ -1,0 +1,104 @@
+[package]
+name = "id_effect_admin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Admin back office for id_effect services: entity registration, guarded list/detail/edit pages and per-action permissions"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["effect", "admin", "crud", "backoffice", "axum"]
+categories = ["web-programming", "database"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_admin"
+
+# Every 0.13 feature, declared once by r13-e9-3-admin-core (release spec decision D2).
+[features]
+default = []
+# Entity, field and page labels through an `id_effect_i18n::Catalog` in the request's locale.
+i18n = ["dep:id_effect_i18n", "id_effect_i18n/schema"]
+# The hash-chained audit log of admin changes (r13-e9-3-admin-edit): id_effect_sql's `audit`.
+audit = ["id_effect_sql/audit"]
+# `testing`: requests carrying a principal, tenant and htmx headers, sent to an admin router.
+test-util = ["dep:tower"]
+
+[dependencies]
+id_effect = { path = "../id_effect", version = "0.13.0" }
+# Guards, principals and the per-entity × action permission check (ADR 0013 R1).
+id_effect_authz = { path = "../id_effect_authz", version = "0.13.0", features = [
+  "axum",
+] }
+# Typed routes (H8 access decision) and the `ui` views: maud, layouts, htmx.
+id_effect_axum = { path = "../id_effect_axum", version = "0.13.0", features = [
+  "ui",
+] }
+# Entities, field metadata, tenant-scoped repositories and keyset pages.
+id_effect_sql = { path = "../id_effect_sql", version = "0.13.0", features = [
+  "repository",
+] }
+id_effect_i18n = { path = "../id_effect_i18n", version = "0.13.0", optional = true }
+axum = "0.8.9"
+# `html!` expands to `extern crate maud;` (the pin of id_effect_axum's `ui`, pre-1.0).
+maud = "=0.27.0"
+# Typed filter and id values (the versions id_effect_sql already uses).
+jiff = "0.2.23"
+uuid = { version = "1", default-features = false, features = ["std"] }
+tracing = "0.1.41"
+tower = { version = "0.5.3", features = ["util"], optional = true }
+
+[dev-dependencies]
+id_effect_authz = { path = "../id_effect_authz", features = [
+  "axum",
+  "testing",
+] }
+id_effect_sql = { path = "../id_effect_sql", features = [
+  "repository",
+  "sqlite",
+] }
+id_effect_tokio = { path = "../id_effect_tokio" }
+serde_json = "1"
+tokio = { version = "1.50.0", features = ["macros", "net", "rt-multi-thread"] }
+tower = { version = "0.5.3", features = ["util"] }
+
+[[test]]
+name = "admin"
+path = "tests/admin.rs"
+required-features = ["test-util"]
+
+[[test]]
+name = "edit"
+path = "tests/edit.rs"
+required-features = ["test-util"]
+
+[[test]]
+name = "bulk"
+path = "tests/bulk.rs"
+required-features = ["test-util"]
+
+[[test]]
+name = "relations"
+path = "tests/relations.rs"
+required-features = ["test-util"]
+
+[[example]]
+name = "010_permissions"
+path = "examples/010_permissions.rs"
+
+[[example]]
+name = "admin_site"
+path = "examples/admin_site.rs"
+required-features = ["test-util"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier (Amendment 9) — checked by scripts/tier-conformance.sh. `platform` (ADR 0012
+# rule 4): the Pipeline reference app's back office depends on it (check P,
+# r13-w7-pipeline-backoffice).
+tier = "platform"

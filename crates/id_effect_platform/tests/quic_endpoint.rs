@@ -18,7 +18,7 @@ const WAIT: Duration = Duration::from_secs(5);
 /// A throwaway certificate authority.
 struct Ca {
   cert: rcgen::Certificate,
-  key: rcgen::KeyPair,
+  issuer: rcgen::Issuer<'static, rcgen::KeyPair>,
 }
 
 impl Ca {
@@ -34,7 +34,8 @@ impl Ca {
     ];
     let key = rcgen::KeyPair::generate().expect("ca key");
     let cert = params.self_signed(&key).expect("ca cert");
-    Self { cert, key }
+    let issuer = rcgen::Issuer::new(params, key);
+    Self { cert, issuer }
   }
 
   fn roots(&self) -> rustls::RootCertStore {
@@ -49,7 +50,7 @@ impl Ca {
       rcgen::ExtendedKeyUsagePurpose::ClientAuth,
     ];
     let key = rcgen::KeyPair::generate().expect("key");
-    let cert = params.signed_by(&key, &self.cert, &self.key).expect("leaf");
+    let cert = params.signed_by(&key, &self.issuer).expect("leaf");
     NodeCertificate::from_pem(
       format!("{}{}", cert.pem(), self.cert.pem()).as_bytes(),
       key.serialize_pem().as_bytes(),

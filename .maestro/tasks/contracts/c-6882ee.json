@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-6882ee",
+  "taskId": "tsk-mvfns901-uz5ej3",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T19:40:12.952Z",
+  "lockedAt": "2026-10-19T19:40:12.952Z",
+  "intent": "r12-e12-4-rpc-check",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-752542",
+      "text": "id-effect rpc check --contract <file> --against <git-ref:path | file> compares two contracts and classifies every change: breaking (procedure removed, kind changed, required input field added, input type narrowed, output field removed or narrowed, error variant added, access decision tightened) or compatible (procedure added, optional input field added, output field added); prints the diff with a reason per item.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-8ede7a",
+      "text": "web.rpc#6: a breaking change passes only when the service version is bumped and the previous version is still served; exit 1 otherwise, exit 2 on unreadable input.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-5dde31",
+      "text": "Tests `removed_procedure_is_breaking`, `optional_field_added_is_compatible`, `required_field_added_is_breaking`, `error_variant_added_is_breaking_for_clients`, `breaking_change_with_version_bump_passes`, `against_git_ref_reads_old_contract`; book part6/ch33-12-contract-check.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-fe7949",
+      "text": "Gate: `cargo nextest run -p id_effect_tool --test rpc_check`; `cargo nextest run -p id_effect_tool`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-569648",
+      "text": "Owns: `crates/id_effect_tool/src/rpc/check.rs`, `crates/id_effect_tool/src/cli.rs` (the check arm only, after r12-e12-4-gen-ts), `crates/id_effect_tool/tests/rpc_check.rs`, `crates/id_effect/book/src/part6/ch33-12-contract-check.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "g4-rpc-check",
+  "lockedBy": "g4-rpc-check",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

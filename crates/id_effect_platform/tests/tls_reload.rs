@@ -18,7 +18,7 @@ use rustls::{ClientConnection, ServerConnection, StreamOwned};
 /// A throwaway certificate authority.
 struct Ca {
   cert: rcgen::Certificate,
-  key: rcgen::KeyPair,
+  issuer: rcgen::Issuer<'static, rcgen::KeyPair>,
 }
 
 impl Ca {
@@ -34,7 +34,8 @@ impl Ca {
     ];
     let key = rcgen::KeyPair::generate().expect("ca key");
     let cert = params.self_signed(&key).expect("ca cert");
-    Self { cert, key }
+    let issuer = rcgen::Issuer::new(params, key);
+    Self { cert, issuer }
   }
 
   fn roots(&self) -> rustls::RootCertStore {
@@ -46,7 +47,7 @@ impl Ca {
     let mut params = rcgen::CertificateParams::new(vec!["localhost".to_string()]).expect("params");
     params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth];
     let key = rcgen::KeyPair::generate().expect("key");
-    let cert = params.signed_by(&key, &self.cert, &self.key).expect("leaf");
+    let cert = params.signed_by(&key, &self.issuer).expect("leaf");
     (
       format!("{}{}", cert.pem(), self.cert.pem()),
       key.serialize_pem(),

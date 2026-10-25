@@ -12,15 +12,21 @@
 
 use std::collections::VecDeque;
 use std::fmt;
+use std::future::poll_fn;
 use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::task::{Context, Poll};
 
 use crate::capability::HNil;
 use crate::concurrency::{Concurrency, fork_all};
 use crate::coordination::{Queue, QueueError};
-use crate::failure::Never;
-use crate::kernel::{Effect, fail, succeed, suspend, yield_fiber};
+use crate::failure::{Cause, Never};
+use crate::kernel::{
+  AnyEnv, Effect, Instr, Node, erase_exit, fail, settle_instr, succeed, suspend, unerase_exit,
+  yield_fiber,
+};
+use crate::runtime::FiberContext;
 use crate::streaming::chunk::Chunk;
 
 /// The chunk size a consumer asks for when it does not choose one ([`Stream::next_chunk`] and
@@ -212,30 +218,94 @@ where
 
   /// Expands `init` with the effectful generator `f` until it returns `None`. Each pull runs `f`
   /// at most `max` times, one after the other.
-  pub fn unfold_effect<S, F>(init: S, f: F) -> Self
+  ///
+  /// A pull waits for its **first** element only. After that it keeps the elements whose steps
+  /// complete without waiting, and stops at the first step that would wait (a timer, I/O, an
+  /// empty queue, any step that needs the fiber), handing over what it has; the next pull
+  /// resumes that step where it stopped. So a generator whose steps are always ready (pure,
+  /// synchronous or already-complete futures) fills whole chunks, and a live one (a socket, a
+  /// subscription, a client stream) delivers each element as it arrives instead of stalling
+  /// until `max` of them have. A step that fails without waiting fails the pull.
+  ///
+  /// ```
+  /// use id_effect::{HNil, Never, Queue, Stream, succeed};
+  ///
+  /// let q = Queue::<u32>::unbounded();
+  /// let _ = q.try_offer_all::<Never, HNil>([1, 2, 3]).block_on();
+  /// // The queue stays open, so a fourth `take` would wait: the pull hands over the three
+  /// // elements that are there instead of waiting for 64.
+  /// let take = q.clone();
+  /// let live = Stream::<u32, Never>::unfold_effect((), move |()| {
+  ///   take.take().map(|n| Some((n, ()))).catch(|_| succeed(None))
+  /// });
+  /// let (chunk, _rest) = live.next_chunk().block_on().into_result().ok().flatten().unwrap();
+  /// assert_eq!(chunk.into_vec(), vec![1, 2, 3]);
+  /// ```
+  pub fn unfold_effect<S, F>(init: S, mut f: F) -> Self
   where
     S: Send + 'static,
     F: FnMut(S) -> Effect<Option<(A, S)>, E, R> + Send + 'static,
   {
-    Self::from_step(move |n| Self::unfold_gather(init, f, n, Vec::new()))
+    Self::from_step(move |n| {
+      let first = f(init);
+      Self::unfold_pull(first, f, n)
+    })
   }
 
-  fn unfold_gather<S, F>(s: S, mut f: F, n: usize, mut out: Vec<A>) -> Effect<Step<A, E, R>, E, R>
+  /// The rest of an [`unfold_effect`](Self::unfold_effect) stream whose next step `next` is
+  /// already built (and possibly started: a pull stopped on it because it would wait).
+  fn unfold_resume<S, F>(next: Effect<Option<(A, S)>, E, R>, f: F) -> Self
   where
     S: Send + 'static,
     F: FnMut(S) -> Effect<Option<(A, S)>, E, R> + Send + 'static,
   {
-    f(s).flat_map(move |next| match next {
-      None => succeed((!out.is_empty()).then(|| (out, Self::empty()))),
-      Some((a, s)) => {
-        out.push(a);
-        if out.len() >= n {
-          succeed(Some((out, Self::unfold_effect(s, f))))
-        } else {
-          Self::unfold_gather(s, f, n, out)
-        }
-      }
+    Self::from_step(move |n| Self::unfold_pull(next, f, n))
+  }
+
+  /// One `unfold_effect` pull of at most `n` elements: waits for `next`, then gathers the steps
+  /// that are ready without waiting.
+  fn unfold_pull<S, F>(
+    next: Effect<Option<(A, S)>, E, R>,
+    f: F,
+    n: usize,
+  ) -> Effect<Step<A, E, R>, E, R>
+  where
+    S: Send + 'static,
+    F: FnMut(S) -> Effect<Option<(A, S)>, E, R> + Send + 'static,
+  {
+    next.flat_map(move |next| match next {
+      None => succeed(None),
+      Some((a, s)) => Self::unfold_gather(s, f, n, vec![a]),
     })
+  }
+
+  /// Adds the generator's ready steps to `out` (non-empty) until it holds `n` elements, the
+  /// generator ends, or a step would wait. Ready values are taken here without any allocation;
+  /// the first step that is not a ready value moves the gathering into [`unfold_probe`].
+  fn unfold_gather<S, F>(
+    mut s: S,
+    mut f: F,
+    n: usize,
+    mut out: Vec<A>,
+  ) -> Effect<Step<A, E, R>, E, R>
+  where
+    S: Send + 'static,
+    F: FnMut(S) -> Effect<Option<(A, S)>, E, R> + Send + 'static,
+  {
+    loop {
+      if out.len() >= n {
+        return succeed(Some((out, Self::unfold_effect(s, f))));
+      }
+      match f(s).node {
+        Node::Pure(Ok(Some((a, next)))) => {
+          out.push(a);
+          s = next;
+        }
+        Node::Pure(Ok(None)) => return succeed(Some((out, Self::empty()))),
+        Node::Pure(Err(c)) => return Effect::pure(Err(c)),
+        node => return unfold_probe(Effect { node }, f, n, out),
+      }
+    }
   }
 
   /// An incremental source driven by a pull function: each pull runs `f(max)` once; `Ok(None)`
@@ -538,7 +608,7 @@ where
     B: Send + 'static,
     F: FnMut(A) -> Stream<B, E, R> + Send + 'static,
   {
-    flat_map_go(Some(self), VecDeque::new(), None, f)
+    flat_map_go(self, VecDeque::new(), None, f)
   }
 
   /// Maps each element with an effect, **sequentially** (ADR 0008 Amendment 2): one element's
@@ -828,6 +898,131 @@ where
   })
 }
 
+/// The gathering part of an [`Stream::unfold_effect`] pull once a step is not a ready value:
+/// one never-waiting async step that runs `next`, and the generator's following steps, as far
+/// as each goes without waiting (see [`run_ready`]), on the pulling fiber's environment and
+/// waker. The first step that would wait ends the pull with `out`, and the rest of the stream
+/// resumes that step.
+fn unfold_probe<A, S, F, E, R>(
+  next: Effect<Option<(A, S)>, E, R>,
+  f: F,
+  n: usize,
+  out: Vec<A>,
+) -> Effect<Step<A, E, R>, E, R>
+where
+  A: Send + 'static,
+  S: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
+  F: FnMut(S) -> Effect<Option<(A, S)>, E, R> + Send + 'static,
+{
+  Effect::from_instr(Instr::Async(Box::new(move |env, fiber| {
+    let env = Arc::clone(env);
+    let fiber = Arc::clone(fiber);
+    let mut state = Some((next, f, out));
+    Box::pin(poll_fn(move |cx| {
+      let (next, f, out) = state
+        .take()
+        .expect("id_effect: unfold probe polled after completion (kernel bug)");
+      let ready = ProbeCx {
+        env: &env,
+        fiber: &fiber,
+        cx,
+      };
+      Poll::Ready(erase_exit(unfold_ready(next, f, n, out, ready)))
+    }))
+  })))
+}
+
+/// What [`run_ready`] runs a step with: the pulling fiber's environment, the fiber (for its
+/// interrupt flag) and the waker of the current poll.
+struct ProbeCx<'a, 'b> {
+  env: &'a AnyEnv,
+  fiber: &'a FiberContext,
+  cx: &'a mut Context<'b>,
+}
+
+/// The loop of [`unfold_probe`].
+fn unfold_ready<A, S, F, E, R>(
+  mut next: Effect<Option<(A, S)>, E, R>,
+  mut f: F,
+  n: usize,
+  mut out: Vec<A>,
+  mut ready: ProbeCx<'_, '_>,
+) -> Result<Step<A, E, R>, Cause<E>>
+where
+  A: Send + 'static,
+  S: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
+  F: FnMut(S) -> Effect<Option<(A, S)>, E, R> + Send + 'static,
+{
+  loop {
+    match run_ready(next, &mut ready) {
+      Err(waiting) => return Ok(Some((out, Stream::unfold_resume(waiting, f)))),
+      Ok(Ok(None)) => return Ok(Some((out, Stream::empty()))),
+      Ok(Err(c)) => return Err(c),
+      Ok(Ok(Some((a, s)))) => {
+        out.push(a);
+        if out.len() >= n {
+          return Ok(Some((out, Stream::unfold_effect(s, f))));
+        }
+        next = f(s);
+      }
+    }
+  }
+}
+
+/// Runs `eff` as far as it goes **without waiting**: its ready values, synchronous steps and
+/// `map`/`flat_map`/`catch` frames under the environment, and each plain future it reaches (a
+/// [`from_async`](crate::from_async) step) polled once with the current waker. `Ok` is its
+/// outcome; `Err` is the rest of `eff` from the step that would wait (a future that returned
+/// `Pending`, kept with its progress, or a step that needs the fiber, such as a timer, a fork or
+/// a mask region, not started), to run later on any fiber.
+///
+/// Like the runloop, it polls no future once the fiber is asked to stop: the future is kept
+/// unpolled in the rest, and the runloop observes the interrupt when this step returns.
+fn run_ready<T, E, R>(
+  eff: Effect<T, E, R>,
+  ready: &mut ProbeCx<'_, '_>,
+) -> Result<Result<T, Cause<E>>, Effect<T, E, R>>
+where
+  T: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
+{
+  let mut instr = match eff.node {
+    Node::Pure(r) => return Ok(r),
+    node => Effect { node }.into_instr(),
+  };
+  loop {
+    let rest = match settle_instr(instr, ready.env) {
+      Ok(exit) => return Ok(unerase_exit(exit)),
+      Err(rest) => rest,
+    };
+    if ready.fiber.should_interrupt() {
+      return Err(Effect::from_instr(rest));
+    }
+    instr = match rest {
+      Instr::Future(mut fut) => match fut.as_mut().poll(ready.cx) {
+        Poll::Ready(exit) => Instr::Pure(exit),
+        Poll::Pending => return Err(Effect::from_instr(Instr::Future(fut))),
+      },
+      Instr::Seq(mut body) => {
+        let Instr::Future(fut) = &mut body.inner else {
+          return Err(Effect::from_instr(Instr::Seq(body)));
+        };
+        match fut.as_mut().poll(ready.cx) {
+          Poll::Ready(exit) => body.inner = Instr::Pure(exit),
+          Poll::Pending => return Err(Effect::from_instr(Instr::Seq(body))),
+        }
+        Instr::Seq(body)
+      }
+      other => return Err(Effect::from_instr(other)),
+    };
+  }
+}
+
 /// Runs `f` over `items` one effect after the other, collecting the outputs; hands `f` back.
 fn seq_map<A, B, E, R, F>(
   mut items: std::vec::IntoIter<A>,
@@ -872,7 +1067,7 @@ where
 /// The state machine of [`Stream::flat_map`]: the current inner stream, the outer elements not
 /// expanded yet, and the rest of the outer stream.
 fn flat_map_go<A, B, E, R, F>(
-  outer: Option<Stream<A, E, R>>,
+  outer: Stream<A, E, R>,
   mut pending: VecDeque<A>,
   inner: Option<Stream<B, E, R>>,
   mut f: F,
@@ -896,13 +1091,10 @@ where
       let inner = f(a);
       return flat_map_go(outer, pending, Some(inner), f).pull_raw(n);
     }
-    match outer {
+    outer.pull_raw(n).flat_map(move |step| match step {
       None => succeed(None),
-      Some(outer) => outer.pull_raw(n).flat_map(move |step| match step {
-        None => succeed(None),
-        Some((items, rest)) => flat_map_go(Some(rest), items.into(), None, f).pull_raw(n),
-      }),
-    }
+      Some((items, rest)) => flat_map_go(rest, items.into(), None, f).pull_raw(n),
+    })
   })
 }
 

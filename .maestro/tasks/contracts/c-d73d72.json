@@ -1,0 +1,36 @@
+{
+	"schemaVersion": 2,
+	"id": "c-d73d72",
+	"taskId": "tsk-mvb0jm8t-w9qmja",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T13:38:34.862Z",
+	"lockedAt": "2026-10-16T13:38:34.862Z",
+	"intent": "0.8 E2.1s — stream operators",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-cbadf2",
+			"text": "msg.streams 5/8 -> at least 7/8: zip / zip_with / combine_latest (#4), time-based throttle and debounce (#5) on the fiber clock (TestExecutor virtual-time tests), group_by key into substreams/partitions (#6) with bounded buffering and backpressure; all interruption-safe (finalizers run when the consumer stops early).",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-5f2bb2",
+			"text": "Book streams chapter updated with each operator; a runnable example; clippy -D warnings, docs, tests green for id_effect.",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"riskClass": "medium"
+}

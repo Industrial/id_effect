@@ -1,0 +1,63 @@
+{
+	"schemaVersion": 1,
+	"id": "vrd-1792150299594-567e52",
+	"taskId": "tsk-mvaoq06i-s0i7vr",
+	"contractVersion": 1,
+	"computedAt": "2026-10-16T11:31:39.594Z",
+	"decision": "HUMAN",
+	"proposedRiskClass": "medium",
+	"effectiveRiskClass": "critical",
+	"reasons": [
+		{
+			"category": "risk",
+			"code": "effective-risk-critical",
+			"message": "Effective risk class is critical (proposed: medium, derived: critical). Human review always required."
+		}
+	],
+	"evidenceConsulted": [
+		"evd-1792138651098-4031aa",
+		"evd-1792138655783-986c6a",
+		"evd-1792138659989-3eb4cc",
+		"evd-1792150257115-94b81f",
+		"evd-1792150257239-0d280c",
+		"evd-1792150257353-5d1ef0",
+		"evd-1792150257476-c50feb",
+		"evd-1792150257603-d899d4",
+		"evd-1792150262505-228c4d",
+		"evd-1792150297916-299fa9"
+	],
+	"policiesConsulted": [
+		{
+			"file": "policies/risk.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/autopilot.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/release.yaml",
+			"version": "1"
+		}
+	],
+	"trustVerifier": {
+		"findingsCount": 1,
+		"errors": 0,
+		"warns": 1,
+		"infos": 0,
+		"findings": [
+			{
+				"check": "sensitive-paths",
+				"severity": "warn",
+				"paths": [
+					".github/workflows/ci.yml",
+					"examples/http-showcase/migrations/0001_init.sql"
+				],
+				"details": "2 path(s) match sensitive-path policy globs."
+			}
+		]
+	},
+	"subject": {
+		"tree_sha": "5dd3cb528a978a4c508f7ca16da06b18a8112789"
+	}
+}

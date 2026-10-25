@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "id": "c-0ace4c",
+  "taskId": "tsk-mveovcwy-q3fo5g",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:22:47.461Z",
+  "lockedAt": "2026-10-19T03:22:47.461Z",
+  "intent": "r11-sc-pin-permissions",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-b4b085",
+      "text": "S1: every `uses:` in ci.yml, audit.yml, docs.yml and dependabot-auto-merge.yml is pinned to a full 40-character commit SHA with a `# vX.Y.Z` comment (today tags, e.g. actions/checkout@v7 at ci.yml:25); dtolnay/rust-toolchain@stable / @master (ci.yml:195, :134) replaced by a pinned SHA with an explicit toolchain input; rust-toolchain.toml pins the default toolchain; the moon installer `curl … | bash` (ci.yml:75, docs.yml:26) replaced by a pinned release download checked against its sha256; .github/dependabot.yml keeps the SHA pins updated.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-86c6ca",
+      "text": "S2: every workflow it owns has a top-level `permissions: contents: read` (or `{}`) with job-level grants only where needed; dependabot-auto-merge.yml no longer approves its own PRs (`gh pr review --approve` at :27 removed) and only enables auto-merge for patch/minor updates after required checks and a CODEOWNERS review.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7c44b3",
+      "text": "S5: Cargo.lock is committed (.gitignore:71 entry removed, 0.11.0.md D12) and CI builds use `--locked`; the minimal-versions job stays.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-919a3d",
+      "text": "pg-integration job gains `-p id_effect_workflow` (for E7.5).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-cc828d",
+      "text": "scripts/check-workflows.sh fails on an unpinned `uses:`, a workflow without top-level permissions, or `curl … | sh/bash`, has --self-test cases `s1_every_action_pinned_by_sha`, `s2_every_workflow_least_privilege`, `s2_dependabot_does_not_self_approve`, and runs as a step in ci.yml over all of .github/workflows (other leaves' new workflow files must pass it).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a6ab21",
+      "text": "Gate: `bash scripts/check-workflows.sh --self-test && bash scripts/check-workflows.sh`; `cargo build --workspace --locked`; `actionlint` on the owned workflows",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-765750",
+      "text": "Owns: `.github/workflows/{ci.yml,audit.yml,docs.yml,dependabot-auto-merge.yml}`, `.github/dependabot.yml`, `rust-toolchain.toml`, `.gitignore`, `Cargo.lock`, `scripts/check-workflows.sh`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-sc-pin-permissions",
+  "lockedBy": "r11-sc-pin-permissions",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

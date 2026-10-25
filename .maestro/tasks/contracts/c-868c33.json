@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 2,
+  "id": "c-868c33",
+  "taskId": "tsk-mvdgvhpd-9mxdxa",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-18T06:51:06.076Z",
+  "lockedAt": "2026-10-18T06:51:06.076Z",
+  "intent": "r11-e7-5-engine",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-17a5ee",
+      "text": "Design PR first: the Workflow trait, WorkflowContext and the Postgres schema are reviewed before r11-e7-5-activities-timers starts (the PR link is the first evidence item).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-630b84",
+      "text": "Workflow trait (Schema-encoded input and output, name, a version string recorded on each instance); WorkflowContext::step(name, effect) journals each result and on resume returns the journaled result without re-running the step (fault.workflows#2); ctx.now() and ctx.random() are journaled (0.11.0.md D7); a replay whose step name or order differs from the history fails with a typed NonDeterministic error.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-fef57b",
+      "text": "Postgres schema (migrations/0001): workflow_instances (id, name, status, input, output, version, lease_owner, lease_expires_at, fencing_token) and workflow_history (instance_id, seq, kind, payload, unique (instance_id, seq)); state survives a process restart (#1).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f210e2",
+      "text": "Multi-writer (D7): N engines run against one database; an instance advances only under its lease; every history append checks the fencing token, so a stale writer whose lease expired cannot append; an expired lease is taken over and the instance resumes from history on another engine.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2476e8",
+      "text": "Built on id_effect_sql SqlClient/SqlTransaction (0.11.0.md D6; no duroxide, no SQLite store); MemoryWorkflowStore for unit tests; start, status and result APIs.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-90859f",
+      "text": "Tests `replay_returns_journaled_results_without_rerunning_steps`, `two_engines_never_advance_one_instance_concurrently`, `stale_writer_append_is_rejected_by_fencing`, `crashed_engine_instance_resumes_elsewhere`, `nondeterministic_replay_is_detected`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a435dd",
+      "text": "Gate: `ID_EFFECT_REQUIRE_PG=1 cargo nextest run -p id_effect_workflow --all-features` (Postgres required)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-ad5818",
+      "text": "Owns: `crates/id_effect_workflow/Cargo.toml`, `crates/id_effect_workflow/src/{lib,workflow,engine,history,lease,memory,pg,error}.rs`, `crates/id_effect_workflow/migrations/0001_*`, `crates/id_effect_workflow/tests/{engine_pg.rs,replay.rs}`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

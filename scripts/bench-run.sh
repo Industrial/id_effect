@@ -28,6 +28,9 @@ GATE_BENCHES=(
     id_effect_axum:gate_request
     id_effect_rpc:gate_rpc:postcard
     id_effect_rpc:h3_loss:http3
+    id_effect_sql:repository_eager:repository,sqlite
+    id_effect_i18n:format
+    id_effect_axum:ui_render:ui
 )
 
 usage() { sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }

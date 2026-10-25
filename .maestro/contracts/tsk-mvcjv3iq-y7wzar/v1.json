@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-7f89b4",
+  "taskId": "tsk-mvcjv3iq-y7wzar",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T15:41:54.476Z",
+  "lockedAt": "2026-10-17T15:41:54.476Z",
+  "intent": "r10-e6-2-fiber-registry",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-7c9c5f",
+      "text": "D8; `fiber_dump()` returns id, parent id, state, current span name, age for live fibers; entries vanish when the fiber ends. Tests `dump_lists_running_and_drops_finished`, `parent_links_follow_fork`. Bench gates and `kernel_alloc` green with the feature off and on.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c22aee",
+      "text": "Gate: `cargo nextest run -p id_effect --features fiber-registry`; `cargo nextest run -p id_effect --test kernel_alloc`; `scripts/bench-compare.sh` (no budget fail)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-34dfaa",
+      "text": "Owns: `crates/id_effect/src/runtime/{fiber_context.rs,fiber_registry.rs}`, `crates/id_effect/Cargo.toml` (feature `fiber-registry`)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

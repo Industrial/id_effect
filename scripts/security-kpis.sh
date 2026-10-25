@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Compute the security KPIs of a release (0.11.0.md and 0.12.0.md, security_kpis and the exit
-# gate "Security KPIs") and record them in docs/security/kpis-<major>.<minor>.json.
+# Compute the security KPIs of a release (0.11.0.md, 0.12.0.md and 0.13.0.md, security_kpis and
+# the exit gate "Security KPIs") and record them in docs/security/kpis-<major>.<minor>.json.
 #
 # Release targets (configure_release; another release is misuse until it has a case there):
 #   0.11  fuzz targets >= 8, compile-fail cases >= 15.
@@ -9,6 +9,14 @@
 #         r10_zero_rtt_on_mutation among them; the Security table of
 #         .maestro/specs/releases/0.12.0.md (security_table) and the T12 bench gates of
 #         docs/benchmarks/v0.12.json (t12_benches).
+#   0.13  fuzz targets >= 22 with >= 5 not in docs/security/kpis-0.12.json and no crash input left
+#         by a local run (fuzz_local_crashes); compile-fail cases >= 0.12's count + 2,
+#         r1_admin_site_without_guard and r1_mcp_endpoint_without_access_decision among them; the
+#         Security table of .maestro/specs/releases/0.13.0.md (security_table, which runs
+#         tests/security_compile_fail/tests/surface_013.rs with the compile-fail suite); the
+#         secure-stack and unary RPC deltas from docs/benchmarks/v0.13.json (secure_stack,
+#         unary_rpc); the SECURITY.md security-release history against the published GitHub
+#         Security Advisories (security_releases, the sec.supply#7 carry-over).
 #
 # Local KPIs (computed from the checkout; a miss is a FAIL):
 #   open_highs           findings of docs/security/findings.json with severity high and status
@@ -30,20 +38,30 @@
 #                        `cargo fuzz list`, which .clusterfuzzlite/build.sh builds, lists them),
 #                        with .github/workflows/cflite_pr.yml and cflite_batch.yml present
 #                        (target >= 8; 0.12: >= 13, and >= 5 of them `new`, not among the
-#                        `targets` of the previous release's kpis JSON).
+#                        `targets` of the previous release's kpis JSON; 0.13: >= 22, >= 5 new).
+#   fuzz_local_crashes   (0.13) the crash, leak, oom and timeout inputs libFuzzer wrote under
+#                        fuzz/artifacts/<target>/ in this checkout (`cargo fuzz run`; the
+#                        directory is git-ignored, so only local runs leave them; target 0). No
+#                        fuzz/artifacts: "not measured". The CI side is fuzz_open_crashes.
 #   compile_fail_cases   tests/security_compile_fail/ui/*.rs with a .stderr next to them
-#                        (target >= 15; 0.12: >= the previous release's value + 2, and every
-#                        `required` case there).
-#   security_table       (0.12) the "## Security" table of the release spec: every backticked name
-#                        of its "Enforcement point" column exists, as a compile-fail case, an
+#                        (target >= 15; 0.12 and 0.13: >= the previous release's value + 2, and
+#                        every `required` case there).
+#   security_table       (0.12, 0.13) the "## Security" table of the release spec: every backticked
+#                        name of its "Enforcement point" column exists, as a compile-fail case, an
 #                        opt-out (dangerous_* / insecure_*, such as dangerous_any_origin: a word
 #                        in the code; check_dangerous checks it records itself), or a `fn <name>`
-#                        test; then the tests run green: `cargo nextest run --workspace
-#                        --all-features` on exactly those tests (each must be listed by
-#                        `cargo nextest list` under that filter, so a name compiled out by a
-#                        feature FAILs), and `cargo nextest run -p security_compile_fail` for the
-#                        cases (without --all-features: r8_plaintext_tcp_without_feature needs
-#                        id_effect_node's insecure-plaintext-tcp off). SECURITY_KPIS_RUN_TESTS=0
+#                        test. A dangerous_* / insecure_* name is a test, not an opt-out, when its
+#                        `fn` carries a test attribute (`#[test]`, `#[tokio::test]`, ...) in the
+#                        three lines above it (0.13: dangerous_tenant_from_header_is_recorded).
+#                        A name with a fuzz/fuzz_targets/<name>.rs is a fuzz target and must be
+#                        a [[bin]] of fuzz/Cargo.toml (0.13: fuzz `sql_page_cursor`; fuzz_targets
+#                        counts them and ClusterFuzzLite runs them). Then the tests run green:
+#                        `cargo nextest run --workspace --all-features` on exactly those tests
+#                        (each must be listed by `cargo nextest list` under that filter, so a
+#                        name compiled out by a feature FAILs), and `cargo nextest run -p
+#                        security_compile_fail` for the cases (without --all-features:
+#                        r8_plaintext_tcp_without_feature needs id_effect_node's
+#                        insecure-plaintext-tcp off). SECURITY_KPIS_RUN_TESTS=0
 #                        or --no-run-tests checks existence only and reports the run "not
 #                        measured".
 #   t12_benches          (0.12) the T12 gates recorded in docs/benchmarks/v0.12.json
@@ -58,17 +76,25 @@
 #   secure_stack         gate/axum_request_secure_stack - gate/axum_request_bare (median, ns) from
 #                        the bench export SECURITY_KPIS_BENCH (default .tmp/bench-head.json, written
 #                        by scripts/bench-run.sh + scripts/bench-export.sh; 0.12 without that file:
-#                        docs/benchmarks/v0.12.json, the T12 run); target <= 5000 ns, the
+#                        docs/benchmarks/v0.12.json, the T12 run; 0.13: docs/benchmarks/v0.13.json
+#                        unless SECURITY_KPIS_BENCH is set); target <= 5000 ns, the
 #                        owner decision of 2026-10-19 (b66751f0; was ratio <= 1.15). The ratio is
 #                        recorded for information. No export, or one without both ids: "not
-#                        measured" (reported, not a FAIL).
+#                        measured" (reported, not a FAIL). `stale` is true when crates/,
+#                        Cargo.toml or Cargo.lock changed between the benched commit and HEAD
+#                        (reported, not a FAIL).
+#   unary_rpc            (0.13) rpc/unary_json - rpc/axum_json_handler (median, ns) from the same
+#                        bench export as secure_stack; target <= 3000 ns (0.12 D5, the `delta`
+#                        gate of docs/benchmarks/gates.toml). Missing as for secure_stack.
 #   check_dangerous      scripts/check-dangerous.sh passes (ADR 0013 R10).
 #   check_workflows      scripts/check-workflows.sh passes (S1, S2).
 #   sha_pinned_actions   `uses:` of .github/workflows/*.yml that are not local (./): the share
 #                        pinned by a 40-character commit SHA (or a docker @sha256 digest). The
 #                        slsa-github-generator reusable workflow is the documented tag-pinned
 #                        exception (scripts/check-workflows.sh); any other unpinned one FAILs.
-#   registry_token       s3_no_registry_token_in_workflows: no CARGO_REGISTRY_TOKEN under .github.
+#   registry_token       s3_no_registry_token_in_workflows: no CARGO_REGISTRY_TOKEN under .github,
+#                        unless docs/security/findings.json records S3 as accepted (an owner
+#                        decision; the KPI passes with `accepted` and the register's note).
 #
 # Online and owner KPIs (GitHub and crates.io, read-only; they exist only after the release is
 # pushed and published). Not reachable or not there yet: "pending" with the reason (reported, not
@@ -88,6 +114,19 @@
 #                        published crates against the provenance" job green (it runs slsa-verifier
 #                        on every crate downloaded from crates.io) and the release carrying
 #                        id_effect-<VERSION>.intoto.jsonl. Verified = published when it is green.
+#   security_releases    (0.13; sec.supply#7) the "## Security releases" tables of SECURITY.md
+#                        against the repository's published GitHub Security Advisories (GET
+#                        repos/<repo>/security-advisories?state=published, through gh, else curl).
+#                        Local checks (a miss FAILs, also offline): at least one release with a
+#                        row, every row's Finding in docs/security/findings.json, every Advisory
+#                        cell a GHSA id, `pending` or `not a published crate`. Online: every GHSA
+#                        id of SECURITY.md is a published advisory of the repository and every
+#                        published advisory is listed (either miss FAILs). All rows with a
+#                        published advisory (or not a published crate) = pass; rows still
+#                        `pending` with the history consistent = pending (publication is a
+#                        release-automation or owner step, 0.13.0.md carry_over).
+#                        SECURITY_KPIS_ADVISORIES=<file> reads a JSON array of advisories
+#                        ({ghsa_id}) from a file instead of GitHub.
 #
 # Usage: bash scripts/security-kpis.sh [--out FILE] [--offline] [--no-run-tests] [VERSION]
 #        bash scripts/security-kpis.sh --self-test
@@ -100,7 +139,7 @@
 #   --self-test runs the kpi_* and s3_* cases below against fixtures in a temporary directory
 #               (offline, no network).
 # Environment: SECURITY_KPIS_BENCH (bench export), SECURITY_KPIS_REPO (default
-# Industrial/id_effect), SECURITY_KPIS_BESTPRACTICES_ID.
+# Industrial/id_effect), SECURITY_KPIS_BESTPRACTICES_ID, SECURITY_KPIS_ADVISORIES.
 # Output: one `security-kpis: <kpi> <summary> (target ...) pass|FAIL|pending|not measured` line
 # per KPI, then the JSON file (formatted with biome when it is on PATH). Exit status: 0 when no
 # KPI FAILed (pending and not measured do not fail), 1 on a FAIL, 2 on misuse.
@@ -121,6 +160,12 @@ BASELINE=""
 REQUIRED_CASES=()
 SECURITY_SPEC=""
 T12_BENCH=""
+# 0.13: the release's own bench record (default export), the unary RPC delta and the local
+# fuzz artifacts.
+RELEASE_BENCH=""
+UNARY_KPI=0
+LOCAL_FUZZ_KPI=0
+RELEASES_KPI=0
 RUN_TABLE_TESTS="${SECURITY_KPIS_RUN_TESTS:-1}"
 UNARY_LIMIT_NS=3000
 BATCH_LIMIT=0.20
@@ -129,6 +174,8 @@ SOAK_LIMIT=1.05
 SCORECARD_MIN=7.5
 SECURE_ID="gate/axum_request_secure_stack"
 BARE_ID="gate/axum_request_bare"
+UNARY_ID="rpc/unary_json"
+HANDLER_ID="rpc/axum_json_handler"
 VERIFY_JOB="Verify published crates against the provenance"
 CODE_DIRS=(crates tests scripts lints examples .github fuzz)
 EXPECTED_IDS=(H{1..8} M{1..20} L{1..6} S{1..7})
@@ -227,6 +274,20 @@ configure_release() {
             REQUIRED_CASES=(r1_rpc_procedure_without_access_decision r10_zero_rtt_on_mutation)
             SECURITY_SPEC="${root}/.maestro/specs/releases/0.12.0.md"
             T12_BENCH="${root}/docs/benchmarks/v0.12.json"
+            ;;
+        0.13)
+            FUZZ_MIN=22
+            FUZZ_NEW_MIN=5
+            BASELINE="${root}/docs/security/kpis-0.12.json"
+            base="$(jq -er '.kpis.compile_fail_cases.value' "${BASELINE}" 2>/dev/null)" ||
+            die "no compile_fail_cases.value in ${BASELINE#"${root}"/} (the 0.13 baseline)"
+            COMPILE_FAIL_MIN=$((base + 2))
+            REQUIRED_CASES=(r1_admin_site_without_guard r1_mcp_endpoint_without_access_decision)
+            SECURITY_SPEC="${root}/.maestro/specs/releases/0.13.0.md"
+            RELEASE_BENCH="${root}/docs/benchmarks/v0.13.json"
+            UNARY_KPI=1
+            LOCAL_FUZZ_KPI=1
+            RELEASES_KPI=1
             ;;
         *) die "no KPI targets for release ${release} (add a case to configure_release)" ;;
     esac
@@ -384,6 +445,27 @@ kpi_fuzz_targets() {
              + (if $baseline == "" then "" else ", \($new | length) new: \($new | join(" "))" end))}' --args "${problems[@]}"
 }
 
+# The crash inputs local fuzz runs left under ROOT/fuzz/artifacts (rules in the header).
+kpi_fuzz_local_crashes() {
+    local root="$1" dir="$1/fuzz/artifacts" files=() targets=()
+    if [[ ! -d "${dir}" ]]; then
+        jq -n '{value: null, target: "0", status: "not measured",
+            reason: "no fuzz/artifacts: no local cargo fuzz run in this checkout",
+            summary: "local fuzz crashes not measured"}'
+        return
+    fi
+    mapfile -t targets < <(find "${dir}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
+    mapfile -t files < <(find "${dir}" -type f \( -name 'crash-*' -o -name 'leak-*' -o -name 'oom-*' \
+        -o -name 'timeout-*' \) -printf '%P\n' | sort)
+    jq -n --arg targets "${targets[*]}" '
+        ($targets | split(" ") | map(select(. != ""))) as $t
+        | $ARGS.positional as $f
+        | {value: ($f | length), target: "0", targets_run: $t, inputs: $f,
+           status: (if ($f | length) == 0 then "pass" else "fail" end),
+           summary: "\($f | length) crash inputs under fuzz/artifacts (local runs of \($t | length) targets)"}' \
+        --args "${files[@]}"
+}
+
 kpi_compile_fail_cases() {
     local root="$1" f n=0 problems=()
     shopt -s nullglob
@@ -434,6 +516,20 @@ code_has_fn() {
     fi
 }
 
+# Succeeds when the code under ROOT defines `fn NAME` with a test attribute (`#[test]`,
+# `#[tokio::test]`, `#[tokio::test(...)]`, ...) in the three lines above it.
+code_has_test_fn() {
+    local root="$1" name="$2" dirs=() hits
+    mapfile -t dirs < <(code_dirs "${root}")
+    ((${#dirs[@]})) || return 1
+    if is_git "${root}"; then
+        hits="$(git -C "${root}" grep -h --untracked -B3 -E -e "fn ${name}\b" -- "${dirs[@]}" || true)"
+    else
+        hits="$(cd "${root}" && grep -rh --exclude-dir=target -B3 -E -e "fn ${name}\b" -- "${dirs[@]}" || true)"
+    fi
+    grep -qE '^[[:space:]]*#\[([A-Za-z_][A-Za-z0-9_]*::)*test(\]|\()' <<<"${hits}"
+}
+
 # The nextest filterset of exactly the tests NAME.. (a test's full name is NAME or ends in ::NAME).
 tests_filter() {
     local IFS='|'
@@ -462,7 +558,7 @@ cases_run() {
 # The Security table of SPEC: every name exists; then (RUN_TABLE_TESTS=1) its tests and the
 # compile-fail suite run green. Logs go to TMP.
 kpi_security_table() {
-    local root="$1" spec="$2" tmp="$3" threat name rows=0 problems=() tests=() cases=() points=()
+    local root="$1" spec="$2" tmp="$3" threat name rows=0 problems=() tests=() cases=() points=() fuzz=()
     local listed=() failed=() run="not run" ran=0 t found
     if [[ ! -f "${spec}" ]]; then
         jq -n --arg f "${spec#"${root}"/}" '{value: null, target: "every Security-table test green",
@@ -473,6 +569,14 @@ kpi_security_table() {
         rows=$((rows + 1))
         if [[ -f "${root}/tests/security_compile_fail/ui/${name}.rs" ]]; then
             cases+=("${name}")
+        elif [[ -f "${root}/fuzz/fuzz_targets/${name}.rs" ]]; then
+            if grep -qF "path = \"fuzz_targets/${name}.rs\"" "${root}/fuzz/Cargo.toml" 2>/dev/null; then
+                fuzz+=("${name}")
+            else
+                problems+=("${threat}: fuzz target ${name} is not a [[bin]] of fuzz/Cargo.toml")
+            fi
+        elif [[ "${name}" =~ ^(dangerous|insecure)_ ]] && code_has_test_fn "${root}" "${name}"; then
+            tests+=("${name}")
         elif [[ "${name}" =~ ^(dangerous|insecure)_ ]] && code_has_word "${root}" "${name}"; then
             points+=("${name}")
         elif code_has_fn "${root}" "${name}"; then
@@ -507,15 +611,18 @@ kpi_security_table() {
     fi
     jq -n --argjson rows "${rows}" --arg tests "${tests[*]}" --arg cases "${cases[*]}" \
         --arg points "${points[*]}" --arg run "${run}" --argjson ran "${ran}" --argjson listed "${#listed[@]}" \
-    --arg spec "${spec#"${root}"/}" '
+    --arg fuzz "${fuzz[*]}" --arg spec "${spec#"${root}"/}" '
         def words: split(" ") | map(select(. != ""));
         $ARGS.positional as $p
-        | ($tests | words) as $t | ($cases | words) as $c | ($points | words) as $o
+        | ($tests | words) as $t | ($cases | words) as $c | ($points | words) as $o | ($fuzz | words) as $f
         | {value: (if $ran == 1 then $run else null end), target: "every Security-table test green",
            spec: $spec, names: $rows, tests: $t, compile_fail_cases: $c, other_points: $o,
-           listed: $listed, run: $run, problems: $p,
-           status: (if ($p | length) > 0 then "fail" elif $ran == 1 then "pass" else "not measured" end),
-           summary: ("\($rows) names in the Security table: \($t | length) tests, \($c | length) compile-fail cases, \($o | length) other points"
+           listed: $listed, run: $run, problems: $p}
+        + (if ($f | length) > 0 then {fuzz_targets: $f} else {} end)
+        + {status: (if ($p | length) > 0 then "fail" elif $ran == 1 then "pass" else "not measured" end),
+           summary: ("\($rows) names in the Security table: \($t | length) tests, \($c | length) compile-fail cases, "
+             + (if ($f | length) > 0 then "\($f | length) fuzz targets, " else "" end)
+             + "\($o | length) other points"
              + (if ($p | length) > 0 then "; \($p | length) problems"
                 elif $ran == 1 then "; tests and compile-fail suite green"
                 else "; all exist, run not measured (--no-run-tests)" end))}' --args "${problems[@]}"
@@ -570,14 +677,17 @@ kpi_t12_benches() {
                 summary: "unary +\($k.unary_delta_ns.value) ns, batch \($k.batch_over_sequential.value) of sequential, h3/h2 p99 \($k.h3_over_h2_p99.value), soak \($k.soak.streams) streams RSS \($k.soak.rss_growth)x after minute 5 (\($k.soak.rss_growth_minute_1)x after minute 1, reported), \($k.soak.heartbeats_missing) heartbeats missing"}' "${bench}"
 }
 
-# The secure-stack overhead from the bench export BENCH (a path; shown relative to ROOT).
-kpi_secure_stack() {
-    local root="$1" bench="$2" sha stale=false
+# A median delta of the bench export BENCH (a path; shown relative to ROOT): ID over BASE (bench
+# ids) against LIMIT ns. NAME labels the summary, KEY and BASE_KEY name the two medians in the
+# JSON, ONLY is the `bench-run.sh --only` that measures both, NOTE explains the ratio.
+kpi_bench_delta() {
+    local root="$1" bench="$2" id="$3" base="$4" limit="$5" name="$6" key="$7" base_key="$8" only="$9"
+    local note="${10}" sha stale=false
     if [[ ! -f "${bench}" ]]; then
-        jq -n --arg b "${bench#"${root}"/}" --argjson limit "${DELTA_LIMIT_NS}" '
+        jq -n --arg b "${bench#"${root}"/}" --argjson limit "${limit}" --arg name "${name}" --arg only "${only}" '
             {value: null, target: "<= \($limit) ns", status: "not measured", source: $b,
-             reason: "no bench export (scripts/bench-run.sh --only id_effect_axum:gate_request, then scripts/bench-export.sh head \($b))",
-             summary: "secure stack - bare not measured"}'
+             reason: "no bench export (scripts/bench-run.sh --only \($only), then scripts/bench-export.sh head \($b))",
+             summary: "\($name) not measured"}'
         return
     fi
     # Stale: the crates or the lock file changed between the benched commit and HEAD.
@@ -586,25 +696,39 @@ kpi_secure_stack() {
     ! git -C "${root}" diff --quiet "${sha}" HEAD -- crates Cargo.toml Cargo.lock 2>/dev/null; then
         stale=true
     fi
-    jq --arg s "${SECURE_ID}" --arg b "${BARE_ID}" --argjson limit "${DELTA_LIMIT_NS}" \
+    jq --arg s "${id}" --arg b "${base}" --argjson limit "${limit}" --arg name "${name}" \
+        --arg key "${key}" --arg base_key "${base_key}" --arg note "${note}" \
     --arg src "${bench#"${root}"/}" --argjson stale "${stale}" '
         .benches[$s].median as $sv
         | .benches[$b].median as $bv
         | if ($sv == null or $bv == null) then
             {value: null, target: "<= \($limit) ns", status: "not measured", source: $src,
-             reason: "the export has no \($s) or \($b)", summary: "secure stack - bare not measured"}
+             reason: "the export has no \($s) or \($b)", summary: "\($name) not measured"}
           else
             (($sv - $bv) | round) as $d
             | (($sv / $bv * 100 | round) / 100) as $ratio
             | {value: $d, unit: "ns", target: "<= \($limit) ns",
                status: (if $d <= $limit then "pass" else "fail" end),
-               secure_stack_ns: (($sv * 10 | round) / 10), bare_ns: (($bv * 10 | round) / 10),
-               ratio: $ratio,
-               ratio_note: "informational; the gate is the absolute budget (owner decision 2026-10-19, b66751f0; was <= 1.15x)",
-               metric: "median", source: $src, sha: .sha, created: .created, machine: .machine,
-               stale: $stale,
-               summary: "+\($d) ns secure stack over bare (\($bv | round) -> \($sv | round) ns, ratio \($ratio))"}
+               ($key): (($sv * 10 | round) / 10), ($base_key): (($bv * 10 | round) / 10),
+               ratio: $ratio, ratio_note: $note,
+               metric: "median", bench: $s, over: $b, source: $src, sha: .sha, created: .created,
+               machine: .machine, stale: $stale,
+               summary: "+\($d) ns \($name) (\($bv | round) -> \($sv | round) ns, ratio \($ratio))"}
           end' "${bench}"
+}
+
+# The secure-stack overhead from the bench export BENCH.
+kpi_secure_stack() {
+    kpi_bench_delta "$1" "$2" "${SECURE_ID}" "${BARE_ID}" "${DELTA_LIMIT_NS}" "secure stack over bare" \
+        secure_stack_ns bare_ns id_effect_axum:gate_request \
+        "informational; the gate is the absolute budget (owner decision 2026-10-19, b66751f0; was <= 1.15x)"
+}
+
+# The unary RPC overhead over the raw JSON handler from the bench export BENCH (0.12 D5).
+kpi_unary_rpc() {
+    kpi_bench_delta "$1" "$2" "${UNARY_ID}" "${HANDLER_ID}" "${UNARY_LIMIT_NS}" \
+        "unary RPC over the raw JSON handler" unary_json_ns axum_json_handler_ns id_effect_rpc:gate_rpc \
+        "informational; the gate is the absolute budget (0.12 D5, gates.toml delta rpc/unary_json)"
 }
 
 # Runs ROOT/SCRIPT; pass when it exits 0.
@@ -651,14 +775,22 @@ kpi_sha_pinned_actions() {
 }
 
 # S3: no workflow reads a long-lived crates.io token.
+# A finding the register (docs/security/findings.json) records as accepted keeps its files: the
+# KPI passes with `accepted` and the register's reason (owner decision; 0.13: #118, publishing
+# with the registry token again).
 s3_no_registry_token_in_workflows() {
-    local root="$1" hits
+    local root="$1" hits accepted
     hits="$(grep -rln CARGO_REGISTRY_TOKEN "${root}/.github" 2>/dev/null || true)"
-    jq -n --arg hits "${hits//"${root}"\//}" '
+    accepted="$(jq -c '[.findings[]? | select(.id == "S3" and .status == "accepted") | .note][0]' \
+        "${root}/docs/security/findings.json" 2>/dev/null || echo null)"
+    jq -n --arg hits "${hits//"${root}"\//}" --argjson acc "${accepted:-null}" '
         ($hits | split("\n") | map(select(. != ""))) as $h
         | {value: ($h | length), target: 0, files: $h,
-           status: (if ($h | length) == 0 then "pass" else "fail" end),
-           summary: "\($h | length) files under .github mention CARGO_REGISTRY_TOKEN"}'
+           summary: "\($h | length) files under .github mention CARGO_REGISTRY_TOKEN"}
+        + if ($h | length) == 0 then {status: "pass"}
+          elif $acc != null then {status: "pass", accepted: true, reason: $acc,
+               summary: "\($h | length) files under .github mention CARGO_REGISTRY_TOKEN; S3 accepted in the register: \($acc)"}
+          else {status: "fail"} end'
 }
 
 # --- online KPIs -----------------------------------------------------------------------------
@@ -810,6 +942,91 @@ kpi_slsa() {
           end' --args "${unpublished[@]}"
 }
 
+# sec.supply#7: the "## Security releases" rows of ROOT/SECURITY.md against the published
+# advisories (header). ADVISORIES: a JSON array of advisories ({ghsa_id}) to use instead of
+# GitHub (SECURITY_KPIS_ADVISORIES; the self-test). One page of 100 advisories is read.
+kpi_security_releases() {
+    local root="$1" tmp="$2" advisories="${3:-}" file="$1/SECURITY.md" rows="" ids="" adv=null
+    local reason="" code="" url has_file=false
+    url="repos/${REPO_SLUG}/security-advisories?state=published&per_page=100"
+    if [[ -f "${file}" ]]; then
+        has_file=true
+        # release TAB finding TAB advisory cell, one line per finding row of the section.
+        rows="$(awk -F'|' '
+            /^## / { s = ($0 ~ /^## Security releases[ \t]*$/); next }
+            !s { next }
+            /^### / { v = $0; sub(/^### +/, "", v); sub(/[ \t].*$/, "", v); next }
+            /^\|/ {
+                id = $2; gsub(/^[ \t]+|[ \t]+$/, "", id)
+                if (id !~ /^[HMLS][0-9]+$/) next
+                n = NF; while (n > 2 && $n ~ /^[ \t]*$/) n--
+                cell = $n; gsub(/^[ \t]+|[ \t]+$/, "", cell)
+                print v "\t" id "\t" cell
+            }' "${file}")"
+    fi
+    ids="$(jq -r '.findings[]?.id' "${root}/docs/security/findings.json" 2>/dev/null || true)"
+    if [[ -n "${advisories}" ]]; then
+        if ! adv="$(jq -ce '[.[].ghsa_id]' "${advisories}" 2>/dev/null)"; then
+            adv=null
+            reason="${advisories} is not a JSON array of advisories"
+        fi
+    elif ((OFFLINE)); then
+        reason="offline"
+    else
+        if command -v gh >/dev/null && gh api "${url}" >"${tmp}/advisories.json" 2>/dev/null; then
+            code=200
+        else
+            code="$(http_get "https://api.github.com/${url}" "${tmp}/advisories.json")"
+        fi
+        if [[ "${code}" != 200 ]] || ! adv="$(jq -ce '[.[].ghsa_id]' "${tmp}/advisories.json" 2>/dev/null)"; then
+            adv=null
+            reason="the GitHub security-advisories API was not readable (HTTP ${code})"
+        fi
+    fi
+    jq -n --arg rows "${rows}" --arg ids "${ids}" --argjson adv "${adv}" --arg reason "${reason}" \
+    --arg repo "${REPO_SLUG}" --argjson has_file "${has_file}" '
+        "every Security releases row with a published GHSA (or not a published crate)" as $target
+        | ($ids | split("\n") | map(select(. != ""))) as $known
+        | [$rows | split("\n")[] | select(. != "") | split("\t")
+           | {release: .[0], finding: .[1], cell: (.[2] // "")}
+           | . + {ghsa: ((.cell | capture("(?<g>GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4})") | .g) // null)}
+           | . + {kind: (if .ghsa != null then "ghsa" elif .cell == "pending" then "pending"
+                         elif .cell == "not a published crate" then "exempt" else "bad" end)}] as $r
+        | [$r[] | select(.kind == "ghsa") | .ghsa] as $listed
+        | ([if $has_file then empty else "no SECURITY.md" end]
+           + [if $has_file and ($r | length) == 0 then "no Security releases rows in SECURITY.md" else empty end]
+           + [$r[] | select(.finding as $f | $known | index($f) | not)
+              | "\(.release) \(.finding): not in docs/security/findings.json"]
+           + [$r[] | select(.kind == "bad")
+              | "\(.release) \(.finding): advisory cell \(.cell | @json) is not a GHSA id, pending or not a published crate"]
+           + (if $adv == null then [] else
+                [$r[] | select(.kind == "ghsa" and (.ghsa as $g | $adv | index($g) | not))
+                 | "\(.release) \(.finding): \(.ghsa) is not a published advisory of \($repo)"]
+                + [$adv[] | select(. as $g | $listed | index($g) | not)
+                   | "\(.): published but not listed under Security releases in SECURITY.md"]
+              end)) as $problems
+        | ([$r[] | select(.kind == "pending")] | length) as $pending
+        | ([$r[] | select(.kind == "exempt")] | length) as $exempt
+        | ([$r[] | select(.kind == "ghsa")] | length) as $ghsa
+        | {value: (if $adv == null then null else $ghsa end), target: $target,
+           releases: ($r | map(.release) | unique), rows: ($r | length), ghsa_rows: $ghsa,
+           pending_rows: $pending, not_published_crate_rows: $exempt,
+           published_advisories: $adv, problems: $problems}
+        + if ($problems | length) > 0 then
+            {status: "fail",
+             summary: "\($problems | length) security-release history problems: \($problems | join("; "))"}
+          elif $adv == null then
+            {status: "pending", reason: $reason,
+             summary: "security releases pending: \($reason) (\($r | length) rows, \($pending) with the advisory pending)"}
+          elif $pending > 0 then
+            ("\($pending) of \($r | length) rows await a published GHSA (\($adv | length) published for \($repo)); publishing them is a release-automation or owner step (0.13.0.md carry_over, sec.supply#7)") as $why
+            | {status: "pending", reason: $why, summary: "security releases pending: \($why)"}
+          else
+            {status: "pass",
+             summary: "\($ghsa) rows with a published GHSA, \($exempt) not a published crate; \($adv | length) published advisories, all listed"}
+          end'
+}
+
 # --- report ----------------------------------------------------------------------------------
 
 # Prints one line per KPI of the report JSON on stdin.
@@ -831,6 +1048,18 @@ report() {
     if [[ -n "${T12_BENCH}" ]]; then
         order+=(t12_benches)
         kpi_t12_benches "${root}" "${T12_BENCH}" >"${tmp}/t12_benches.json"
+    fi
+    if ((UNARY_KPI)); then
+        order+=(unary_rpc)
+        kpi_unary_rpc "${root}" "${bench}" >"${tmp}/unary_rpc.json"
+    fi
+    if ((LOCAL_FUZZ_KPI)); then
+        order+=(fuzz_local_crashes)
+        kpi_fuzz_local_crashes "${root}" >"${tmp}/fuzz_local_crashes.json"
+    fi
+    if ((RELEASES_KPI)); then
+        order+=(security_releases)
+        kpi_security_releases "${root}" "${tmp}" "${SECURITY_KPIS_ADVISORIES:-}" >"${tmp}/security_releases.json"
     fi
     if is_git "${root}"; then
         revision="$(git -C "${root}" rev-parse --short=8 HEAD 2>/dev/null || true)"
@@ -867,7 +1096,7 @@ report() {
 # --- self-test -------------------------------------------------------------------------------
 
 self_test() {
-    local tmp pass=0 out t
+    local tmp pass=0 out t want
     tmp="$(mktemp -d)"
     trap 'rm -rf "${tmp}"' RETURN
     OFFLINE=1
@@ -1058,6 +1287,13 @@ env:
 YML
     s3_no_registry_token_in_workflows "${fx}" >"${tmp}/r.json"
     expect s3_no_registry_token_in_workflows "${tmp}/r.json" '.status == "fail" and .files == [".github/workflows/c.yml"]'
+    register | jq '(.findings[] | select(.id == "S3")) |= (.status = "accepted" | .note = "owner decision")' \
+        >"${fx}/docs/security/findings.json"
+    s3_no_registry_token_in_workflows "${fx}" >"${tmp}/r.json"
+    expect s3_no_registry_token_in_workflows "${tmp}/r.json" '.status == "pass" and .accepted == true and .reason == "owner decision" and .value == 1'
+    rm "${fx}/docs/security/findings.json"
+    s3_no_registry_token_in_workflows "${fx}" >"${tmp}/r.json"
+    expect s3_no_registry_token_in_workflows "${tmp}/r.json" '.status == "fail" and .value == 1'
 
     # ── kpi_fuzz_targets_new (0.12) ──────────────────────────────────────────────────────────
     jq -n '{kpis: {fuzz_targets: {targets: ["alpha"]}}}' >"${tmp}/base.json"
@@ -1153,6 +1389,128 @@ YML
     kpi_t12_benches "${fx}" "${tmp}/no-such.json" >"${tmp}/k.json"
     expect kpi_t12_benches "${tmp}/k.json" '.status == "fail" and .value == null'
 
+    # ── kpi_unary_rpc_delta (0.13) ───────────────────────────────────────────────────────────
+    # unary UNARY HANDLER: an export with those medians (ns).
+    unary() {
+        jq -n --argjson u "$1" --argjson h "$2" --arg uid "${UNARY_ID}" --arg hid "${HANDLER_ID}" \
+            '{schema: 1, sha: "abc", benches: {($uid): {median: $u}, ($hid): {median: $h}}}'
+    }
+    unary 3969.4 969.4 >"${tmp}/bench.json"
+    kpi_unary_rpc "${fx}" "${tmp}/bench.json" >"${tmp}/u.json"
+    expect kpi_unary_rpc_delta "${tmp}/u.json" '.status == "pass" and .value == 3000 and .target == "<= 3000 ns" and .unary_json_ns == 3969.4 and .axum_json_handler_ns == 969.4 and .ratio == 4.09'
+    unary 3970.6 969.4 >"${tmp}/bench.json"
+    kpi_unary_rpc "${fx}" "${tmp}/bench.json" >"${tmp}/u.json"
+    expect kpi_unary_rpc_delta "${tmp}/u.json" '.status == "fail" and .value == 3001'
+    bench 1000 900 >"${tmp}/bench.json"
+    kpi_unary_rpc "${fx}" "${tmp}/bench.json" >"${tmp}/u.json"
+    expect kpi_unary_rpc_delta "${tmp}/u.json" '.status == "not measured" and (.reason | test("rpc/unary_json"))'
+    kpi_unary_rpc "${fx}" "${tmp}/no-such-bench.json" >"${tmp}/u.json"
+    expect kpi_unary_rpc_delta "${tmp}/u.json" '.status == "not measured" and (.reason | test("id_effect_rpc:gate_rpc"))'
+    # the secure stack keeps its own medians beside the shared fields
+    bench 3621 923 >"${tmp}/bench.json"
+    kpi_secure_stack "${fx}" "${tmp}/bench.json" >"${tmp}/s.json"
+    expect kpi_unary_rpc_delta "${tmp}/s.json" '.value == 2698 and .secure_stack_ns == 3621 and .bare_ns == 923 and .bench == "gate/axum_request_secure_stack" and .stale == false'
+
+    # ── kpi_fuzz_local_crashes (0.13) ────────────────────────────────────────────────────────
+    kpi_fuzz_local_crashes "${fx}" >"${tmp}/l.json"
+    expect kpi_fuzz_local_crashes "${tmp}/l.json" '.status == "not measured" and .value == null'
+    mkdir -p "${fx}/fuzz/artifacts/alpha" "${fx}/fuzz/artifacts/beta"
+    kpi_fuzz_local_crashes "${fx}" >"${tmp}/l.json"
+    expect kpi_fuzz_local_crashes "${tmp}/l.json" '.status == "pass" and .value == 0 and .targets_run == ["alpha", "beta"]'
+    : >"${fx}/fuzz/artifacts/beta/crash-0123abcd"
+    : >"${fx}/fuzz/artifacts/beta/oom-4567"
+    : >"${fx}/fuzz/artifacts/alpha/notes.txt"
+    kpi_fuzz_local_crashes "${fx}" >"${tmp}/l.json"
+    expect kpi_fuzz_local_crashes "${tmp}/l.json" '.status == "fail" and .value == 2 and .inputs == ["beta/crash-0123abcd", "beta/oom-4567"]'
+    rm -rf "${fx}/fuzz/artifacts"
+
+    # ── kpi_security_table_dangerous_tests (0.13) ────────────────────────────────────────────
+    # A dangerous_* name with a test attribute above its fn is a test; the opt-out stays a point.
+    printf '#[tokio::test(flavor = "current_thread")]\nasync fn dangerous_zz_opt_out_is_recorded() {}\n' \
+        >"${fx}/crates/demo/tests/opt_out.rs"
+    spec "${BT}dangerous_zz_opt_out_is_recorded${BT}" >"${tmp}/spec.md"
+    : >"${tmp}/calls"
+    RUN_TABLE_TESTS=0 kpi_security_table "${fx}" "${tmp}/spec.md" "${tmp}" >"${tmp}/t.json"
+    expect kpi_security_table_dangerous_tests "${tmp}/t.json" '.status == "not measured" and .tests == ["zz1_fixture_regression_case", "dangerous_zz_opt_out_is_recorded"] and .other_points == ["dangerous_zz_opt_out"]'
+    LISTED=(demo::zz1_fixture_regression_case opt_out::dangerous_zz_opt_out_is_recorded)
+    RUN_TABLE_TESTS=1 kpi_security_table "${fx}" "${tmp}/spec.md" "${tmp}" >"${tmp}/t.json"
+    expect kpi_security_table_dangerous_tests "${tmp}/t.json" '.status == "pass" and .listed == 2'
+    [[ "$(head -n 1 "${tmp}/calls")" == 'list:test(/(^|::)(zz1_fixture_regression_case|dangerous_zz_opt_out_is_recorded)$/)' ]] ||
+    st_fail kpi_security_table_dangerous_tests "cargo calls: $(<"${tmp}/calls")" || return 1
+    # a dangerous_* fn under a non-test attribute is still an opt-out
+    printf '#[must_use]\npub fn dangerous_zz_opt_out_is_recorded() {}\n' >"${fx}/crates/demo/tests/opt_out.rs"
+    RUN_TABLE_TESTS=0 kpi_security_table "${fx}" "${tmp}/spec.md" "${tmp}" >"${tmp}/t.json"
+    expect kpi_security_table_dangerous_tests "${tmp}/t.json" '.tests == ["zz1_fixture_regression_case"] and .other_points == ["dangerous_zz_opt_out", "dangerous_zz_opt_out_is_recorded"]'
+    rm "${fx}/crates/demo/tests/opt_out.rs"
+
+    # ── kpi_security_table_fuzz_targets (0.13) ───────────────────────────────────────────────
+    # A name with a fuzz/fuzz_targets/<name>.rs is a fuzz target (alpha and beta are [[bin]]s).
+    spec "fuzz ${BT}alpha${BT}, ${BT}beta${BT}" >"${tmp}/spec.md"
+    RUN_TABLE_TESTS=0 kpi_security_table "${fx}" "${tmp}/spec.md" "${tmp}" >"${tmp}/t.json"
+    expect kpi_security_table_fuzz_targets "${tmp}/t.json" '.status == "not measured" and .names == 5 and .fuzz_targets == ["alpha", "beta"] and .tests == ["zz1_fixture_regression_case"] and (.summary | test("2 fuzz targets"))'
+    : >"${fx}/fuzz/fuzz_targets/delta.rs"
+    spec "fuzz ${BT}delta${BT}" >"${tmp}/spec.md"
+    RUN_TABLE_TESTS=0 kpi_security_table "${fx}" "${tmp}/spec.md" "${tmp}" >"${tmp}/t.json"
+    expect kpi_security_table_fuzz_targets "${tmp}/t.json" '.status == "fail" and .problems == ["D: fuzz target delta is not a [[bin]] of fuzz/Cargo.toml"]'
+    rm "${fx}/fuzz/fuzz_targets/delta.rs"
+
+    # ── kpi_security_releases (0.13, sec.supply#7) ───────────────────────────────────────────
+    register >"${fx}/docs/security/findings.json"
+    # history H1_CELL [EXTRA_ROW]: a SECURITY.md whose 9.9.1 release lists H1 with H1_CELL.
+    history() {
+        printf '# Security\n\n## Security releases\n\nIntro.\n\n### 9.9.1 (2026-10-18)\n\n'
+        printf '| Finding | Crate | Severity | Issue fixed | Advisory |\n|---|---|---|---|---|\n'
+        printf '| H1 | demo | High | a | %s |\n| H2 | app | High | b | not a published crate |\n' "$1"
+        [[ -z "${2:-}" ]] || printf '%s\n' "$2"
+        printf '\n## Supply chain\n\n| H9 | x | High | outside the section | soon |\n'
+    }
+    # releases H1_CELL ADVISORIES_JSON [EXTRA_ROW]: the KPI into h.json ("" = no advisories file).
+    releases() {
+        history "$1" "${3:-}" >"${fx}/SECURITY.md"
+        if [[ -n "$2" ]]; then
+            printf '%s' "$2" >"${tmp}/adv.json"
+            kpi_security_releases "${fx}" "${tmp}" "${tmp}/adv.json" >"${tmp}/h.json"
+        else
+            kpi_security_releases "${fx}" "${tmp}" >"${tmp}/h.json"
+        fi
+    }
+    releases pending ""
+    expect kpi_security_releases "${tmp}/h.json" '.status == "pending" and .reason == "offline" and .value == null and .rows == 2 and .pending_rows == 1 and .not_published_crate_rows == 1 and .releases == ["9.9.1"] and .problems == []'
+    releases pending '[]'
+    expect kpi_security_releases "${tmp}/h.json" '.status == "pending" and .value == 0 and (.reason | test("^1 of 2 rows await a published GHSA"))'
+    releases '[GHSA-abcd-2345-wxyz](https://github.com/o/r/security/advisories/GHSA-abcd-2345-wxyz)' '[{"ghsa_id": "GHSA-abcd-2345-wxyz"}]'
+    expect kpi_security_releases "${tmp}/h.json" '.status == "pass" and .value == 1 and .ghsa_rows == 1 and .published_advisories == ["GHSA-abcd-2345-wxyz"]'
+    releases pending '[{"ghsa_id": "GHSA-abcd-2345-wxyz"}]'
+    expect kpi_security_releases "${tmp}/h.json" '.status == "fail" and .problems == ["GHSA-abcd-2345-wxyz: published but not listed under Security releases in SECURITY.md"]'
+    releases GHSA-abcd-2345-wxyz '[]'
+    expect kpi_security_releases "${tmp}/h.json" '.status == "fail" and .problems == ["9.9.1 H1: GHSA-abcd-2345-wxyz is not a published advisory of '"${REPO_SLUG}"'"]'
+    releases pending "" '| M99 | demo | Medium | c | soon |'
+    expect kpi_security_releases "${tmp}/h.json" '.status == "fail" and .problems == ["9.9.1 M99: not in docs/security/findings.json", "9.9.1 M99: advisory cell \"soon\" is not a GHSA id, pending or not a published crate"]'
+    printf '# Security\n\n## Security releases\n\nNone yet.\n' >"${fx}/SECURITY.md"
+    kpi_security_releases "${fx}" "${tmp}" >"${tmp}/h.json"
+    expect kpi_security_releases "${tmp}/h.json" '.status == "fail" and .problems == ["no Security releases rows in SECURITY.md"]'
+    rm "${fx}/SECURITY.md"
+    kpi_security_releases "${fx}" "${tmp}" >"${tmp}/h.json"
+    expect kpi_security_releases "${tmp}/h.json" '.status == "fail" and .problems == ["no SECURITY.md"]'
+    echo '{"not": "an array"}' >"${tmp}/adv.json"
+    history pending >"${fx}/SECURITY.md"
+    kpi_security_releases "${fx}" "${tmp}" "${tmp}/adv.json" >"${tmp}/h.json"
+    expect kpi_security_releases "${tmp}/h.json" '.status == "pending" and (.reason | test("not a JSON array of advisories"))'
+    rm "${fx}/SECURITY.md"
+
+    # ── kpi_release_0_13_targets ─────────────────────────────────────────────────────────────
+    jq -n '{kpis: {compile_fail_cases: {value: 19}}}' >"${fx}/docs/security/kpis-0.12.json"
+    out="$(configure_release "${fx}" 0.13
+        echo "${FUZZ_MIN} ${FUZZ_NEW_MIN} ${COMPILE_FAIL_MIN} ${REQUIRED_CASES[*]} ${UNARY_KPI} ${LOCAL_FUZZ_KPI} ${RELEASES_KPI} ${BASELINE#"${fx}"/} ${RELEASE_BENCH#"${fx}"/} ${SECURITY_SPEC#"${fx}"/}")"
+    want="22 5 21 r1_admin_site_without_guard r1_mcp_endpoint_without_access_decision 1 1 1 docs/security/kpis-0.12.json docs/benchmarks/v0.13.json .maestro/specs/releases/0.13.0.md"
+    [[ "${out}" == "${want}" ]] || st_fail kpi_release_0_13_targets "want '${want}', got '${out}'" || return 1
+    pass=$((pass + 1))
+    rm "${fx}/docs/security/kpis-0.12.json"
+    if (configure_release "${fx}" 0.13) 2>/dev/null; then
+        st_fail kpi_release_0_13_targets "0.13 configured without its 0.12 baseline" || return 1
+    fi
+    pass=$((pass + 1))
+
     # ── kpi_online_pending_offline ───────────────────────────────────────────────────────────
     kpi_scorecard "${tmp}" >"${tmp}/n.json"
     expect kpi_online_pending_offline "${tmp}/n.json" '.status == "pending" and .reason == "offline" and .value == null'
@@ -1173,7 +1531,7 @@ YML
     fi
     pass=$((pass + 1))
 
-    echo "security-kpis: self-test passed (${pass} checks: kpi_open_highs_counts_open_highs, kpi_register_complete, kpi_register_tests_exist, kpi_adr_rule_enforcement_exists, kpi_fuzz_targets_counted, kpi_compile_fail_cases_counted, kpi_secure_stack_delta, kpi_sha_pinned_actions, s3_no_registry_token_in_workflows, kpi_fuzz_targets_new, kpi_compile_fail_required, kpi_security_table, kpi_t12_benches, kpi_online_pending_offline)"
+    echo "security-kpis: self-test passed (${pass} checks: kpi_open_highs_counts_open_highs, kpi_register_complete, kpi_register_tests_exist, kpi_adr_rule_enforcement_exists, kpi_fuzz_targets_counted, kpi_compile_fail_cases_counted, kpi_secure_stack_delta, kpi_sha_pinned_actions, s3_no_registry_token_in_workflows, kpi_fuzz_targets_new, kpi_compile_fail_required, kpi_security_table, kpi_t12_benches, kpi_unary_rpc_delta, kpi_fuzz_local_crashes, kpi_security_table_dangerous_tests, kpi_security_table_fuzz_targets, kpi_security_releases, kpi_release_0_13_targets, kpi_online_pending_offline)"
 }
 
 # --- main ------------------------------------------------------------------------------------
@@ -1219,7 +1577,7 @@ out="${out:-${ROOT}/docs/security/kpis-${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.jso
 [[ "${OFFLINE}" == 1 ]] || OFFLINE=0
 [[ "${RUN_TABLE_TESTS}" == 0 ]] || RUN_TABLE_TESTS=1
 configure_release "${ROOT}" "${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
-bench="${SECURITY_KPIS_BENCH:-${ROOT}/.tmp/bench-head.json}"
+bench="${SECURITY_KPIS_BENCH:-${RELEASE_BENCH:-${ROOT}/.tmp/bench-head.json}}"
 if [[ -z "${SECURITY_KPIS_BENCH:-}" && ! -f "${bench}" && -n "${T12_BENCH}" ]]; then
     bench="${T12_BENCH}"
 fi

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-8f8103",
+  "taskId": "tsk-mvcjv3sy-7786hr",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T17:17:46.502Z",
+  "lockedAt": "2026-10-17T17:17:46.502Z",
+  "intent": "r10-e6-5b-guide",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-fa4b48",
+      "text": "Guide (#8) covering latency, seeded plans, partitions and kills (existing #3 #4); example; integration test.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c6b451",
+      "text": "Gate: `cargo test --doc -p book_snippets`; same nextest",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-ed36da",
+      "text": "Owns: `book/src/part4/ch15-09-fault-injection.md` + `SUMMARY.md` line, `crates/id_effect_test/examples/020_faults.rs`, `crates/id_effect_test/tests/faults.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

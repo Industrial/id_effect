@@ -277,10 +277,14 @@ impl AccessLayer {
     }
   }
 
-  /// Whether `method` on the route template `path` is served (`HEAD` follows `GET`).
+  /// Whether `method` on the route template `path` is served. `HEAD` follows `GET`, and so does
+  /// `CONNECT`: an HTTP/2 client opens a WebSocket on a `GET` route with an extended `CONNECT`
+  /// (RFC 8441); a route whose handler does not take it still answers **405**.
   pub fn admits(&self, method: &Method, path: &str) -> bool {
     self.served.get(path).is_some_and(|methods| {
-      methods.contains(method) || (*method == Method::HEAD && methods.contains(&Method::GET))
+      methods.contains(method)
+        || ((*method == Method::HEAD || *method == Method::CONNECT)
+          && methods.contains(&Method::GET))
     })
   }
 }

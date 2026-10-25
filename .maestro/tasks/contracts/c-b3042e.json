@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-b3042e",
+  "taskId": "tsk-mvbh3ye3-0dqyir",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T21:22:21.172Z",
+  "lockedAt": "2026-10-16T21:22:21.172Z",
+  "intent": "r09-e4-1b-layers",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-b0609e",
+      "text": "First-party `CompressionLayer`, `RequestIdLayer` (propagates `x-request-id`, opens a tracing span with method/route/id), `TimeoutLayer` (→ 503 Problem), `BodyLimitLayer` (→ 413), `RateLimitLayer` over `id_effect_resilience::RateLimiter` (→ 429, store pluggable for Redis); `SecurityLayer::recommended` unchanged. One test per layer.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-59997e",
+      "text": "Gate: `cargo nextest run -p id_effect_axum --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a01810",
+      "text": "Owns: `crates/id_effect_axum/src/middleware/{compression.rs,request_id.rs,limits.rs,rate_limit.rs}`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

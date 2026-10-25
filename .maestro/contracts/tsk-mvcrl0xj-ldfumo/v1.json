@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-ca3b4a",
+  "taskId": "tsk-mvcrl0xj-ldfumo",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-17T19:38:13.787Z",
+  "lockedAt": "2026-10-17T19:38:13.787Z",
+  "intent": "r10-w3-ledger",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-a3c058",
+      "text": "See below. Tier flips to `platform` for jobs, messaging, mail, console, storage.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-fb6daa",
+      "text": "Gate: `<docker> -p ledger`; `bash scripts/tier-conformance.sh` (all PASS)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3a5db0",
+      "text": "Owns: `examples/reference/ledger/**`, `.github/workflows/ci.yml` (`reference-ledger` job services: Mailpit, Redis, S3 image), tier lines of the new crates",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

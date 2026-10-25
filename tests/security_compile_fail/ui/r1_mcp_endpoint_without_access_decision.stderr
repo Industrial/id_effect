@@ -1,0 +1,31 @@
+error[E0599]: no method named `router` found for struct `McpEndpoint` in the current scope
+ --> ui/r1_mcp_endpoint_without_access_decision.rs:8:61
+  |
+8 |   let _ = McpEndpoint::new(McpServer::new("docs", "1.0.0")).router::<()>();
+  |                                                             ^^^^^^ method not found in `McpEndpoint`
+  |
+  = note: the method was found for `McpEndpoint<id_effect_ai::mcp::Guarded>`
+
+error[E0277]: the trait bound `id_effect_kit::prelude::Public: RouteGuard` is not satisfied
+  --> ui/r1_mcp_endpoint_without_access_decision.rs:10:12
+   |
+10 |     .guard(Public)
+   |      ----- ^^^^^^ the trait `RouteGuard` is not implemented for `id_effect_kit::prelude::Public`
+   |      |
+   |      required by a bound introduced by this call
+   |
+help: the following other types implement trait `RouteGuard`
+  --> $WORKSPACE/crates/id_effect_authz/src/guard.rs
+   |
+   | impl RouteGuard for Guard {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^ `Guard`
+   |
+  ::: $WORKSPACE/crates/id_effect_rpc/src/transport/mesh.rs
+   |
+   | impl RouteGuard for MeshPeerGuard {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MeshPeerGuard`
+note: required by a bound in `McpEndpoint::guard`
+  --> $WORKSPACE/crates/id_effect_ai/src/mcp/http.rs
+   |
+   |   pub fn guard(self, guard: impl RouteGuard) -> McpEndpoint<Guarded> {
+   |                                  ^^^^^^^^^^ required by this bound in `McpEndpoint::guard`

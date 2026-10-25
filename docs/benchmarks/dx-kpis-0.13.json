@@ -1,0 +1,136 @@
+{
+	"schema": "id_effect dx-kpis v1",
+	"method": "scripts/dx-kpis.sh (header); this file is `DX_KPIS_RELEASE=0.13 bash scripts/dx-kpis.sh --keep` (K1-K6, one run started at a 1-minute load of 2.87), with the K6 budget of docs/benchmarks/README.md checked here and the kit-feature cold-build deltas measured on the kept K6 project right after (k6_kit_feature_deltas)",
+	"release": "0.13",
+	"measured_at": "2026-10-24T13:10:54Z",
+	"revision": "cd34f85f",
+	"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cores": 32,
+		"mem_gib": 62,
+		"os": "Linux 6.18.55",
+		"load_avg_start": "2.87 27.12 58.54",
+		"load_avg_end": "12.15 24.35 54.81"
+	},
+	"k1": {
+		"seconds": 24.81,
+		"budget_s": 180,
+		"pass": true,
+		"new_s": 0.23,
+		"build_s": 24.55,
+		"boot_to_health_s": 0.02,
+		"template": "service",
+		"target_dir": "fresh",
+		"wrapper": "none",
+		"vs_0_12": {
+			"seconds": 22.22,
+			"note": "0.12 and 0.13 template: kit features web, rpc, http3; the 0.13 breadth features stay off by default (release spec Risk 9)"
+		}
+	},
+	"k2": {
+		"seconds": 1.47,
+		"budget_s": 8,
+		"pass": true,
+		"runs_s": [1.47, 1.52, 1.41],
+		"edit": "hello handler in src/lib.rs",
+		"template": "service",
+		"profile": "dev",
+		"wrapper": "none",
+		"vs_0_12": {
+			"seconds": 1.4
+		}
+	},
+	"k3": {
+		"lines": 634,
+		"by_category": {
+			"model": 183,
+			"migration": 19,
+			"routes": 174,
+			"policy": 30,
+			"test": 185,
+			"job": 43,
+			"other": 0
+		},
+		"files": 9,
+		"patch": "docs/benchmarks/k3/invoice.patch",
+		"applies_to_head": true,
+		"build": null,
+		"target": "none (measured); PLAN-OF-PLANS §8: -40 % vs 0.9 at a later release; the job is in from 0.10, compare with 0.9 per category"
+	},
+	"k4": {
+		"fixed": 17,
+		"cases": 20,
+		"min": 17,
+		"pass": true,
+		"without_fix": [
+			"not_send_body",
+			"generic_runner_unannotated",
+			"block_on_in_async"
+		]
+	},
+	"k5": {
+		"compiled": 630,
+		"rust_fences": 693,
+		"ignored": 46,
+		"not_included": 17,
+		"percent": 90.9,
+		"min_percent": 80,
+		"pass": true
+	},
+	"k6": {
+		"seconds": 31.86,
+		"template": "service",
+		"profile": "release",
+		"target_dir": "fresh",
+		"wrapper": "none",
+		"budget": "docs/benchmarks/README.md (K6)",
+		"budget_s": 120,
+		"pass": true,
+		"vs_0_12": {
+			"seconds": 33.21
+		}
+	},
+	"k6_kit_feature_deltas": {
+		"risk": "0.13.0.md Risk 9 (compile time of maud, fluent, admin, ai); release spec row r13-w8-kpis",
+		"template": "service (kit features web, rpc, http3)",
+		"method": "the K6 project (`id-effect new svc --template service --local-workspace <repo>`, root Cargo.lock) copied once per run with one kit feature added to its id_effect_kit features (none for the baseline); `cargo build --release` into an empty target dir with no RUSTC_WRAPPER and no CARGO_INCREMENTAL, timed once, each started below a 1-minute load of 4; the baseline ran first and last; release_rlibs counts target/release/deps/*.rlib",
+		"baseline": {
+			"runs_s": [30.85, 30.82],
+			"mean_s": 30.84,
+			"release_rlibs": 233
+		},
+		"features": {
+			"ai": {
+				"with_s": 30.73,
+				"delta_s": -0.11,
+				"release_rlibs": 234,
+				"rlibs_added": 1,
+				"load_avg_start": "3.88 13.56 43.72"
+			},
+			"admin": {
+				"with_s": 34.77,
+				"delta_s": 3.93,
+				"release_rlibs": 242,
+				"rlibs_added": 9,
+				"load_avg_start": "3.89 11.83 41.09"
+			},
+			"ui": {
+				"with_s": 32.11,
+				"delta_s": 1.27,
+				"release_rlibs": 234,
+				"rlibs_added": 1,
+				"load_avg_start": "3.91 10.10 37.93"
+			},
+			"i18n": {
+				"with_s": 34.09,
+				"delta_s": 3.25,
+				"release_rlibs": 243,
+				"rlibs_added": 10,
+				"load_avg_start": "3.89 8.66 33.70"
+			}
+		},
+		"budget": "none (reported, as the 0.12 http3 delta); every feature keeps K6 inside its 120 s budget",
+		"note": "one timed build per feature on a 32-thread machine: a new crate built beside the critical path adds little wall time (ai: one rlib, id_effect_ai, and -0.11 s, no measurable cost: the platform client and HTTP stack it uses are already in the template through rpc and http3); admin turns on ui, authz and repository, so its delta includes theirs; i18n adds id_effect_i18n and the Fluent stack (fluent-bundle, fluent-langneg, intl_pluralrules and their dependencies); proc-macro crates (maud_macros for ui) are .so files, not counted as rlibs"
+	}
+}

@@ -382,6 +382,183 @@ fn unreadable_input_exits_2() {
   assert!(run.err.contains("--against"), "{}", run.err);
 }
 
+/// `rpc check --contract <new> --against <old> <extra…>` in a fresh directory.
+fn check_with(old: &Value, new: &Value, extra: &[&str]) -> Run {
+  let dir = tempfile::tempdir().expect("tempdir");
+  let old = write(dir.path(), "old.json", old);
+  let new = write(dir.path(), "rpc.contract.json", new);
+  let mut args = vec![
+    "check",
+    "--contract",
+    new.to_str().expect("utf-8"),
+    "--against",
+    old.to_str().expect("utf-8"),
+  ];
+  args.extend_from_slice(extra);
+  tool(&args)
+}
+
+/// The fixture without the services `drop` names (`(name, version)`).
+fn without(drop: &[(&str, u64)]) -> Value {
+  let mut c = fixture();
+  c["services"].as_array_mut().expect("services").retain(|s| {
+    !drop
+      .iter()
+      .any(|(n, v)| s["name"] == *n && s["version"] == *v)
+  });
+  c
+}
+
+#[test]
+fn retired_version_allowed_with_flag() {
+  let old = fixture();
+  let new = without(&[("Greeter", 1)]);
+
+  // Without the flag the removal is breaking.
+  let run = check_with(&old, &new, &[]);
+  assert_eq!(run.code, ExitCode::FAILURE, "{}", run.out);
+  assert!(
+    run
+      .out
+      .contains("breaking   Greeter v1: version no longer served")
+  );
+
+  let run = check_with(&old, &new, &["--allow-retired", "Greeter:1"]);
+  assert_eq!(run.code, ExitCode::SUCCESS, "{}{}", run.out, run.err);
+  assert!(
+    run
+      .out
+      .contains("retired    Greeter v1: version no longer served (--allow-retired)"),
+    "{}",
+    run.out
+  );
+  assert!(!run.out.contains("breaking   "), "{}", run.out);
+  assert!(
+    run
+      .out
+      .contains("1 changes: 0 breaking, 1 retired, 0 versioned, 0 compatible"),
+    "{}",
+    run.out
+  );
+
+  // Repeatable: two services retired at once, printed in contract order.
+  let new = without(&[("Greeter", 1), ("Todos", 1)]);
+  let run = check_with(
+    &old,
+    &new,
+    &["--allow-retired", "Todos:1", "--allow-retired", "Greeter:1"],
+  );
+  assert_eq!(run.code, ExitCode::SUCCESS, "{}{}", run.out, run.err);
+  let greeter = run.out.find("retired    Greeter v1").expect("Greeter v1");
+  let todos = run.out.find("retired    Todos v1").expect("Todos v1");
+  assert!(greeter < todos, "{}", run.out);
+  assert!(run.out.contains("2 changes: 0 breaking, 2 retired,"));
+}
+
+#[test]
+fn retired_flag_does_not_hide_other_breaks() {
+  let old = fixture();
+  // Greeter v1 retired, and a procedure removed from Todos v1 in place.
+  let mut new = without(&[("Greeter", 1)]);
+  service(&mut new, "Todos", 1)["procedures"]
+    .as_array_mut()
+    .expect("procedures")
+    .retain(|p| p["name"] != "count");
+  let run = check_with(&old, &new, &["--allow-retired", "Greeter:1"]);
+  assert_eq!(run.code, ExitCode::FAILURE, "{}", run.out);
+  assert!(
+    run
+      .out
+      .contains("retired    Greeter v1: version no longer served (--allow-retired)")
+  );
+  assert!(
+    run
+      .out
+      .contains("breaking   Todos v1 count: procedure removed")
+  );
+  assert!(
+    run
+      .out
+      .contains("2 changes: 1 breaking, 1 retired, 0 versioned, 0 compatible"),
+    "{}",
+    run.out
+  );
+  assert!(
+    run
+      .err
+      .contains("1 breaking change(s) within a published version")
+  );
+
+  // Retiring a whole service version does not excuse a break in another version of it.
+  let mut new = without(&[("Greeter", 1)]);
+  service(&mut new, "Greeter", 2)["procedures"]
+    .as_array_mut()
+    .expect("procedures")
+    .retain(|p| p["name"] != "history");
+  let run = check_with(&old, &new, &["--allow-retired", "Greeter:1"]);
+  assert_eq!(run.code, ExitCode::FAILURE, "{}", run.out);
+  assert!(
+    run
+      .out
+      .contains("breaking   Greeter v2 history: procedure removed")
+  );
+}
+
+#[test]
+fn retired_flag_for_unknown_version_is_error() {
+  let old = fixture();
+  let new = without(&[("Greeter", 1)]);
+  // A version that was never served, one that is still served, and a misspelt service.
+  for (flag, shown) in [
+    ("Greeter:3", "Greeter v3"),
+    ("Greeter:2", "Greeter v2"),
+    ("Greter:1", "Greter v1"),
+  ] {
+    let run = check_with(
+      &old,
+      &new,
+      &["--allow-retired", "Greeter:1", "--allow-retired", flag],
+    );
+    assert_eq!(
+      run.code,
+      ExitCode::from(2),
+      "{flag}: {}{}",
+      run.out,
+      run.err
+    );
+    assert!(
+      run.err.contains(&format!(
+        "error: --allow-retired {flag}: {shown} was not removed"
+      )),
+      "{}",
+      run.err
+    );
+    assert!(run.out.is_empty(), "{}", run.out);
+  }
+
+  // Not `Service:N`: a usage error from argument parsing.
+  for bad in ["Greeter", ":1", "Greeter:", "Greeter:v1", "Greeter:-1"] {
+    let run = check_with(&old, &new, &["--allow-retired", bad]);
+    assert_eq!(run.code, ExitCode::from(2), "{bad}: {}", run.out);
+    assert!(run.err.contains("--allow-retired"), "{bad}: {}", run.err);
+  }
+
+  // It only means something next to --against.
+  let dir = tempfile::tempdir().expect("tempdir");
+  let contract = write(dir.path(), "rpc.contract.json", &new);
+  let run = tool(&[
+    "check",
+    "--contract",
+    contract.to_str().expect("utf-8"),
+    "--generated",
+    dir.path().to_str().expect("utf-8"),
+    "--allow-retired",
+    "Greeter:1",
+  ]);
+  assert_eq!(run.code, ExitCode::from(2), "{}", run.out);
+  assert!(run.err.contains("--against"), "{}", run.err);
+}
+
 #[test]
 fn generated_client_must_be_current() {
   let dir = tempfile::tempdir().expect("tempdir");

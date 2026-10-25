@@ -11,8 +11,10 @@ Status is as of `release/0.11.0` at 6c0053aa (the 0.11 exit sweep, 2026-10-19; f
 0f615124). Each release re-checks every row
 (see [Maintenance](#maintenance)). The call surface of 0.12 (B9: RPC over HTTP, WebSocket, SSE,
 HTTP/3, WebTransport and the mesh; the shared QUIC endpoint; ACME) is as of `release/0.12.0` at
-the r12-e12-5-fuzz-security leaf (2026-10-19), against ADR 0014's rules C1–C15. To report a
-vulnerability, follow [SECURITY.md](SECURITY.md).
+the r12-e12-5-fuzz-security leaf (2026-10-19), against ADR 0014's rules C1–C15. The breadth
+batteries of 0.13 (B10: admin, server-rendered UI, tenancy, AI tools, MCP, i18n) are as of
+`release/0.13.0` at the r13-e-fuzz-security leaf (2026-10-24). To report a vulnerability, follow
+[SECURITY.md](SECURITY.md).
 
 ## Scope and method
 
@@ -61,6 +63,7 @@ registry.
 | B7 | Outbound HTTP | The URLs a service is asked to call and the servers it calls | `id_effect_platform` (`http/**`), `id_effect_mail` (SendGrid), `id_effect_auth` (JWKS, OIDC discovery) |
 | B8 | Supply chain | Contributors, dependencies, CI, the registry | `.github/workflows/**`, `deny.toml`, `Cargo.lock`, the publish workflow |
 | B9 | Call surface (0.12) | Every RPC envelope, batch, frame, cursor and `Last-Event-ID` a client or peer sends; the QUIC datagrams of the shared endpoint | `id_effect_rpc` (`server/**`, `batch.rs`, `codec/**`, `transport/**`, `resume.rs`, `idempotency.rs`, `channels/**`), `id_effect_axum` (`realtime/**`, `server/h3.rs`, `server/tls.rs`), `id_effect_platform` (`quic/**`, `tls/**`) |
+| B10 | Breadth batteries (0.13) | Admin form bodies and actions, page cursors, tenant hints, `Accept-Language` and locale cookies, model output (tool calls and their arguments, vendor streams), MCP messages from clients and servers | `id_effect_admin`, `id_effect_axum` (`ui/**`), `id_effect_sql` (`repository/{page,relations}.rs`, `tenant_routing.rs`), `id_effect_authz` (`tenant.rs`), `id_effect_ai` (`tools/**`, `agent.rs`, `stream.rs`, `mcp/**`), `id_effect_i18n` (`negotiate.rs`, `axum.rs`, `maud.rs`) |
 
 ADR 0009 ("Process mesh", non-goals) fixes one assumption that bounds B4: the cookie boundary
 assumes a **trusted cluster**. Members that hold the cookie are trusted; the mesh does not defend
@@ -157,10 +160,10 @@ and everyone else.
 |---|---|---|---|---|---|
 | T | A moved action tag or a floating toolchain changes what CI runs; `curl \| bash` installers (S1). | Every `uses:` pinned by full commit SHA with a version comment (the one exception is the SLSA generator, a reusable workflow that verifies its own `@vX.Y.Z` ref); `dtolnay/rust-toolchain` pinned with an explicit toolchain, and `rust-toolchain.toml`; the moon `curl \| bash` installer and the unchecked mdBook download replaced by pinned releases checked against their sha256; Dependabot keeps the pins current. | R10 | `s1_every_action_pinned_by_sha` (`scripts/check-workflows.sh --self-test`); `scripts/check-workflows.sh` over every workflow in moon-ci | closed (a6a97637; `publish.yml` edd5e5b8) |
 | E | Workflows ran with the default token permissions; Dependabot auto-merge approved its own pull requests (S2). | Top-level `permissions: contents: read` (or `{}`) in every workflow, write grants only on the jobs that need them; `dependabot-auto-merge.yml` approves nothing and enables auto-merge only for patch and minor updates, so GitHub merges after the required `CI Pass` check and a CODEOWNERS review. | R10 | `s2_every_workflow_least_privilege`, `s2_dependabot_does_not_self_approve` (`scripts/check-workflows.sh --self-test`) | closed (a6a97637) |
-| S, E | A leaked long-lived `CARGO_REGISTRY_TOKEN` publishes a malicious crate (S3). | crates.io trusted publishing only: `rust-lang/crates-io-auth-action` exchanges the publish job's GitHub OIDC token for a 30-minute crates.io token, one per half of the publish order; no workflow reads a registry secret ([docs/RELEASING.md](docs/RELEASING.md), "crates.io authentication"). The secret itself is deleted by the owner after the first trusted publish (0.11.0 D15). | — | `grep -rn CARGO_REGISTRY_TOKEN .github` finds nothing; `publish.yml` | closed in the workflow (edd5e5b8); owner steps open: trusted publisher on every crate, then delete the secret ([docs/RELEASING.md](docs/RELEASING.md) "Owner steps" 3 and 7) |
+| S, E | A leaked long-lived `CARGO_REGISTRY_TOKEN` publishes a malicious crate (S3). | The token is the `CARGO_REGISTRY_TOKEN` secret of the `crates-io` GitHub environment, read only by the `publish` job of `publish.yml` and handed to cargo on stdin (`.github/scripts/publish-crate.sh`); every uploaded `.crate` is checked against its SLSA-attested sha256 and the `verify` job re-checks crates.io (S5). 0.11.0 replaced it with trusted publishing (edd5e5b8); #118 (3e9104ed) restored the token flow ([docs/RELEASING.md](docs/RELEASING.md), "crates.io authentication"). | — | `s3_no_registry_token_in_workflows` (`scripts/security-kpis.sh`, passes as accepted); `publish.yml` | **accepted** (owner decision 2026-10-24, #118; see "Accepted risks") |
 | T | Provenance attested crates re-downloaded from crates.io, not the files CI built; `Cargo.lock` was not committed (S5). | `Cargo.lock` committed and CI builds `--locked` (a6a97637). The publish workflow runs `cargo package --locked`, signs SLSA Build L3 provenance over the built `.crate` files and SBOMs (slsa-github-generator), checks every uploaded `.crate` against its attested sha256, and a `verify` job downloads every crate from crates.io, compares the digest and runs `slsa-verifier` (0.11.0 D12, D13). | — | `s5_attested_digest_matches_published_crate` (`publish.yml`, `verify` job) | closed (a6a97637, edd5e5b8); first exercised by the 0.11.0 release |
 | T | Memory-safety and parser bugs nobody looked for (S4). | CodeQL for Rust and Actions (`.github/workflows/codeql.yml`); eleven cargo-fuzz targets (including `mesh_frame` and `mesh_envelope`, be6af99d) under ClusterFuzzLite on PRs and nightly (`fuzz/`, `.github/workflows/cflite_pr.yml`, `cflite_batch.yml`, [docs/security/fuzzing.md](docs/security/fuzzing.md)); the compile-fail suite for the type-enforced rules (`tests/security_compile_fail`, 17 cases, 8c317aa8, [docs/security/compile-fail.md](docs/security/compile-fail.md)). Miri and loom are later E11.4 parts (0.12 → 0.18). | R4 | CodeQL green; fuzz targets with no open crash | closed for SAST and fuzzing (572ec2bd, b7809387); Miri/loom deferred |
-| R | A contribution of unknown origin; unsigned commits and tags (S6). | DCO sign-off enforced on every pull request (`.github/workflows/dco.yml`, step `s6_dco_check_rejects_unsigned_off_commit` on a fixture); the publish workflow refuses a lightweight or unverified release tag (`verify-versions`, step `s6_release_requires_signed_tag`); "require signed commits" on protected branches is an owner action ([CONTRIBUTING.md](CONTRIBUTING.md), "Signed commits and tags"). | — | `s6_dco_check_rejects_unsigned_off_commit`; `s6_release_requires_signed_tag` | DCO closed (d6c22982); signed tags closed (edd5e5b8); signed commits: owner action D15, open (2026-10-19: no signature rule on `main`, no ruleset on `release/*`) |
+| R | A contribution of unknown origin; unsigned commits and tags (S6). | DCO sign-off enforced on every pull request (`.github/workflows/dco.yml`, step `s6_dco_check_rejects_unsigned_off_commit` on a fixture); a pushed `v*` tag publishes without a signature check (#118, 3e9104ed, which removed the 0.11.0 `s6_release_requires_signed_tag` step); "require signed commits" on protected branches is an optional owner setting ([CONTRIBUTING.md](CONTRIBUTING.md), "Signed commits and tags"). | — | `s6_dco_check_rejects_unsigned_off_commit` | DCO closed (d6c22982); unsigned tags **accepted** (owner decision 2026-10-24, #118; see "Accepted risks") |
 | I | Users do not know which versions get fixes; no threat model (S7). | [SECURITY.md](SECURITY.md) lists 0.11.x and 0.10.x and the security-release history; this file. | — | review at each release (Maintenance) | closed (d6c22982) |
 | T | A vulnerable or unlicensed dependency. | `cargo deny check` on every PR and push (`deny.toml`, ci.yml `deny` job) and a daily `cargo audit` (`.github/workflows/audit.yml`); every ignore carries a written reason. | — | `cargo deny check` | mitigated; see L6 and the debts below |
 
@@ -209,6 +212,92 @@ server.
 | S, T, I | ACME (D8): a forged challenge answer, a leaked account key, an outage on a failed renewal. | TLS-ALPN-01 only (`acme-tls/1` answered by the rustls resolver on the TCP TLS listener; a connection that negotiated it is closed right after the handshake); account credentials and the certificate key in a 0700 cache directory with mode 0600 (looser modes tightened at start), held as `Secret` in memory, never in `Debug` or logs; renewal at two thirds of the lifetime with jitter; a failed order keeps the current certificate. | R2, R4, R8 | `acme_issues_and_renews_against_pebble`, `acme_reuses_valid_authorizations_against_pebble`, `acme_failure_against_pebble_keeps_current_cert` (`crates/id_effect_platform/tests/acme_pebble.rs`, pinned Pebble container) | mitigated |
 | E | The `id-effect dev` certificate reaches production. | The prod profile refuses it (C13). | R10 | `posture_prod_refuses_dev_certificate` (r12-w6-kit-template) | open (wave 6) |
 
+## B10 — Breadth batteries (0.13)
+
+0.13 ("Breadth", ADR 0015) adds six batteries that take untrusted input: the admin back office
+(`id_effect_admin`), server-rendered UI (`id_effect_axum` feature `ui`: maud, htmx), tenancy
+helpers (`id_effect_authz::TenantResolver`, `id_effect_sql::TenantRouter`), keyset pagination and
+relations (`id_effect_sql` `repository`), AI tool calling and MCP (`id_effect_ai`), and i18n
+(`id_effect_i18n`). Each follows ADR 0013: deny by default, finite limits, every weakening a named
+`dangerous_*` opt-out that records itself. The assets are the rows the admin and the repositories
+read and change (and their tenant boundary), the audit log, the tools a model or an MCP client can
+run and what they change, provider credentials and prompts, and the capacity of each endpoint.
+
+The breadth proof is `tests/security_compile_fail/tests/surface_013.rs`: it fails when a test,
+compile-fail case or fuzz target the 0.13 release spec's Security table names disappears (its
+`PENDING` list is empty), and runs the cross-crate cases against one application that merges the
+admin site and the MCP endpoint behind one authentication layer and the locale layer
+(`cross_crate_cases_against_one_app`: no public route, the guard before either battery, the MCP
+Origin allowlist and message cap, a bounded `Accept-Language`). The six new decoders are fuzzed
+([docs/security/fuzzing.md](docs/security/fuzzing.md)).
+
+### Admin
+
+| STRIDE | Threat | Mitigation | Rule | Test or gate | Status |
+|---|---|---|---|---|---|
+| E | An admin back office reachable without authentication. | `AdminSite` has a router only after `.guard(g)` (the H8 typestate); the route-level `Public` marker is not a guard; every admin route is registered as guarded; the kit's prod posture probe "admin guarded" (r13-w5-kit-template). | R1, R7 | compile-fail `r1_admin_site_without_guard`; `admin_denied_without_permission` (`crates/id_effect_admin/tests/admin.rs`); `cross_crate_cases_against_one_app` | mitigated |
+| E | A staff member runs an action on an entity they may not touch. | Every entity × action is a permission (`admin.<entity>.<list\|view\|create\|update\|delete\|bulk>`) checked through the site's `id_effect_authz` policy before any query; the default policy denies. | R1 | `admin_action_requires_entity_permission` (`tests/admin.rs`) | mitigated |
+| T, E | Mass assignment: a form submits the primary key, the tenant column or a field the form does not show. | Only the fields a form declares are bound (`FormBody::bind`); every other name is ignored and logged (names only). | R1, R4 | `admin_form_ignores_undeclared_fields` (`tests/edit.rs`); fuzz target `admin_form_body` | mitigated |
+| D | Bulk amplification and oversized forms. | At most 100 ids per bulk action (`MAX_BULK_IDS`); a form body over 64 KiB is a 413 before it is decoded, more than 1,024 pairs or bad escapes a 400. | R4 | `r4_admin_bulk_action_over_cap_rejected` (`tests/bulk.rs`), `r4_admin_form_over_cap_413` (`tests/edit.rs`); fuzz target `admin_form_body` | mitigated |
+| T | Cross-site request forgery on admin and htmx forms. | The 0.11 masked CSRF tokens on every non-`GET`; htmx sends the token header; an admin write the CSRF layer did not check is refused. | R9 | `r9_admin_post_without_csrf_token_refused` (`tests/edit.rs`), `r9_htmx_requests_carry_masked_token` (`crates/id_effect_axum/tests/ui.rs`) | mitigated |
+| R | Admin changes leave no trace. | Every create, update, delete and bulk action writes the 0.9 hash-chained audit log in the change's transaction; `dangerous_without_audit` is recorded. | R10 | `admin_change_written_to_audit_log` (`tests/edit.rs`) | mitigated |
+
+### Server-rendered UI
+
+| STRIDE | Threat | Mitigation | Rule | Test or gate | Status |
+|---|---|---|---|---|---|
+| T, I | Cross-site scripting through a value rendered into a page (an entity field, a message argument). | maud escapes every interpolation; raw HTML only through `ui::trusted_html` (a reviewed allowlist); a test fails on any other `PreEscaped` in `id_effect_axum` or `id_effect_admin`; htmx is one vendored file with its sha384 (CSP `script-src 'self'`, `allowEval = false`, `selfRequestsOnly = true`). | R9 | `ui_escapes_untrusted_by_default`, `no_preescaped_outside_trusted_module` (`crates/id_effect_axum/tests/ui.rs`, `crates/id_effect_admin/tests/admin.rs`) | mitigated |
+
+### Tenancy, relations and pagination
+
+| STRIDE | Threat | Mitigation | Rule | Test or gate | Status |
+|---|---|---|---|---|---|
+| I | A tenant's rows leak through an eager load or a join. | Eager loads and joins re-apply the child's tenant and soft-delete filters. | R1 | `m19_eager_loaded_children_scoped_to_tenant`, `relation_join_cannot_cross_tenant` (`crates/id_effect_sql/tests/relations.rs`) | mitigated |
+| T, D | A forged or oversized page cursor. | A cursor is at most 1 KiB, decoded through a bounded `Schema`; its fingerprint must match the request's filter and sort; page size at most 500. Cursors are not signed (D11): every page re-applies the tenant and access scope, so a forged cursor moves only inside the caller's own rows. | R4 | `r4_page_cursor_over_limit_rejected`, `cursor_with_other_filter_refused`, `r4_page_size_capped` (`crates/id_effect_sql/tests/pagination.rs`); fuzz target `sql_page_cursor` | mitigated |
+| S, E | The tenant is taken from a value the client controls. | The tenant comes from the authenticated principal's claim by default; Host-based resolution only through a configured allowlist; header-based only with `dangerous_tenant_from_header` (recorded). | R1, R10 | `tenant_resolved_from_principal_by_default`, `dangerous_tenant_from_header_is_recorded` (`crates/id_effect_authz/tests/tenant_resolver.rs`) | mitigated |
+| E, D | Per-tenant routing reaches another tenant's database or opens unbounded pools. | An unknown tenant has no connection (fails closed); the pool count is bounded (LRU, `DEFAULT_MAX_TENANT_POOLS` 64). | R1, R4 | `unknown_tenant_has_no_connection`, `r4_tenant_pool_count_bounded` (`crates/id_effect_sql/tests/tenant_routing.rs`) | mitigated |
+
+### AI tools and prompt injection
+
+Every byte a model returns is untrusted: text in the prompt (a document, an e-mail, a web page,
+a tool's own output) can instruct the model, so a tool call is treated as a request from an
+unauthenticated client of the application's tools.
+
+| STRIDE | Threat | Mitigation | Rule | Test or gate | Status |
+|---|---|---|---|---|---|
+| E | Prompt injection makes the model call a tool the application did not offer. | Only tools registered on the call's `ToolSet` run; an unknown name is a typed refusal fed back to the model, never executed. | R1 | `ai_unregistered_tool_call_refused` (`crates/id_effect_ai/tests/tools.rs`); fuzz target `ai_tool_arguments` | mitigated |
+| T, E | Injected arguments: wrong types, out-of-range values, extra fields. | Arguments are decoded through the tool's input `Schema` (refinements included) before the handler runs; a handler never sees an invalid input. | R1 | `ai_tool_arguments_schema_decoded` (`tests/tools.rs`); fuzz target `ai_tool_arguments` | mitigated |
+| E | Prompt injection drives a tool that changes state. | Tools that write declare `writes()` and run only under an explicit `ToolPolicy::allow_writes`; the default policy denies them; granting write tools to an MCP-exposed set is `dangerous_mcp_write_tools` (recorded). | R1, R10 | `ai_write_tool_denied_without_policy` (`tests/tools.rs`), `dangerous_mcp_write_tools_is_recorded` (`tests/mcp_http.rs`) | mitigated |
+| D | A model loops on tools or floods the service with output. | The loop is bounded (8 steps, 32 tool calls, 60 s); tool output is capped at 64 KiB; `max_tokens` is finite by default; a request timeout and response and stream caps (an SSE event at most 1 MiB) apply. | R4 | `ai_tool_loop_step_budget_enforced` (`tests/agent_loop.rs`), `r4_ai_max_tokens_finite_by_default`, `r4_ai_stream_over_cap_closed` (`tests/security.rs`); fuzz targets `ai_sse_event`, `ai_tool_arguments` | mitigated |
+| I | Provider keys, prompts or completions leak into logs. | API keys are `id_effect_config::Secret`; prompts and completions are not logged by default; `dangerous_log_prompts` is recorded. | R2, R3, R10 | `ai_api_key_redacted_in_debug`, `ai_prompts_not_logged_by_default`, `dangerous_log_prompts_is_recorded` (`tests/security.rs`) | mitigated |
+| S, I | Server-side request forgery through a provider base URL or an MCP server URL. | All outbound HTTP goes through the 0.11 platform client and its `SsrfPolicy`; private ranges only with the platform's existing opt-out. | R6 | `ai_base_url_obeys_ssrf_policy` (`tests/security.rs`), `mcp_client_obeys_ssrf_policy` (`tests/mcp_http.rs`) | mitigated |
+
+**Residual risk (prompt injection).** These defaults bound what an injected instruction can make
+the agent loop *do*: no unregistered tool, no invalid argument, no write without the policy, a
+bounded loop. They cannot stop the model from being steered *within* what it may do: an injected
+prompt can still pick a registered read tool with valid arguments that read data the principal may
+read, and put that data into the answer or into the arguments of a later call (exfiltration through
+a tool that reaches the outside, such as a URL fetch or an e-mail). The application owns that
+boundary: give a model only the tools the task needs, scope each tool's handler to the calling
+principal (as any handler), keep tools that send data out (or write) behind `allow_writes` and a
+human confirmation, and treat model output shown to users as untrusted text (the UI escapes it).
+
+### MCP
+
+| STRIDE | Threat | Mitigation | Rule | Test or gate | Status |
+|---|---|---|---|---|---|
+| E | The Streamable HTTP endpoint is mounted without an access decision. | `McpEndpoint` has a router only after `.guard(g)` (the `Public` marker is not a guard); an anonymous principal is refused (401) even behind a permissive guard; closed in prod unless guarded (posture probe "mcp guarded", r13-w5-kit-template). | R1, R7 | compile-fail `r1_mcp_endpoint_without_access_decision`; `cross_crate_cases_against_one_app` | mitigated |
+| S | DNS rebinding: a web page reaches a local or internal MCP server. | `Origin` must match the endpoint's allowlist (empty by default: every browser is refused); requests without `Origin` (non-browser clients) pass. | R9 | `r9_mcp_foreign_origin_refused` (`crates/id_effect_ai/tests/mcp_http.rs`); `cross_crate_cases_against_one_app` | mitigated |
+| S, I | One client adopts another's session or handles. | Session ids and handles are 128-bit random and bound to the principal that minted them; another principal's handle is refused. | R1 | `mcp_session_bound_to_principal` (`tests/mcp_http.rs`) | mitigated |
+| D, T | Oversized or malformed JSON-RPC messages. | A message over 1 MiB is refused (413) before it is parsed; batches are refused; `method` and string ids are at most 256 bytes; in-flight requests are capped per principal (429). | R4 | `r4_mcp_message_over_cap_rejected` (`tests/mcp_http.rs`); fuzz target `mcp_jsonrpc_message`; `cross_crate_cases_against_one_app` | mitigated |
+
+### i18n input
+
+| STRIDE | Threat | Mitigation | Rule | Test or gate | Status |
+|---|---|---|---|---|---|
+| D, T | A crafted `Accept-Language` or locale cookie: a parsing flood, or a path into the catalog store. | The header parse is bounded (at most 256 bytes and 32 ranges, else ignored whole); tags go through `Locale::parse` (at most 16 bytes of ASCII subtags); catalogs load only allowlisted locales and no input reaches a path; a locale outside the allowlist falls back. | R4 | `r4_accept_language_over_limit_ignored`, `locale_outside_allowlist_falls_back` (`crates/id_effect_i18n/tests/negotiate.rs`); fuzz target `i18n_accept_language`; `cross_crate_cases_against_one_app` | mitigated |
+| T | Message arguments inject HTML or reorder text (bidi spoofing). | Arguments are escaped by maud; Unicode bidi isolation is on by default. | R9 | `i18n_args_escaped_in_html`, `i18n_bidi_isolation_on_by_default` (`crates/id_effect_i18n/tests/web.rs`) | mitigated |
+
 ## Accepted risks
 
 ### L6 — rsa 0.9 (RUSTSEC-2023-0071, Marvin attack)
@@ -233,6 +322,24 @@ server.
   `rsa` release, and when one exists, upgrade and remove both ignores. Last re-check: the 0.11.0
   exit sweep (2026-10-19, `release/0.11.0` at 6c0053aa: `rsa` 0.9.10; parents `openidconnect`
   4.0.1 and `sqlx-mysql` 0.8.6; the `git grep` finds only the test helper; no private-key use).
+
+### S3 and S6 — the token release flow (#118)
+
+- **What:** a pushed `v*` tag publishes every crate with the long-lived `CARGO_REGISTRY_TOKEN`
+  secret of the `crates-io` environment (S3); the tag is not checked for a signature (S6). New
+  crates (0.13.0: `id_effect_ai`, `id_effect_admin`, `id_effect_i18n`) are created by their first
+  publish.
+- **Why accepted:** owner decision 2026-10-24: keep main's GitHub Actions release flow (#118,
+  3e9104ed) rather than the 0.11.0 trusted-publishing and signed-tag flow (edd5e5b8) with its
+  per-crate owner steps.
+- **What still holds:** DCO sign-off on every pull request; actions pinned by SHA and read-only
+  default permissions (S1, S2); SLSA Build L3 provenance over the packaged files, each upload
+  checked against its attested sha256 and every published crate re-verified by `slsa-verifier`
+  (S5). Only the `publish` job reads the secret, and only on stdin.
+- **Recorded:** `docs/security/findings.json` (S3 and S6 `accepted`), [SECURITY.md](SECURITY.md)
+  "Supply chain", [docs/RELEASING.md](docs/RELEASING.md).
+- **Re-check each release:** the decision stands, the token is scoped to publishing these crates,
+  and `.github` reads it only in `publish.yml` and `publish-crate.sh`.
 
 ### Trusted cluster (ADR 0009)
 
@@ -296,10 +403,10 @@ nobody reads "closed" as "nothing left to do".
 - **`channels::attach_session` without RPC.** It drops mesh RPC calls as unverified (fails
   closed); a node that serves mesh RPC over a channels session link attaches it with
   `attach_session_rpc` (F33).
-- **Owner actions (D15).** Trusted publisher on every crate, deletion of `CARGO_REGISTRY_TOKEN`
-  after the first trusted publish (S3), a registered tag-signing key and "require signed commits"
-  on protected branches (S6) are repository settings the owner does; status in
-  [docs/RELEASING.md](docs/RELEASING.md) ("Owner steps") and [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Release flow.** The 0.11.0 owner actions (D15: trusted publisher, deleting the token, a
+  tag-signing key) no longer apply: the owner kept the token flow of #118 on 2026-10-24, and S3 and
+  S6 are accepted risks (above). "Require signed commits" on protected branches stays an optional
+  owner setting ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Findings register
 
@@ -344,10 +451,10 @@ regression tests are in the boundary tables above.
 | L6 | B8 | — | **accepted** | see "Accepted risks" (re-checked 2026-10-19) |
 | S1 | B8 | R10 | closed | a6a97637 (r11-sc-pin-permissions), edd5e5b8 (`publish.yml`) |
 | S2 | B8 | R10 | closed | a6a97637 (r11-sc-pin-permissions) |
-| S3 | B8 | — | closed in the workflow; owner steps open | edd5e5b8 (r11-sc-publish); owner action D15 |
+| S3 | B8 | — | **accepted** | see "Accepted risks" (owner decision 2026-10-24, #118 3e9104ed) |
 | S4 | B8 | R4 | closed (SAST, fuzzing) | 572ec2bd (r11-sc-sast-scorecard), b7809387 (r11-fuzz-ci); mesh targets be6af99d; Miri/loom later E11.4 |
 | S5 | B8 | — | closed | a6a97637 (r11-sc-pin-permissions), edd5e5b8 (r11-sc-publish) |
-| S6 | B8 | — | closed except signed commits | DCO d6c22982 (r11-sc-dco-docs); signed tag edd5e5b8 (r11-sc-publish); signed commits: owner action D15 |
+| S6 | B8 | — | DCO closed; unsigned tags **accepted** | DCO d6c22982 (r11-sc-dco-docs); see "Accepted risks" (owner decision 2026-10-24, #118 3e9104ed) |
 | S7 | B8 | — | closed | d6c22982 (r11-sc-dco-docs) |
 
 Rules without a finding row of their own are still enforced. R8 covers the mesh mTLS work

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-c44cae",
+  "taskId": "tsk-mvfohzqk-xg47t7",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T20:00:18.766Z",
+  "lockedAt": "2026-10-19T20:00:18.766Z",
+  "intent": "r12-f-client-batching",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-2c8781",
+      "text": "F27: calls a `#[rpc::service]` generated client makes over `HttpTransport` in the same tick go out as one batch (≤ 50 calls / 1 MiB, same rules as `RpcClient::call`), each batched call carrying its service version `v`; a call alone in its tick is still a plain envelope.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a91122",
+      "text": "`RpcTransport` gains an effect-returning unary hook with a default (existing transports unchanged); `HttpTransport` overrides it so `call_unary` issues the request from the caller fiber and joins the batch window.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-1447a4",
+      "text": "`client/http.rs` gains a JSON-value batched call carrying `v`; the batch wire is unchanged (WireCall already has `v`).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d8ee90",
+      "text": "Tests: `generated_client_batches_same_tick_calls` (two calls in one tick → one request, both answered, versions sent), `generated_client_lone_call_is_plain_envelope`; existing batching and service_macro tests stay green.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-8499f8",
+      "text": "Gate: `cargo nextest run -p id_effect_rpc --all-features` and default; clippy -D warnings (all features, default, `--no-default-features --features client`); coverage of new code >= 96% regions.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-46021d",
+      "text": "Owns: `crates/id_effect_rpc/src/{client/http.rs,service.rs}`, `crates/id_effect_rpc/tests/service_macro.rs` (new tests only), CHANGELOG own hunk.",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "h2-client-batching",
+  "lockedBy": "h2-client-batching",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

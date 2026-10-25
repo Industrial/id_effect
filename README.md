@@ -130,7 +130,7 @@ Add the crate:
 
 ```toml
 [dependencies]
-id_effect = "0.12"
+id_effect = "0.13"
 ```
 
 ```rust
@@ -216,7 +216,7 @@ devenv shell -- pre-push
 | [CI](https://github.com/Industrial/id_effect/actions/workflows/ci.yml) | push/PR → `main` | Format, clippy, nextest, coverage (≥ 96 %), MSRV (1.94), Postgres integration, labs workspace, minimal versions, packaging, version drift, matrix (stable+beta × linux+mac+win) |
 | [Docs & Pages](https://github.com/Industrial/id_effect/actions/workflows/docs.yml) | push/PR → `main` | API docs + mdBook → GitHub Pages |
 | [Security Audit](https://github.com/Industrial/id_effect/actions/workflows/audit.yml) | daily + `Cargo.lock` changes | `cargo audit` |
-| [Publish](https://github.com/Industrial/id_effect/actions/workflows/publish.yml) | signed `v*.*.*` tag | Test, package, SLSA Build L3 provenance and SBOMs, trusted publishing in dependency order, verify crates.io against the provenance, GitHub Release ([docs/RELEASING.md](docs/RELEASING.md)) |
+| [Publish](https://github.com/Industrial/id_effect/actions/workflows/publish.yml) | `v*.*.*` tag | Test, package, SLSA Build L3 provenance and SBOMs, publish in dependency order, verify crates.io against the provenance, GitHub Release ([docs/RELEASING.md](docs/RELEASING.md)) |
 
 ### Releases
 
@@ -224,14 +224,14 @@ devenv shell -- pre-push
 # 1. Bump [workspace.package] version in the root Cargo.toml (all crates inherit it;
 #    keep labs/Cargo.toml in lockstep) and move CHANGELOG "Unreleased" under the version.
 # 2. bash scripts/validate-crate-packaging.sh   # publish order + packaging check
-# 3. Merge, then tag the merge commit with a signed annotated tag; CI publishes in dependency order
-git tag -s v0.12.0 -m "v0.12.0"
-git push origin v0.12.0
+# 3. Merge, then tag the merge commit with an annotated tag; CI publishes in dependency order
+git tag -a v0.13.0 -m "v0.13.0"
+git push origin v0.13.0
 ```
 
 The publish order has one source: `scripts/validate-crate-packaging.sh --print-order`. Labs crates are never published.
 
-Publishing uses crates.io trusted publishing (no registry token) from the `crates-io` GitHub environment, and the workflow refuses a lightweight or unverified tag; the full flow and the owner steps are in [docs/RELEASING.md](docs/RELEASING.md). `CODECOV_TOKEN` is optional for coverage uploads.
+Publishing uses the `CARGO_REGISTRY_TOKEN` secret of the `crates-io` GitHub environment, which also creates new crates on their first publish; the full flow and the owner steps are in [docs/RELEASING.md](docs/RELEASING.md). `CODECOV_TOKEN` is optional for coverage uploads.
 
 ---
 

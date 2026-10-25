@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-46323a",
+  "taskId": "tsk-mvfusz4r-iiqduh",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T22:56:46.468Z",
+  "lockedAt": "2026-10-19T22:56:46.468Z",
+  "intent": "r12-w8-level-audit",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-da0f37",
+      "text": "For web.rpc (#1–#8), web.realtime (#1–#8) and dist.tls (#1–#8): every planned check id maps to an existing path at HEAD, a named test that passes, a book chapter and a runnable example (METHOD §7.2); level production is evidenced by the reference-relay and reference-ledger CI jobs; the evidence map is attached to the leaf evidence.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-a04f10",
+      "text": "dist.tls is re-checked after the mesh moved onto the shared endpoint (r12-e12-3-quic-endpoint): #2 #3 #4 #5 #7 still met on both endpoint shapes.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c15637",
+      "text": "Every gap becomes a Maestro task before exit; no file is edited by this leaf.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e78c0a",
+      "text": "Gate: `jq -r '.rows[] | select(.id==\"web.rpc\" or .id==\"web.realtime\" or .id==\"dist.tls\") | .checks[].id' docs/scorecard/scorecard.json` → each id present in the evidence map with a path that exists (`test -e`) and a test that passes (`cargo nextest run -E 'test(<name>)'`)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-9e2eba",
+      "text": "Owns: none (read-only)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "j1-level-audit",
+  "lockedBy": "j1-level-audit",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "low"
+}

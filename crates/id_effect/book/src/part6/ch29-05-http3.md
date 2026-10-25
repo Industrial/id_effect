@@ -24,7 +24,7 @@ Build with the `http3` feature (it implies `tls`) and give the host a certificat
 
 ```toml
 [dependencies]
-id_effect_axum = { version = "0.12", features = ["http3"] }
+id_effect_axum = { version = "0.13", features = ["http3"] }
 ```
 
 ```bash

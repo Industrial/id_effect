@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-3bc0d9",
+  "taskId": "tsk-mvbh3y45-3zte0e",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T22:13:17.969Z",
+  "lockedAt": "2026-10-16T22:13:17.969Z",
+  "intent": "r09-e3-3-repository",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-7aa410",
+      "text": "`#[derive(Entity)]` (table/columns, #1) and `Repository<T>` CRUD; `#[entity(version)]` column → update fails with `SqlError::StaleVersion` (#5); `#[entity(scope = …)]` global filters (soft delete, tenant/owner) applied to every generated query (#8). Tests `stale_version_is_rejected`, `global_filter_hides_soft_deleted`, `tenant_filter_scopes_every_query`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-744785",
+      "text": "Gate: pg + sqlite nextest",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-67e0a3",
+      "text": "Owns: `crates/id_effect_proc_macro/src/repository.rs` + derive line, `crates/id_effect_sql/src/repository.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

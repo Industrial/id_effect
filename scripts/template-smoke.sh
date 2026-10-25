@@ -18,6 +18,10 @@
 # Before the checks, `id-effect generate job send_report` adds a job to `service` and
 # `service-jobs-console` (into the src/jobs/ that `--jobs` generated) and (with
 # `--queue reports --cron`) to `worker`; its test must pass.
+# A fifth `service` variant, `service-admin`, gets a tenant-scoped `Document` entity written
+# against the kit's re-exports (`id_effect_kit::sql`) and `id-effect generate admin Document`:
+# the generated admin imports `id_effect_kit::admin`, the kit gains feature `admin` (no direct
+# id_effect_admin dependency), and the admin's tests must pass with the rest.
 #
 # Usage:
 #   scripts/template-smoke.sh [TEMPLATE...] [--docker] [--keep]
@@ -112,14 +116,58 @@ generate_job() {
     echo "jobs::send_report::tests::a_queued_job_runs_once_and_succeeds"
 }
 
+# Adds a `Document` entity (through the kit's re-exports) and its admin with `id-effect generate
+# admin` to the variants that get one; prints one of the admin's tests.
+generate_admin() {
+    local label="$1" dest="$2" deps
+    [[ "${label}" == service-admin ]] || return 0
+    cat >"${dest}/src/documents.rs" <<'RS'
+//! The service's documents.
+
+use id_effect_kit::prelude::{Entity, FromRow};
+
+/// A document of an organization.
+#[derive(Clone, Debug, FromRow, Entity)]
+#[from_row(crate = id_effect_kit::sql)]
+#[entity(crate = id_effect_kit::sql, table = "documents", tenant = "org_id")]
+pub struct Document {
+    #[entity(id, generated)]
+    pub id: i64,
+    pub org_id: i64,
+    #[entity(editable)]
+    pub title: String,
+    #[entity(editable)]
+    pub status: String,
+    pub reviewed: bool,
+    #[entity(version)]
+    pub version: i64,
+}
+RS
+    sed -i 's/^pub mod rpc;$/pub mod documents;\npub mod rpc;/' "${dest}/src/lib.rs"
+    grep -q '^pub mod documents;$' "${dest}/src/lib.rs" ||
+    fail "${label}: no 'pub mod rpc;' in src/lib.rs to declare the entity module next to"
+    "${BIN}" generate admin Document --path "${dest}" >/dev/null ||
+    fail "${label}: id-effect generate admin failed"
+    grep -q '^use id_effect_kit::admin::' "${dest}/src/admin/document.rs" ||
+    fail "${label}: the generated admin does not import id_effect_kit::admin"
+    deps="$(sed -n '/^\[dependencies\]/,/^\[/p' "${dest}/Cargo.toml")"
+    grep -q '^id_effect_kit = .*"admin"' <<<"${deps}" ||
+    fail "${label}: generate admin did not turn on the kit's admin feature"
+    if grep -q '^id_effect_admin' <<<"${deps}"; then
+        fail "${label}: a direct id_effect_admin dependency (the kit's admin feature brings it)"
+    fi
+    echo "admin::document::tests::every_page_is_behind_the_guard"
+}
+
 # Generates the variant LABEL (`id-effect new smoke-LABEL ARGS...`) and runs every check on it.
 check_variant() {
-    local label="$1" dest="${SMOKE_DIR}/$1" log t build_s clippy_s test_s job_test listed
+    local label="$1" dest="${SMOKE_DIR}/$1" log t build_s clippy_s test_s job_test admin_test listed
     shift
     rm -rf "${dest}"
     "${BIN}" new "smoke-${label}" --dest "${dest}" --local-workspace "${ROOT}" "$@" >/dev/null ||
     fail "${label}: id-effect new failed"
     job_test="$(generate_job "${label}" "${dest}")"
+    admin_test="$(generate_admin "${label}" "${dest}")"
     [[ ! -f "${ROOT}/Cargo.lock" ]] || cp "${ROOT}/Cargo.lock" "${dest}/Cargo.lock"
     log="${dest}/build.log"
     (
@@ -142,6 +190,11 @@ check_variant() {
             listed="$(cargo test --quiet --lib -- --list 2>/dev/null)" || fail "${label}: cargo test --list"
             [[ "${listed}" == *"${job_test}: test"* ]] ||
             fail "${label}: the generated job's test ${job_test} is not among the lib tests"
+        fi
+        if [[ -n "${admin_test}" ]]; then
+            listed="$(cargo test --quiet --lib -- --list 2>/dev/null)" || fail "${label}: cargo test --list"
+            [[ "${listed}" == *"${admin_test}: test"* ]] ||
+            fail "${label}: the generated admin's test ${admin_test} is not among the lib tests"
         fi
         if awk '/^name = "id_effect/ { dep = 1; next } dep && /^source = "registry/ { found = 1 } /^$/ { dep = 0 } END { exit !found }' Cargo.lock; then
             fail "${label}: an id_effect crate resolved from crates.io instead of the checkout"
@@ -305,6 +358,7 @@ for template in "${templates[@]}"; do
         check_variant service-pg-otel --template service --db pg --otel
         check_variant service-jobs-console --template service --jobs --console
         check_variant service-pg-otel-jobs-console --template service --db pg --otel --jobs --console
+        check_variant service-admin --template service
     fi
 done
 if ((docker)); then

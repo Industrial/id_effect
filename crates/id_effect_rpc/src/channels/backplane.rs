@@ -19,12 +19,11 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
 
 use id_effect::{Effect, Never, succeed, sync};
 use id_effect_node::{
-  BehaviorRegistry, Cookie, Frame, MemoryNetwork, Mesh, NodeId, OrSwot, PeerSender,
-  ProcessEnvelope, ProcessGroups, RemoteFault, Session, Transport, decode_envelope,
+  BehaviorRegistry, Cookie, Ingress, MemoryNetwork, Mesh, NodeId, OrSwot, ProcessEnvelope,
+  ProcessGroups, RemoteFault, Session, SessionPump, SessionPumpStats, Transport,
 };
 use id_effect_process::{ExitReason, MonitorSink, Next, Pid, Process, ProcessCtx};
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
 
 use super::ChannelError;
 use super::hub::HubSink;
@@ -41,9 +40,6 @@ const CHUNK_BYTES: usize = 32 * 1024;
 
 /// The most lost nodes remembered at once.
 const MAX_LOST: usize = 1_024;
-
-/// Envelopes queued per session before [`attach_session`]'s sender refuses more.
-const SESSION_QUEUE: usize = 4_096;
 
 /// What the hub needs from the network. [`MeshBackplane`] is the mesh implementation; another
 /// transport implements these five calls and hands what arrives to the [`Inbound`] it was
@@ -599,28 +595,31 @@ impl Backplane for MeshBackplane {
   }
 }
 
-/// A live session between this node's [`Mesh`] and one peer ([`attach_session`]). Dropping it
-/// closes the session and reports the peer down.
+/// A live session between this node's [`Mesh`] and one peer ([`attach_session`]): a node
+/// [`SessionPump`]. Dropping it closes the session and reports the peer down.
 pub struct SessionLink {
-  mesh: Mesh,
-  node: String,
+  pump: SessionPump,
   peer: String,
-  tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
 impl fmt::Debug for SessionLink {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_struct("SessionLink")
-      .field("node", &self.node)
+      .field("node", &self.node())
       .field("peer", &self.peer)
       .finish_non_exhaustive()
   }
 }
 
 impl SessionLink {
+  fn new(pump: SessionPump) -> Self {
+    let peer = pump.peer().name().to_owned();
+    Self { pump, peer }
+  }
+
   /// This side's node name.
   pub fn node(&self) -> &str {
-    &self.node
+    self.pump.node()
   }
 
   /// The peer's node name.
@@ -630,16 +629,13 @@ impl SessionLink {
 
   /// Whether the session still runs (the peer has not closed it).
   pub fn is_open(&self) -> bool {
-    self.tasks.iter().all(|t| !t.is_finished())
+    self.pump.is_open()
   }
-}
 
-impl Drop for SessionLink {
-  fn drop(&mut self) {
-    for task in &self.tasks {
-      task.abort();
-    }
-    self.mesh.peer_down(&self.peer);
+  /// What the session's pump did with the envelopes the peer sent: delivered, refused by the
+  /// mesh, or dropped as unverified.
+  pub fn stats(&self) -> SessionPumpStats {
+    self.pump.stats()
   }
 }
 
@@ -692,27 +688,31 @@ pub async fn connect_in_memory(
   Ok(links)
 }
 
-/// Run `mesh` over an authenticated `session` on the current Tokio runtime: the peer becomes
-/// reachable ([`Mesh::add_peer_node`]), every frame it sends is handled, and when the session
-/// ends the peer is reported down ([`Mesh::peer_down`]), which fires the monitors on its
-/// processes — the hubs' among them. An interim helper until the node crate runs sessions
-/// itself (a follow-up of r12-e12-2-channels).
+/// Run `mesh` over an authenticated `session` on the current Tokio runtime with a node
+/// [`SessionPump`]: the peer becomes reachable ([`Mesh::add_peer_node`]), every envelope it
+/// sends is verified against the session's peer (unverified ones are dropped and counted,
+/// [`SessionLink::stats`]) and delivered, and when the session ends the peer is reported down
+/// ([`Mesh::peer_down`]), which fires the monitors on its processes — the hubs' among them.
 ///
-/// Frames go straight to [`Mesh::handle_envelope_from`], so mesh RPC calls arriving over this
-/// link are dropped as unverified; a node that also serves or calls RPC over the mesh uses
-/// [`attach_session_rpc`].
+/// Envelopes are delivered through the node's verified path: the [`MeshRpc`] built over `mesh`
+/// when there is one ([`MeshRpc::of`], looked up until found), so mesh RPC calls arriving over
+/// this link are stamped with the verified peer and run; the mesh's own dispatch otherwise.
+/// [`attach_session_rpc`] names the [`MeshRpc`] explicitly.
 ///
 /// # Panics
 ///
 /// Outside a Tokio runtime.
 pub fn attach_session(mesh: &Mesh, session: Session) -> SessionLink {
-  let inbound = mesh.clone();
-  attach_session_via(mesh, session, move |peer, envelope| {
-    let _ = inbound.handle_envelope_from(peer, envelope);
-  })
+  SessionLink::new(SessionPump::start(
+    NodeIngress {
+      mesh: mesh.clone(),
+      rpc: OnceLock::new(),
+    },
+    session,
+  ))
 }
 
-/// [`attach_session`] for a node with a [`MeshRpc`]: every frame goes through
+/// [`attach_session`] for a node with a [`MeshRpc`]: every envelope goes through
 /// [`MeshRpc::ingress`], which stamps the RPC messages with the session's verified peer, so mesh
 /// RPC and channels share one link.
 ///
@@ -720,58 +720,35 @@ pub fn attach_session(mesh: &Mesh, session: Session) -> SessionLink {
 ///
 /// Outside a Tokio runtime.
 pub fn attach_session_rpc(rpc: &MeshRpc, session: Session) -> SessionLink {
-  let inbound = rpc.clone();
-  attach_session_via(rpc.mesh(), session, move |peer, envelope| {
-    let _ = inbound.ingress(peer, envelope);
-  })
+  SessionLink::new(SessionPump::start(rpc.clone(), session))
 }
 
-fn attach_session_via(
-  mesh: &Mesh,
-  session: Session,
-  inbound: impl Fn(&NodeId, ProcessEnvelope) + Send + 'static,
-) -> SessionLink {
-  let session = Arc::new(session);
-  let peer = session.peer().clone();
-  let (tx, mut rx) = mpsc::channel::<ProcessEnvelope>(SESSION_QUEUE);
-  let sender: PeerSender =
-    Arc::new(move |envelope| tx.try_send(envelope).map_err(|_| RemoteFault::NoProc));
-  mesh.add_peer_node(&peer, sender);
-  let writer = {
-    let session = Arc::clone(&session);
-    tokio::spawn(async move {
-      while let Some(envelope) = rx.recv().await {
-        if Mesh::session_send(&session, &envelope).await.is_err() {
-          break;
-        }
-      }
-      session.close().await;
-    })
-  };
-  let reader = {
-    let (mesh, session, peer) = (mesh.clone(), Arc::clone(&session), peer.clone());
-    tokio::spawn(async move {
-      loop {
-        match session.recv().await {
-          Ok(Frame::Data(bytes)) => match decode_envelope(&bytes) {
-            Ok(envelope) => inbound(&peer, envelope),
-            Err(e) => {
-              tracing::warn!(peer = %peer.name(), error = %e, "mesh: undecodable envelope");
-              break;
-            }
-          },
-          Ok(Frame::Close(_)) | Err(_) => break,
-          Ok(_) => {}
-        }
-      }
-      mesh.peer_down(peer.name());
-    })
-  };
-  SessionLink {
-    mesh: mesh.clone(),
-    node: mesh.node_name().to_string(),
-    peer: peer.name().to_string(),
-    tasks: vec![writer, reader],
+/// The ingress of a session attached to a bare [`Mesh`]: the node's [`MeshRpc`] once one exists.
+struct NodeIngress {
+  mesh: Mesh,
+  rpc: OnceLock<MeshRpc>,
+}
+
+impl NodeIngress {
+  fn rpc(&self) -> Option<&MeshRpc> {
+    if let Some(rpc) = self.rpc.get() {
+      return Some(rpc);
+    }
+    let found = MeshRpc::of(&self.mesh)?;
+    Some(self.rpc.get_or_init(|| found))
+  }
+}
+
+impl Ingress for NodeIngress {
+  fn mesh(&self) -> &Mesh {
+    &self.mesh
+  }
+
+  fn deliver(&self, origin: &NodeId, envelope: ProcessEnvelope) -> Result<(), RemoteFault> {
+    match self.rpc() {
+      Some(rpc) => rpc.ingress(origin, envelope),
+      None => self.mesh.handle_envelope_from(origin, envelope),
+    }
   }
 }
 
@@ -780,6 +757,7 @@ mod tests {
   use std::time::Duration;
 
   use id_effect::{Exit, Runtime};
+  use id_effect_node::Frame;
   use id_effect_process::{NodeName, ProcessNode};
 
   use super::*;
@@ -876,6 +854,20 @@ mod tests {
       MeshBackplane::forget_node(&mut state, &format!("n{n}"));
     }
     assert_eq!(state.lost.len(), MAX_LOST);
+  }
+
+  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  async fn connecting_in_memory_reports_network_failures() {
+    // Two nodes under one name: the second cannot listen.
+    let (id, m) = mesh("dup@bp");
+    let twice = [(id.clone(), m.clone()), (id, m)];
+    let bound = connect_in_memory(&MemoryNetwork::new(), &twice, &cookie()).await;
+    assert!(matches!(bound, Err(ChannelError::Internal(why)) if why.contains("bound")));
+    // A partitioned pair cannot dial.
+    let net = MemoryNetwork::new();
+    net.partition("a@cut", "b@cut");
+    let cut = connect_in_memory(&net, &[mesh("a@cut"), mesh("b@cut")], &cookie()).await;
+    assert!(matches!(cut, Err(ChannelError::Internal(why)) if why.contains("partitioned")));
   }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -1,0 +1,30 @@
+/* The recipe's only stylesheet, served at /recipe.css (no inline styles: the CSP has no style nonce). */
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+main {
+  max-width: 40rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.lead {
+  opacity: 0.8;
+}
+
+#notes li {
+  margin: 0.25rem 0;
+}
+
+.error {
+  color: #b00020;
+}
+
+#counter {
+  font: inherit;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}

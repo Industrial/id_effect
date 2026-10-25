@@ -27,7 +27,7 @@ const TOKEN: &str = "sa-token-1";
 /// A throwaway cluster CA.
 struct Ca {
   cert: rcgen::Certificate,
-  key: rcgen::KeyPair,
+  issuer: rcgen::Issuer<'static, rcgen::KeyPair>,
 }
 
 impl Ca {
@@ -44,7 +44,8 @@ impl Ca {
     ];
     let key = rcgen::KeyPair::generate().expect("ca key");
     let cert = params.self_signed(&key).expect("ca cert");
-    Self { cert, key }
+    let issuer = rcgen::Issuer::new(params, key);
+    Self { cert, issuer }
   }
 
   /// The API server's TLS config: a leaf for `127.0.0.1` issued by this CA.
@@ -55,9 +56,7 @@ impl Ca {
       .distinguished_name
       .push(rcgen::DnType::CommonName, "kube-apiserver");
     params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth];
-    let leaf = params
-      .signed_by(&key, &self.cert, &self.key)
-      .expect("leaf cert");
+    let leaf = params.signed_by(&key, &self.issuer).expect("leaf cert");
     let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
     rustls::ServerConfig::builder_with_provider(provider)
       .with_safe_default_protocol_versions()

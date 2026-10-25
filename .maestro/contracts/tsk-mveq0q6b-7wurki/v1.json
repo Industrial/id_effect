@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-c32380",
+  "taskId": "tsk-mveq0q6b-7wurki",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:54:58.206Z",
+  "lockedAt": "2026-10-19T03:54:58.206Z",
+  "intent": "r11-e8-3-tcp-tls",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-5eb352",
+      "text": "The TCP transport (plaintext today, crates/id_effect_node/src/transport/tcp.rs:1-5) carries TLS 1.3 with mutual authentication under feature tls-tcp, reusing transport/certs.rs (PEM loading and reload).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d7dfea",
+      "text": "Plaintext TCP exists only with feature insecure-plaintext-tcp and an explicit TcpTransport::dangerous_plaintext(), which records a posture opt-out (ADR 0013 R8); without the feature the plaintext constructor does not exist (r11-e11-4-compile-fail adds the case). MIGRATION-0.11 section \"plaintext TCP feature\".",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-10ef3d",
+      "text": "Tests `tcp_tls_mutual_auth_round_trip`, `tcp_tls_rejects_untrusted_peer`, `plaintext_tcp_opt_out_is_recorded`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-d43758",
+      "text": "Gate: `cargo nextest run -p id_effect_node --features tls-tcp`; `cargo nextest run -p id_effect_node --all-features`; `cargo build -p id_effect_node --no-default-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-81b468",
+      "text": "Owns: `crates/id_effect_node/src/transport/{tcp.rs,tls_tcp.rs,mod.rs}`, `crates/id_effect_node/tests/transport_tcp_tls.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-e8-3-tcp-tls",
+  "lockedBy": "r11-e8-3-tcp-tls",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

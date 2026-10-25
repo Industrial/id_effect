@@ -1,5 +1,679 @@
 # Changelog
 
+## 0.13.0 — 2026-10-25 — Breadth
+
+The batteries a business application expects (ADR 0015, accepted 2026-10-21): ORM relations,
+eager loading, lifecycle hooks, keyset pagination and multi-tenancy in `id_effect_sql`; an admin
+site (`id_effect_admin`); server-rendered views with htmx (`id_effect_axum` feature `ui`);
+localisation with Fluent (`id_effect_i18n`); and `id_effect_ai` out of `labs/` with tools,
+embeddings and MCP. The Pipeline reference app exercises all of them. The 0.12 follow-ups close
+the call surface (WebSocket credit, extended `CONNECT`, WebTransport in the host, `rcgen`, HTTP/3
+settings, the mesh session). Upgrade with [MIGRATION-0.13.md](docs/MIGRATION-0.13.md).
+
+### Added
+
+- Kit features for the breadth batteries (r13-w5-kit-template, ADR 0015): `ai`
+  (`id_effect_kit::ai`: chat, streaming, OpenAI and Anthropic, typed tools, the bounded tool
+  loop), `embeddings` (`ai::embeddings`, OpenAI and Ollama), `mcp` (`ai::mcp`, the guarded
+  Streamable HTTP endpoint; implies `web` and `authz`), `ui` (`id_effect_kit::ui`, id_effect_axum's
+  maud views and htmx), `i18n` (`id_effect_kit::i18n`; with `web` the `Accept-Language` layer, with
+  `ui` maud messages), `admin` (`id_effect_kit::admin`; implies `ui`, `authz`, `repository`; with
+  `audit` the audit trail, with `i18n` translated labels) and `tenancy`
+  (`id_effect_kit::tenancy`): all off by default and in `full`, each with prelude items. `tenancy`
+  bridges one `id_effect_authz::TenantResolver` to both the authorization tenant (`TenantId`, a
+  `TenantScope`) and `id_effect_sql::CurrentTenant` (D10): `Tenancy` (`resolve`, `env`,
+  `repository`, `scope` for `TenantRouter`, `check`), and with `web` one `TenancyLayer` that
+  records both per request (extensions and `RequestCaps`) and the `Tenancy` extractor, so sql and
+  authz stay independent. F55: feature `process` re-exports `id_effect_kit::process`
+  (id_effect_process; turned on by `cluster`), and the `cluster` template imports it from the kit
+  instead of depending on id_effect_process. `test` with `ai` adds `ScriptedModel`, with `admin`
+  the admin's request helpers. Posture probes "admin guarded" (`Posture::admin`, `admin_site`,
+  `admin_routes`), "mcp guarded" (`mcp`, `mcp_endpoint`, `mcp_routes`; also fails on an
+  unaccepted `dangerous_mcp_write_tools`), "prompts not logged" (`prompts_logged`, `ai_config`)
+  and "tenant not from header" (`tenant_header`, `tenant_resolver`): each fails the prod profile
+  unless its opt-out is an accepted risk (ADR 0013 R7 R10). `id-effect generate admin` now imports
+  `id_effect_kit::admin` and turns on the kit's `admin` feature instead of adding an
+  `id_effect_admin` dependency; `scripts/template-smoke.sh` runs it on a generated `service`
+  (variant `service-admin`); `scripts/check-dangerous.sh` requires `dangerous_log_prompts`,
+  `dangerous_mcp_write_tools`, `dangerous_tenant_from_header` and `dangerous_without_audit`.
+- WebTransport in the host entry points (r13-f-webtransport-host, 0.12 follow-ups F43 and F45):
+  `HostConfig::webtransport` (config key `server.http3.webtransport`, `WEBTRANSPORT_KEY`; default
+  `false`, ADR 0013 R9) makes `ServerHandle`, `serve_router` and `serve` serve the app's
+  `webtransport::endpoint` routes on the host's own HTTP/3 endpoint (QUIC datagrams through
+  `webtransport::quic_limits`, `Http3Options::webtransport`), so apps no longer run a private
+  `serve_h3` endpoint; the route's `Origin` allowlist and session caps apply there unchanged.
+  Set without feature `webtransport` the host refuses to start; without HTTP/3 or TLS files the
+  posture warns (`WEBTRANSPORT_WITHOUT_HTTP3_WARNING`). `HostConfig` gains a public field
+  ([MIGRATION-0.13.md](docs/MIGRATION-0.13.md)). The generated TypeScript client is tested over
+  WebTransport under Deno (`--unstable-net`, `serverCertificateHashes` with the 13-day ECDSA
+  development certificate) against that host (`tests/ts/webtransport.test.ts`).
+- `id-effect generate admin <Entity> [--read-only] [--permissions admin.<name>]`
+  (r13-e1-3-generate-admin, web.admin #8): finds the `#[derive(Entity)]` struct in the project's
+  library and writes `src/admin/<entity>.rs` (an `id_effect_admin::EntityAdmin` with list columns,
+  search, filters and sortable columns from the entity's fields; secret-looking fields excluded;
+  `register`, `permissions` and tests), registers it in `src/admin/mod.rs` (`site()`,
+  `permissions()`, `policy()`, `router()`), adds `pub mod admin;`, the `id_effect_admin`
+  dependency and the kit's `authz` feature; idempotent, never overwrites an edited module.
+  Secure by default (ADR 0013 R1): the generated `router` mounts the site only with `.guard(g)`,
+  every permission is denied until granted, and `policy` refuses whatever no entity's admin offers,
+  so `--read-only` admins refuse create/update/delete/bulk even to a `*` grant. Templates under
+  `templates/generate/admin/`; book chapter 30.8 "Generating an admin".
+- Tenant resolution and one database per tenant (r13-e5-5-tenancy, D10; eco.tenancy #8):
+  `id_effect_authz::TenantResolver` resolves a request's `TenantId` from the authenticated
+  principal's claim by default, from the Host through `with_host_allowlist` (a host outside it
+  yields no tenant), and from a header only through `dangerous_tenant_from_header` (recorded in
+  the posture registry); sources must agree, else there is no tenant. Feature `axum`:
+  `TenantResolver::layer()` puts the `TenantId` in the request extensions and `RequestCaps`, and
+  `TenantId` / `Option<TenantId>` extract it (401/403 without one). `id_effect_sql::TenantRouter`
+  is a `SqlClient` mapping each tenant to its own client (`from_map` with `tenant_database`,
+  `from_pg_configs`, `from_resolver`), routing by `TenantRouter::with_tenant` or a bound
+  `for_tenant` client; it fails closed (no tenant, or an unknown one, is `SqlError::NotConnected`),
+  keeps at most 64 tenant clients open (LRU, `with_max_pools`) and composes with
+  `RoutingSqlClient` replicas. Book: chapter 30.7 "Resolving the tenant" and "One database per
+  tenant".
+- Keyset (cursor) pagination in `id_effect_sql` (r13-e3-3-pagination, E3.3 "pagination", D11):
+  `Repository::find_after(&Keyset, Option<PageCursor>)` / `find_before` (also on
+  `BoundRepository` and, with the relations loaded, `EagerRepository`) return
+  `Paged<T> { items, next, prev }` in a `Keyset` order — declared sort columns
+  (`order_by(column, SortOrder)`, mapped columns only), then the primary key — so pages stay
+  stable while rows are inserted. The offset `Page` / `find_page` is kept. `PageCursor` is opaque:
+  base64url of the sort-key tuple and a fingerprint of the request's filter, sort and filter
+  mode, at most 1 KiB, read by `PageCursor::decode` through a bounded `Schema` (public for the
+  `sql_page_cursor` fuzz target); it is not signed because every page re-applies the tenant,
+  soft-delete and custom filters. Secure by default (ADR 0013 R4, R1): oversize cursors are
+  refused, a cursor whose fingerprint differs from the request is refused, and page sizes default
+  to 50 and are capped at 500 (`PageLimits`, configurable and finite). Book: chapter 28.7.
+- `id_effect_ai` promoted to tier `integration` and published (r13-e9-1-promote, D6; ai.llm #1
+  #2 #7): provider-neutral chat (`chat`: `LanguageModel`, `ChatRequest::new` / `user` with a
+  per-request `max_tokens`, `ChatResponse` with `Usage`, `stop_reason` and `ToolCall`s) and
+  streaming (`stream`: SSE decoded incrementally from the platform client's body, one chunk per
+  pull; `stream::decode_sse_event` for the `ai_sse_event` fuzz target), OpenAI and Anthropic
+  adapters under `vendors/{openai,anthropic}/chat.rs`, retries (now also Anthropic's 529), and an
+  `ai.request` span with vendor, operation, model and token usage. `testing::ScriptedModel`
+  (feature `test-util`, D8) replays replies, tool calls, streams and failures in order and records
+  every request. Every 0.13 feature is declared once (`openai`, `anthropic`, `ollama`, `cursor`,
+  `tools`, `embeddings`, `mcp`, `mcp-http`, `test-util`), with `tools/`, `embeddings/`, `mcp/`
+  and the `vendors/*/embed.rs` modules in place for the wave 2–3 leaves. Secure by default (ADR
+  0013, ADR 0015 B13 B14): every call goes through id_effect_platform's client, so the SSRF policy
+  applies to provider base URLs (`AiError::Blocked`); API keys are `Secret` and redacted in
+  `Debug`; prompts and completions are never logged or put on spans unless
+  `AiConfig::dangerous_log_prompts()` is taken (recorded as `DANGEROUS_LOG_PROMPTS`); `AiLimits`
+  gives every request `max_tokens` 1024, a 60 s timeout and a 4 MiB response cap, and a stream
+  16 MiB, 65 536 events and 1 MiB per event (`AiError::LimitExceeded`, the stream is closed). The
+  Cursor agents client stays behind the non-default `cursor` feature. API changes from the labs
+  crate in [MIGRATION-0.13.md](docs/MIGRATION-0.13.md); book chapter 35 rewritten.
+- Typed tool calling, structured output and a bounded agent loop in `id_effect_ai`
+  (r13-e9-1-tools, ai.llm #3, margin #4 #8; feature `tools`): `tools::Tool<I, O>` with
+  `I, O: HasSchema` (`#[derive(Schema)]`), whose parameters are `I`'s JSON Schema exported through
+  `id_effect::schema::json_schema_for`; `ToolSet` groups the tools of a call and
+  `ChatRequest::tools` (`ToolDefinition`) carries them to the vendor in both formats (OpenAI
+  `tools`/`tool_calls`/`role: tool`, Anthropic `tools`/`tool_use`/`tool_result`; replies parse to
+  `ToolCall`s); `ChatRole::Tool`, `ChatMessage::assistant_tool_calls` and
+  `ChatMessage::tool_result`. `structured::complete_structured` decodes a reply through `T`'s
+  `Schema` (refinements run; `StructuredError::Decode` lists every issue) with at most one repair
+  retry (`MAX_REPAIR_RETRIES`). `agent::ToolLoop` runs model → tool → model. Secure by default
+  (ADR 0015 D9, ADR 0013 R1 R4): only tools registered on the call's `ToolSet` run (an unknown
+  name is `ToolError::Unregistered`, fed back to the model, never executed); arguments are decoded
+  through the tool's `Schema` before the handler (`tools::decode_arguments`, public for the
+  `ai_tool_arguments` fuzz target); tools declared `.writes()` need
+  `ToolPolicy::allow_writes`; `ToolLoopBudget` defaults to 8 steps, 32 tool calls, 60 s and
+  64 KiB per tool output, each configurable and none infinite (`AiError::LimitExceeded`
+  `tool_loop_steps` / `tool_loop_tool_calls` / `tool_loop_duration_ms`,
+  `ToolError::OutputTooLarge`). Book: chapter 35.1.
+- Embeddings in `id_effect_ai` (r13-e9-1-embeddings, ai.llm #5; feature `embeddings`): the
+  `Embedder` capability (`EmbedderService`, `provide_embedder`, `embed`) with
+  `EmbedRequest` / `EmbedResponse` / `Embedding`, and two adapters returning the same shape:
+  `OpenAiEmbedder` (`/v1/embeddings`, base64 vectors, with `openai`) and `OllamaEmbedder`
+  (`/api/embed`, with `ollama`). `Embedder::embed` refuses more than `EmbeddingLimits::max_inputs`
+  (4096) and splits the rest into vendor calls of `max_batch_size` (64; OpenAI never above 2048),
+  concatenated in input order with usage summed; every vector must have one length
+  (`EmbedRequest::with_dimensions`), else `EmbeddingError::DimensionMismatch` (a short answer is
+  `CountMismatch`). `cosine_similarity`, `dot_product` and `top_k_similar` for in-app similarity
+  over a bounded set (no vector database). Retries, the `ai.request` span (`ai.operation =
+  "embed"`, input count, dimensions, `ai.usage.input_tokens`) and the platform client's SSRF
+  policy and caps as for chat; input text is never recorded, not even under
+  `dangerous_log_prompts`, and `EmbedRequest`'s `Debug` redacts it. `testing::ScriptedModel`
+  implements `Embedder` with deterministic hashed embeddings (`ScriptedModel::embedding_of`).
+  Book: chapter 35.2.
+- MCP server and client in `id_effect_ai` (r13-e9-1-mcp, ai.llm #6, D7; features `mcp` and
+  `mcp-http`): an own, effect-native implementation pinned to MCP revision 2026-07-28
+  (`mcp::PROTOCOL_VERSION`, ADR 0015 §7): `server/discover` and per-request `_meta` capability
+  negotiation (another revision is answered with `UnsupportedProtocolVersion`), tools served from
+  the same `ToolSet` the agent loop runs (`McpServer::with_tools`, every call through
+  `ToolSet::invoke`; a tool failure is an `isError` result), resources and prompts
+  (`with_resource`, `with_prompt`), progress (`mcp::report_progress`) and cancellation that
+  interrupts the request's fiber and runs its finalizers. Transports: stdio
+  (`McpServer::serve_stdio` / `serve_io`, `McpClient::over_io`) and Streamable HTTP
+  (`mcp::McpEndpoint`, an `id_effect_axum` route; `McpClient::http` through the platform
+  client). Secure by default (ADR 0013, ADR 0015 B15 B16): the endpoint has no router until
+  `.guard(g)` (an MCP endpoint without an access decision does not compile), refuses browser
+  origins outside its `OriginPolicy` (empty by default), refuses bodies over 1 MiB with `413`
+  before parsing and caps in-flight requests per principal (`McpLimits`), checks
+  `MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name` and `Mcp-Param-*` against the body
+  (`HeaderMismatch`); every identifier the server mints (list cursors, `mcp::mint_handle`) is
+  128-bit random and bound to the principal; write tools are neither listed nor run unless
+  `McpServer::dangerous_mcp_write_tools()` is taken (recorded as `DANGEROUS_MCP_WRITE_TOOLS`);
+  the client obeys the platform SSRF policy (`McpError::Blocked`) and cannot override the
+  protocol's headers. `mcp::decode_message` is the bounded decoder of every transport (the
+  `mcp_jsonrpc_message` fuzz target). Interop tested both ways against `rmcp` =3.4.0 (a
+  dev-dependency only) over stdio and HTTP. Examples `mcp_server` (stdio, `--http`,
+  `--self-test`) and `mcp_client` replace `mcp_server_template`; book chapter 35.3.
+- Relations and eager loading in `id_effect_sql` (r13-e3-3-relations, data.orm #3):
+  `#[entity(belongs_to(..))]`, `has_many(..)` and `many_to_many(.., through = "..")` generate
+  `Relation<P, C>` constructors (`Order::lines()`); `Repository::with(rel)` returns an
+  `EagerRepository` whose `find` / `find_all` / `find_by` / `find_page` / `load` return `Loaded<T>`
+  values, loading each relation in one `IN (…)` query per relation per level (no N+1; keys
+  deduplicated, chunked at 1 000), nested with `Relation::with` at most `MAX_EAGER_DEPTH` (3)
+  levels, on PostgreSQL, MySQL and SQLite. Secure by default (ADR 0013 R1): children are read
+  with the child entity's tenant, soft-delete and custom filters (inside the join for N:M), so a
+  relation never returns another tenant's row, and a tenant-scoped child without a tenant fails
+  closed before any query. `Entity::FIELDS` (`FieldMeta`: column, type, nullable,
+  `#[entity(editable)]`, `#[entity(label = "..")]`, relation), `Entity::RELATIONS`
+  (`RelationMeta`) and `Entity::LABEL`, all defaulted so hand-written impls compile unchanged.
+  `repository.rs` becomes `repository/{mod,relations}.rs`; every public path is kept. Book:
+  chapter 28.6.
+- Entity lifecycle hooks in `id_effect_sql` (r13-e3-3-hooks, data.orm #7, D12): `EntityHooks<T, E>`
+  with `before_insert`, `after_insert`, `before_update`, `after_update`, `before_delete` and
+  `after_delete`, registered per repository (`Repository::with_hooks` → `HookedRepository`), run in
+  registration order inside the write's transaction (opened by the repository, or a savepoint of
+  the caller's with `in_transaction`); a failing hook rolls the write and the hooks' statements
+  back, and a `before_*` hook rejects a write with the caller's error type (`E: From<SqlError>`).
+  Hooks receive a `HookContext` whose repository is bound to the transaction with the hooked
+  repository's tenant and filters, so they cannot leave the tenant; the audit log keeps its
+  explicit `append` and is wired as an `after_*` hook. Feature `outbox`: `repository::outbox`
+  (`EntityOutbox`, `OutboxEvent`, `OutboxSink`, `OutboxTable`) stages events in
+  `id_effect_outbox`, in `id_effect_messaging`'s row format, in the same transaction. Book:
+  chapter 28.8.
+- Server-rendered UI in `id_effect_axum`, feature `ui` (r13-e9-5-views, D3; web.ui #1 #2 #6, margin
+  #5): maud (`=0.27.0`) `Markup` as a response on typed routes; `ui::Component` with `Slots`
+  (default and named slots, composable); `ui::Page` + `ui::LayoutLayer` / `ui::BasicLayout` answer
+  the full page to browsers and the fragment to htmx (`HX-Request`, `Vary: HX-Request`); htmx
+  helpers `HxRequest`, `HxTarget`, `HxTrigger`, `HxRedirect` (same-origin paths only),
+  `HxReswap`, `HxRetarget`; htmx 2.0.11 vendored (0BSD, sha384 in
+  `crates/id_effect_axum/assets/README.md`) and served by `ui::htmx::asset_route()`, loaded with
+  `integrity` and `htmx-config` `allowEval: false`, `selfRequestsOnly: true` (pages keep
+  `script-src 'self'`); the layout sends the masked CSRF token on every htmx request
+  (`hx-headers`); `ui::HtmlForm<T>` / `ui::FormState` re-render forms with `Schema` decode errors
+  bound to their fields and translatable message keys; raw HTML only through `ui::trusted_html`
+  (grep test over the axum and admin sources). Example `095_htmx_todo`; book chapter 29.10.
+- `Effect::any_env` and `LocalEffect::any_env` (r13-f-any-env, F52 / D14): run an env-free
+  effect (`R = HNil`) under any environment `R`, HList or not (a bare `DynEnv`, a generic `R`),
+  replacing the `Effect::from_ctx(|ctx| async move { ctx.bind(e).await })` workaround. A ready
+  effect is returned as is; a program gets one `Provide` frame over the shared empty environment.
+  Book: "Env-free effects under any environment" in part 2, chapter 4.3.
+- `EventLog::head()` (r13-f-eventlog-head, 0.12 follow-up F21): the position of the last event
+  appended (`0` for an empty log). A provided method, so existing `EventLog` implementors compile
+  unchanged (the default reads the log to its end); `MemoryEventStore` and `SqlEventJournal`
+  answer in one step (`MAX(position)`). `id_effect_rpc`'s `EventSubscription::from_now()` starts a
+  call without a cursor after the head, read when the stream is first pulled; without it a call
+  still starts after `starting_after` (default `0`). Book: chapter 33.8.
+- `id_effect_i18n` core (r13-e9-4-i18n-core, D5; eco.i18n #1 #2 #7) over Project Fluent
+  (`fluent-bundle` =0.16.0, `fluent-syntax` =0.12.0, `fluent-langneg` =0.13.1, `unic-langid`
+  =0.9.6): `Catalog` of Fluent resources per locale, embedded (`include_str!`) or loaded from
+  allowlisted directories once at startup (paths resolved, `.ftl` only, ≤ 1 MiB; parse errors,
+  duplicate messages and a missing default locale fail `build`); fallback chain requested →
+  language → default; `Catalog::check` reports every key a locale lacks (`require_complete` makes
+  it fatal); CLDR plural categories through Fluent selectors; bidi isolation of arguments on by
+  default; `CurrentLocale` capability (fiber-local) with `with_locale`, `current_locale` and
+  `translate`. Features `axum`, `maud` and `schema` are declared (off) for the web step. Book:
+  chapter 30.9 "Internationalization".
+- `id_effect_i18n` on the web (r13-e9-4-i18n-web; eco.i18n #3 #5, web.ui #8):
+  `negotiate::Negotiator` chooses a request's locale from an application preference, a cookie and
+  `Accept-Language` (fluent-langneg lookup), always inside the supported-locale allowlist;
+  `negotiate::parse_accept_language` is bounded (≤ 256 bytes, ≤ 32 ranges, otherwise the header is
+  ignored) and public for fuzzing; `Localizer` (catalog + negotiated locale). Feature `axum`:
+  `axum::LocaleLayer` puts a `Localizer` and the `LocaleSource` in the request extensions (both
+  extractors) and a `CurrentLocale` override in `RequestCaps`, and sets `Content-Language` and
+  `Vary`. Feature `maud`: `t(&localizer, "id", args)` returns a `Message` implementing
+  `maud::Render` (escaped text, bidi isolation kept). Feature `schema`: `SchemaErrorCode` maps
+  every built-in `Schema` decode/validator message to a Fluent message id; English and German
+  catalogs ship with the crate (`SchemaMessages::schema_messages`); `translate_parse_errors`,
+  `localize_parse_errors` and `Localizer::parse_errors` translate `ParseErrors`. Example
+  `i18n_web` (`--self-test`); book chapter 30.9 gains the web sections.
+- `id-effect rpc check --allow-retired Service:N` (r13-f-rpc-retire, 0.12 follow-up F46),
+  repeatable: the removal of that service version passes and is printed as `retired`; every other
+  breaking change still exits 1, and naming a version that was not removed exits 2 (typo guard).
+  Library: `id_effect_tool::rpc::RetiredVersion` and `rpc::check::retire`; `CheckArgs` gains
+  `allow_retired` ([MIGRATION-0.13.md](docs/MIGRATION-0.13.md)). Book: chapter 33.12.
+- Crate layout for 0.13 (r13-t0-skeletons, ADR 0010 Amendment 9): `id_effect_ai` moves from
+  `labs/` to `crates/id_effect_ai` with its history and joins the root workspace (still
+  `publish = false` until r13-e9-1-promote); new tier-`integration` crates `id_effect_i18n`
+  (`Locale`, a bounded, case-normalized language identifier) and `id_effect_admin`
+  (`AdminPermission` / `AdminAction`, the `admin.<entity>.<action>` permission model); the
+  Pipeline reference app (`examples/reference/pipeline`, tier `example`, its stage model); CI job
+  `breadth`; `examples/recipes/` is outside the root workspace. The unused
+  `crates/id_effect_cli/templates/admin-stub/` is removed ([MIGRATION-0.13.md](docs/MIGRATION-0.13.md)).
+- `id_effect_rpc` generated clients batch over HTTP (r13-f-client-batching, 0.12 follow-up F27):
+  the calls a `#[rpc::service]` client makes over `HttpTransport` in the same tick go out as one
+  batch, by the rules of `RpcClient::call` (at most 50 calls / 1 MiB per request; a call alone is
+  a plain envelope), each call carrying its service version `v`. They share `RpcClient::call`'s
+  batch window, joined from any caller environment through `Effect::any_env`.
+  `RpcTransport::unary_effect`, a defaulted hook the generated client runs from the caller's fiber
+  (the default awaits `unary`; `HttpTransport` overrides it); `HttpTransport`'s `unary` still
+  sends one call on its own.
+- `HttpTransport::with_header(name, value)` and `HttpTransport::with_bearer(secret)`
+  (r13-f-client-batching, 0.12 follow-up F56; ADR 0013 R2, R4, R9): headers on every request the
+  transport sends, batched or not. Names and values are validated (`HttpHeaderError`: no CR, LF
+  or other control bytes); `x-rpc`, `content-type` and the framing headers (`content-length`,
+  `transfer-encoding`, `host`, `connection`) are reserved, so the CSRF rule (`x-rpc: 1` on every
+  `POST`) cannot be overridden. The bearer token is an `id_effect_config::SecretString`, and
+  `Debug` of the transport shows header names only. Calls with different headers never share a
+  batch request.
+- `id_effect_rpc`'s `WsClient` dials `wss://` itself and speaks postcard (r13-f-ws-client-tls,
+  0.12 follow-up F40; ADR 0013 R8): `WsClient::connect` (and `RpcClient::subscribe` over
+  `TransportKind::WebSocket`) takes `wss://` URLs over rustls, with the server name checked and the
+  certificate verified by `rustls-platform-verifier`, the root source of the platform HTTP client.
+  `WsClient::connect_with(request, &WsClientConfig)` takes a URL or a request carrying upgrade
+  headers (an `authorization` the guards read), `WsClientConfig::add_root_certificate_der` trusts
+  a private CA on top of the platform roots, and (feature `postcard`) `WsClientConfig::postcard(group)`
+  offers `idrpc.postcard.v1`, encoding inputs and decoding outputs through the group's typed codecs
+  (a procedure the group lacks is refused 404, one without `with_serde` schemas 415, before
+  anything is sent); `WsClient::over_postcard` does the same on a socket opened by hand and
+  `WsClient::codec` reports the negotiated codec. JSON stays the default; `WsClient::over` is
+  unchanged. There is no API that accepts an untrusted or invalid certificate. Feature `ws` turns
+  on tokio-tungstenite's `__rustls-tls` (no root store of its own), with the rustls and
+  `rustls-platform-verifier` already in the tree (one of each in `cargo tree -d`).
+- `id_effect_admin` core (r13-e9-3-admin-core, D2; web.admin #1 read half, #2, #3, #8): the
+  `AdminSite` registration API, `AdminSite::new().register::<E>(EntityAdmin::default().list(..)
+  .search(..).filter(..).sortable(..))`, checked against `Entity::FIELDS` when registered
+  (`AdminConfigError`, `try_register`); list pages with case-insensitive text search over declared
+  columns, typed filters (`Filter::choices`, `Filter::exact`), sortable columns and keyset pages
+  (`find_after` / `find_before`), and detail pages, rendered with the axum `ui` maud views and
+  updated in place by htmx (`HX-Target: admin-results`); labels and page text through an
+  `id_effect_i18n::Catalog` in the request's locale (feature `i18n`); `testing::AdminRequest`
+  (feature `test-util`); features `i18n`, `audit`, `test-util` declared once, with the wave-3
+  modules (`edit`, `forms`, `bulk`, `relations`, `audit`) in place. Secure by default (ADR 0013
+  R1, R7, R9): the site mounts only after `.guard(g)` (an unguarded `AdminSite` has no `router`,
+  a compile error) and every route is registered as guarded; every page checks
+  `admin.<entity>.<action>` through `id_effect_authz` (default `RbacAdminPolicy`, deny by
+  default, anonymous principals always refused) before any query; rows are read through a
+  repository bound to the request's `CurrentTenant` (no tenant: refused); maud escapes every value
+  and the crate never builds unescaped markup (`no_preescaped_outside_trusted_module`); query
+  strings (2 KiB, 414), search text (100 characters, `LIKE` wildcards literal) and cursors
+  (fingerprint-checked, 400) are bounded. Book: chapter 30.8.
+- `id_effect_admin` editing (r13-e9-3-admin-edit; web.admin #1 write half, margin #4 #5 #6):
+  create, edit and delete pages (`/admin/<entity>/@new`, `{id}/@edit`, `{id}/@delete` with a
+  confirmation) from the entity's editable fields (`#[entity(editable)]`, narrowed by
+  `EntityAdmin::form`), `EntityAdmin::new_record`, `EntityAdmin::validate` and `#[from_row(schema)]`
+  validation errors bound to fields through the `ui` form helpers (422; translated with feature
+  `i18n` through the catalog's schema messages), writes through the repository with
+  `EntityAdmin::hooks` (lifecycle hooks) and optimistic locking (409 on a stale version);
+  `belongs_to` pickers (`@pick/<relation>`, htmx search), `has_many` inline lists and
+  `many_to_many` add / remove (`@rel/<relation>`); bulk delete and custom `BulkAction`s
+  (`BulkContext`) from list-page checkboxes; with feature `audit`, every create, update, delete,
+  join-table change and bulk action appended to the hash-chained audit log in the write's
+  transaction (on by default; `AdminSite::audit_log`, recorded opt-out
+  `AdminSite::dangerous_without_audit`); `testing::AdminRequest::post` / `csrf` and
+  `AdminResponse::csrf_token` / `csrf_cookie` / `location`; example `admin_site` (`--self-test`).
+  Secure by default (ADR 0013 R1, R4, R9, R10): only declared-editable fields are bound (others
+  ignored and logged), form bodies are capped at 64 KiB (413; `forms::decode_form`, the fuzz
+  target `admin_form_body`), a bulk action takes at most 100 ids, every `POST` needs the masked
+  CSRF check of `SecurityLayer` (403 without it), each action checks its permission, and pickers,
+  inline lists and submitted foreign keys stay in the request's tenant. Book: chapter 30.8
+  (editing, relations, bulk actions, audit trail).
+- WebSockets over TLS HTTP/2 (r13-f-ext-connect, 0.12 follow-up F15; ADR 0013 R4, R9): the TLS
+  host's HTTP/2 connections enable the extended `CONNECT` protocol of RFC 8441
+  (`SETTINGS_ENABLE_CONNECT_PROTOCOL`), and every `realtime::ws::endpoint` route serves the
+  HTTP/2 `CONNECT :protocol websocket` (answered `200`) beside the HTTP/1.1 upgrade (`101`), at the
+  same path, registered once as `GET`. The guards and `Authenticate` run on the opening request,
+  and the Origin allowlist, the socket caps (429), the frame and message sizes, the message and
+  control-frame rates, the idle timeout and the heartbeat apply to HTTP/2 sockets exactly as to
+  HTTP/1.1 ones; each socket is one stream under `ConnectionLimits::max_concurrent_streams`. An
+  HTTP/2 `GET`, or an extended `CONNECT` for another protocol, is refused `426` without an
+  `Upgrade` header. The route access check admits `CONNECT` where it admits `GET` (other `GET`
+  routes still answer `405`), and `id_effect_rpc`'s WebSocket transport takes the same openings,
+  so RPC sockets run over HTTP/2 too.
+- Security proof of the breadth batteries (r13-e-fuzz-security): six cargo-fuzz targets with
+  seed corpora for the 0.13 decoders (`i18n_accept_language`, `sql_page_cursor`,
+  `mcp_jsonrpc_message`, `ai_sse_event`, `ai_tool_arguments`, `admin_form_body`; 23 targets,
+  ClusterFuzzLite PR and batch budgets raised to 5 and 10 minutes each); compile-fail cases
+  `r1_admin_site_without_guard` and `r1_mcp_endpoint_without_access_decision`;
+  `tests/security_compile_fail/tests/surface_013.rs`, which fails when a test, case or fuzz target
+  the release spec's Security table names disappears and runs the cross-crate cases against one
+  app (admin site and MCP endpoint behind one guard layer and the locale layer); and a "B10 —
+  Breadth batteries" section in `THREAT-MODEL.md` (admin, UI, tenancy, AI tools and prompt
+  injection with its residual risk, MCP, i18n input), each threat mapped to its test.
+- The Pipeline reference app, core (r13-w6-pipeline, D1 stages 1–4, 6, 7):
+  `examples/reference/pipeline`, a multi-tenant document-intake pipeline built only through
+  `id_effect_kit` on PostgreSQL. Ingest by RPC mutation (`Intake.ingest`) or upload (object
+  storage); one job per stage; extraction by structured output into a typed record, enriched from
+  an outside MCP tool server; classification by a bounded tool loop over two read-only tools
+  (`lookup_source`, `list_labels`); near-duplicates by embeddings over a bounded candidate set of
+  the tenant; publication through an `after_update` hook that stages `DocumentPublished` in the
+  outbox in the update's transaction; live status as an RPC subscription; one guarded,
+  Origin-checked MCP server per tenant (`search_documents`, `get_document`, described in en/de).
+  `Source` 1:N `Document` N:M `Label`, `Document` 1:N `Extraction`, all tenant-scoped, read with
+  eager loading and keyset pages; tenant `acme` on the main database, `globex` on its own through
+  `TenantRouter`. Deterministic AI only in CI (`ScriptedModel` and recorded OpenAI / Anthropic
+  fixtures). CI job `reference-pipeline`.
+- The Pipeline reference app, back office (r13-w7-pipeline-backoffice, D1 stage 5): the admin of
+  `Source`, `Document` and `Label` generated with `id-effect generate admin` (every edit after
+  generation listed in the README), one guarded site per tenant on the tenant's own database,
+  roles `reviewer` (list, view, update labels through the N:M label picker, bulk re-run
+  extraction) and `admin` (all), every change in the hash-chained audit log; an htmx + maud review
+  queue (layout, components, partial updates, form errors bound to fields) in English and German
+  (`Accept-Language` plus a per-user override, translated validation errors,
+  `locales/{en,de}/backoffice.ftl`); CSRF on every post; and the app's prod posture
+  (`pipeline::ui::posture`): clean with zero accepted risks.
+
+### Changed
+
+- `SysinfoTelemetry` takes its first (priming) sample on a background thread (0.12 follow-up F64):
+  `ComputeFabric::tick` and `TelemetryEngine::snapshot` no longer block the caller ~350 ms on
+  Windows; until the sample lands they report `TelemetrySnapshot::NEUTRAL` (new), and the new
+  `SysinfoTelemetry::is_primed` tells when real readings start. The 50 ms non-blocking bound
+  holds on every platform again.
+- A dropped `MySqlSqlClient::query_stream` closes its connection after `KILL QUERY` instead of
+  returning it to the pool (0.12 follow-ups F63, F65): sqlx's pool read the rest of the result
+  before reusing the connection, which in CI took minutes for a large result. The pool slot now
+  frees at once and a fresh connection opens on demand; the conformance test drops 100 000-row
+  streams again and requires the release within 20 s, without the bounded retry.
+- `id_effect_ai` and `id_effect_i18n` move to tier `platform` (r13-w6-pipeline, ADR 0012 check P):
+  the Pipeline reference app depends on them and runs them in CI.
+- `id_effect_admin` moves to tier `platform` (r13-w7-pipeline-backoffice, ADR 0012 check P): the
+  Pipeline reference app's back office depends on it and runs it in CI.
+- One rcgen (r13-f-rcgen, 0.12 follow-up F5): `id_effect_platform`, `id_effect_node`,
+  `id_effect_axum`, `id_effect_sql`, `id_effect_tool` and `id_effect_kit` move from rcgen 0.13 to
+  0.14 (the version instant-acme already brought), so `cargo tree -d` lists rcgen once and the
+  `yasna` 0.5 copy rcgen 0.13 pulled is gone from `Cargo.lock`. No public signature exposes rcgen
+  types; certificates keep ECDSA P-256 and the `id-effect dev` leaf keeps its 13-day lifetime.
+- Live streams deliver partial chunks (r13-f-stream-chunking, 0.12 follow-up F57):
+  `Stream::unfold_effect` waits for the first element of a pull only, then keeps the steps that
+  complete without waiting (ready values, synchronous steps, futures ready on their first poll)
+  and stops at the first step that would wait, which the next pull resumes. `run_for_each` on a
+  live source (an RPC client or server stream, a subscription, a queue) now sees each element as
+  it arrives instead of stalling until 64 have; pure and bounded sources keep full chunks. No
+  signature changes; backpressure is unchanged (a pull starts no step beyond the one it stops
+  on, and the generator runs only while the consumer pulls).
+- HTTP/3 0-RTT made real and a congestion switch (r13-f-h3-settings, 0.12 follow-ups F25, F36):
+  the platform QUIC endpoint gains a per-route early-data setting,
+  `Route::dangerous_allow_early_data` (recorded; refused on the `idm/1` mesh and on any route that
+  requires a verified client). Such a route receives connections before their handshake completes
+  through `AlpnRoute::accept_early`, with a `Handshake` to check (`is_complete`, `completed`),
+  read from the connection's own handshake state, so a request sent after the handshake never
+  reads as early data; `AlpnRoute::accept` keeps delivering completed handshakes only. A
+  connection that sends 0-RTT data on a route without early data is closed with
+  `CLOSE_EARLY_DATA_REFUSED` before its handler sees it (`Refusal::EarlyData`,
+  `EndpointStats::refused_early_data`). 0-RTT stays off by default.
+  `Http3Options::dangerous_allow_zero_rtt_for_queries` stops being a no-op: early `GET` / `HEAD`
+  requests (RPC queries ride `GET`) are served before the handshake completes, every other early
+  request is answered `425 Too Early` (RFC 8470) without reaching the router; `OPTIONS` is no
+  longer admitted. `Http3Options::congestion(CongestionControl::Cubic)` switches the `h3` route
+  off BBR (still the default; the mesh stays CUBIC), and `Http3Options::config()` reads it from the
+  config key `server.http3.congestion`; `CongestionControl` implements `FromStr`.
+- WebSocket control frames get their own rate cap (r13-f-ws-credit, 0.12 follow-up F39; ADR 0013
+  R4): `id_effect_axum`'s `WsConfig::classify` takes a hook sorting inbound messages into
+  `WsFrameClass::Data` and `WsFrameClass::Control`; control messages, and WebSocket pings and pongs
+  (uncounted before), no longer count against `messages_per_second` but against
+  `WsConfig::control_messages_per_second`, by default 4× the message rate
+  (`DEFAULT_CONTROL_RATE_FACTOR`), and exceeding it closes the socket with 1008
+  (`WsClose::ControlRateLimited`, "control frame rate exceeded"). `id_effect_rpc`'s WebSocket
+  transport installs `transport::ws::classify_frame` on every `RpcWsConfig` socket: well-formed
+  `credit` and `ping` frames of at most 256 bytes are control, so a client reading a fast stream is
+  no longer closed by its own credits. Additive API (`WsClose` is `#[non_exhaustive]`); no semver
+  break.
+- A node session pump, mesh RPC trace context and stream liveness (r13-f-mesh-session, 0.12
+  follow-ups F30, F34; ADR 0013 R1 R4 R8): `id_effect_node::SessionPump` runs an authenticated
+  `Session` for a mesh (peer registered, bounded send queue `SessionPumpConfig`, peer reported down
+  when the session ends or the pump drops) and checks every envelope against the session's peer
+  before anything acts on it (`session_pump::verify_envelope`: messages for processes target this
+  node; links, exit signals, monitor answers, spawn replies and name claims speak for the peer);
+  unverified envelopes are dropped and counted (`SessionPumpStats`). Verified envelopes go to an
+  `Ingress` — the mesh, or `id_effect_rpc`'s `MeshRpc` (which implements it) — never around it.
+  `channels::attach_session` / `attach_session_rpc` now run on the pump instead of a private loop,
+  and `attach_session` on a bare mesh delivers through the node's `MeshRpc` when there is one
+  (`MeshRpc::of`), so mesh RPC over a plain channels link works instead of being dropped as
+  unverified (0.12 F33); `SessionLink::stats`. `MeshTransport` (generated clients over the mesh)
+  carries the calling fiber's span on queries and mutations (`RpcTransport::unary_effect`) and a
+  given context on streams (`MeshTransport::in_current_span`, `with_trace_context`). Mesh streams
+  heartbeat: the calling node pings the endpoint of every open server stream, subscription and
+  two-way stream each `MeshLiveness` interval (default 5 s, `Ping`/`Pong` frames), and a stream
+  whose endpoint stays silent past 3 intervals fails with `MeshRpcError::PeerSilent` and is
+  cancelled, without waiting for `peer_down` (`MeshRpc::with_liveness`, `MeshRpc::heartbeat`;
+  interval and deadline clamped finite). New `MeshRpcError` variant: see
+  [MIGRATION-0.13.md](docs/MIGRATION-0.13.md).
+- The Relay on the host (r13-f-relay-host, 0.12 follow-ups F59 0.13 part, F55, F56; example
+  tier): `examples/reference/relay` serves HTTP/3 and WebTransport from the host entry point
+  (`ServerHandle` with `server.http3` and `server.http3.webtransport` on) instead of a
+  `serve_h3` endpoint of its own; the mesh (`idm/1`, mutual TLS) moves to a QUIC endpoint of its
+  own (`NodeConfig::mesh_bind`, `RELAY_MESH_BIND`, default `0.0.0.0:8444`; `RELAY_PEERS` now
+  lists mesh addresses; `RelayNode::mesh_addr`, `mesh_endpoint`, `sessions`, `host_config`),
+  since the host does not hand out its endpoint. The Relay depends on `id_effect_kit` only (the
+  `id_effect_process` dependency is gone; `id_effect_kit::process`), its tests sign in with
+  `HttpTransport::with_bearer` instead of a wrapping HTTP client, dial `wss://` with
+  `WsClient::connect_with`, and check that every mesh session runs on a node session pump. New
+  tests `relay_uses_host_webtransport`, `relay_depends_on_kit_only` (cargo metadata). Exercising
+  server and client streams, SSE, postcard, batching and WebSocket session resume in the Relay
+  is 0.14 E13.2.
+
+### Documentation
+
+- [ADR 0015 "Breadth batteries"](docs/adrs/0015-breadth-batteries.md) (Proposed; r13-t0-adr0015):
+  the Pipeline reference app definition, crate placement for admin, the axum `ui` feature, i18n
+  and AI, MCP pinned to specification revision 2026-07-28, deterministic AI in CI, the tool-safety
+  budgets, tenant resolution, the keyset cursor format, lifecycle hooks inside the transaction,
+  and the ADR 0013 rules (B1–B23) every breadth surface follows. PLAN-OF-PLANS §6 restates 0.13.0
+  on the measured 0.12.0 baseline: target E 85.2 (#1), RT 87.8, red ≤ 3; `sec.supply` carried over.
+- Leptos recipe (r13-e9-5-leptos, D4; not scored, web.ui #7 not claimed):
+  `examples/recipes/leptos-ssr`, a standalone project outside the workspace with its own
+  `Cargo.lock` — Leptos `=0.8.22` server-side rendering with hydration (`leptos_axum` `=0.8.10`)
+  served by the id_effect axum host: the page, the wasm bundle and a stylesheet are `.public()`
+  typed routes, the page's data comes from a `#[rpc::service]` whose procedures are guarded by a
+  service token, called through the generated `NotesClient` over HTTP (SSRF guard kept, only the
+  RPC host allowlisted). `SecurityLayer::recommended` stays on: the request's CSP nonce is handed
+  to Leptos (`Nonce::from_value`) so every inline script carries it, the CSP adds only
+  `'wasm-unsafe-eval'`, and `csrf_exempt_bearer` admits the renderer's cookie-less bearer calls;
+  no `dangerous_*` opt-out. No npm: the browser half is the same crate built for
+  `wasm32-unknown-unknown` and bound by `wasm-bindgen-cli` `=0.2.129` (`scripts/build-site.sh`).
+  Tests `leptos_recipe_ssr_renders`, `leptos_recipe_calls_rpc`, the built bundle, and hydration
+  in headless Chromium; CI job `recipe-leptos` (not in `ci-pass` until green twice). Book:
+  chapter 29.11.
+
+- Security and DX KPIs for 0.13 (r13-w8-kpis). `scripts/security-kpis.sh 0.13.0` gains the 0.13
+  targets (fuzz targets ≥ 22 with ≥ 5 new, compile-fail cases ≥ 0.12 + 2 including
+  `r1_admin_site_without_guard` and `r1_mcp_endpoint_without_access_decision`, the 0.13 Security
+  table) and three KPIs: `unary_rpc` (`rpc/unary_json − rpc/axum_json_handler ≤ 3000 ns`),
+  `fuzz_local_crashes` (crash inputs under `fuzz/artifacts`) and `security_releases` (the
+  sec.supply#7 carry-over: every SECURITY.md "Security releases" row names a registered finding
+  and a GHSA id, `pending` or `not a published crate`; every listed GHSA is a published advisory
+  of the repository and every published advisory is listed; rows still `pending` report
+  pending, publishing them is a release-automation or owner step); the secure-stack and unary
+  deltas read `docs/benchmarks/v0.13.json`. The Security-table check counts fuzz targets and treats a
+  `dangerous_*` test as a test. `docs/security/kpis-0.13.json`: 0 open highs, ADR 0013 10/10, 23
+  fuzz targets (6 new), 21 compile-fail cases, secure stack +2698 ns, unary RPC +1768 ns, the 54
+  Security-table names present, their 47 tests (52 cases with the SQLite and PostgreSQL variants)
+  and the compile-fail suite green, `security_releases` pending (12 of the 13 0.10.1 rows await a
+  published GHSA; none is published). The scheduled ClusterFuzzLite batch run of 2026-10-24
+  found a crash in the 0.12 target `rpc_duplex_frame`, fixed on this branch (e9032b41, below;
+  `fuzz_open_crashes` is pending until the batch runs on main after the merge). The owner's
+  release-flow decision merged from main (#118: publish from any pushed tag with the registry
+  token, as in 0.10.1) brings back `CARGO_REGISTRY_TOKEN` under `.github` (S3) and drops the
+  signed-tag check (S6); the register records both as accepted (owner decision 2026-10-24), so
+  `registry_token` passes as accepted and `open_highs` passes with 0 register problems. The one
+  failing KPI is the OpenSSF Scorecard, 6.6 (target 7.5; repository settings).
+  `docs/benchmarks/dx-kpis-0.13.json`:
+  K1 24.8 s, K2 1.47 s, K3 634 lines, K4 17/20, K5 90.9 %, K6 31.9 s (budget 120 s); cold release
+  build delta on the `service` template per kit feature: `ai` −0.1 s, `admin` +3.9 s, `ui` +1.3 s,
+  `i18n` +3.3 s (baseline 30.8 s).
+
+### Security
+
+- Breadth defaults (ADR 0015 B1–B23, ADR 0013 applied to the 0.13 surfaces; each with its
+  enforcement point, all green in `docs/security/kpis-0.13.json` "security_table"):
+  - B1 the admin mounts only through `AdminSite::guard` (compile-fail
+    `r1_admin_site_without_guard`, `admin_denied_without_permission`, posture probe "admin
+    guarded"); B2 every entity × action is a permission, denied by default
+    (`admin_action_requires_entity_permission`).
+  - B3 only fields declared editable are bound (`admin_form_ignores_undeclared_fields`); B4 at most
+    100 ids per bulk action and 64 KiB per form (`r4_admin_bulk_action_over_cap_rejected`,
+    `r4_admin_form_over_cap_413`, fuzz `admin_form_body`).
+  - B5 masked CSRF tokens on every admin and htmx post (`r9_admin_post_without_csrf_token_refused`,
+    `r9_htmx_requests_carry_masked_token`); B6 views escape by default, raw HTML only through
+    `ui::trusted_html` (`ui_escapes_untrusted_by_default`, `no_preescaped_outside_trusted_module`).
+  - B7 every admin create, update, delete and bulk action writes the hash-chained audit log
+    (`admin_change_written_to_audit_log`).
+  - B8 eager loads and joins re-apply the child's tenant and soft-delete filters
+    (`m19_eager_loaded_children_scoped_to_tenant`, `relation_join_cannot_cross_tenant`); B9 page
+    cursors are at most 1 KiB, bound to their filter, pages at most 500
+    (`r4_page_cursor_over_limit_rejected`, `cursor_with_other_filter_refused`, `r4_page_size_capped`,
+    fuzz `sql_page_cursor`).
+  - B10 the tenant comes from the principal's claim, a header only through
+    `dangerous_tenant_from_header` (`tenant_resolved_from_principal_by_default`,
+    `dangerous_tenant_from_header_is_recorded`); B11 an unknown tenant has no connection and tenant
+    pools are bounded (64, LRU) (`unknown_tenant_has_no_connection`,
+    `r4_tenant_pool_count_bounded`).
+  - B12 an agent runs registered tools only, with Schema-decoded arguments, write tools only under
+    `allow_writes`, in a bounded loop (`ai_unregistered_tool_call_refused`,
+    `ai_tool_arguments_schema_decoded`, `ai_write_tool_denied_without_policy`,
+    `ai_tool_loop_step_budget_enforced`, fuzz `ai_tool_arguments`); B13 finite `max_tokens`,
+    timeouts, response, stream and tool-output caps (`r4_ai_max_tokens_finite_by_default`,
+    `r4_ai_stream_over_cap_closed`, fuzz `ai_sse_event`); B14 API keys are `Secret`, prompts and
+    completions are not logged (`ai_api_key_redacted_in_debug`, `ai_prompts_not_logged_by_default`,
+    `dangerous_log_prompts_is_recorded`); B15 provider base URLs and the MCP client obey the
+    platform SSRF policy (`ai_base_url_obeys_ssrf_policy`, `mcp_client_obeys_ssrf_policy`).
+  - B16 the MCP HTTP endpoint needs an access decision and an allowed Origin, its session ids are
+    128-bit random and bound to the principal, messages are at most 1 MiB, and it is closed in prod
+    unless guarded (compile-fail `r1_mcp_endpoint_without_access_decision`,
+    `r9_mcp_foreign_origin_refused`, `mcp_session_bound_to_principal`,
+    `r4_mcp_message_over_cap_rejected`, `dangerous_mcp_write_tools_is_recorded`, posture probe "mcp
+    guarded", fuzz `mcp_jsonrpc_message`).
+  - B17 `Accept-Language` parsing is bounded and only allowlisted locales load
+    (`r4_accept_language_over_limit_ignored`, `locale_outside_allowlist_falls_back`, fuzz
+    `i18n_accept_language`); B18 message arguments are escaped and bidi-isolated
+    (`i18n_args_escaped_in_html`, `i18n_bidi_isolation_on_by_default`).
+  - B19 the Origin allowlist and every 0.12 WebSocket limit apply to RFC 8441 extended `CONNECT`
+    (`r9_h2_extended_connect_foreign_origin_refused`, `h2_websocket_limits_match_h1`); B20 0-RTT
+    stays off, its opt-out admits safe methods on the `h3` route only, never `idm/1`
+    (`zero_rtt_admits_only_safe_methods`, `zero_rtt_mutation_gets_425`,
+    `mesh_route_never_accepts_early_data`, `zero_rtt_off_by_default`); B21 WebSocket control frames
+    have their own finite cap (`r4_control_frames_have_own_cap`,
+    `credit_frames_do_not_throttle_data`); B22 `WsClient` trusts the platform roots and has no
+    "accept invalid certificates" API (`ws_client_rejects_untrusted_server_cert`); B23 generated
+    clients validate header names and values and cannot override `x-rpc` or `content-type`
+    (`http_transport_rejects_invalid_header`, `http_transport_cannot_override_rpc_header`).
+- New `dangerous_*` opt-outs (ADR 0013 R10; each calls `posture::record_dangerous`, is listed by
+  `scripts/check-dangerous.sh`, 51 functions at 0.13 against 46 at 0.12, and fails the prod
+  posture unless it is an accepted risk). Each reopens one finding:
+  - `AiConfig::dangerous_log_prompts` (`DANGEROUS_LOG_PROMPTS`) reopens B14: prompts and
+    completions reach logs and spans (probe "prompts not logged").
+  - `McpServer::dangerous_mcp_write_tools` (`DANGEROUS_MCP_WRITE_TOOLS`) reopens B12/B16: write
+    tools are listed and run for MCP clients (probe "mcp guarded").
+  - `TenantResolver::dangerous_tenant_from_header` reopens B10: a client-supplied header names the
+    tenant (probe "tenant not from header").
+  - `AdminSite::dangerous_without_audit` (`id_effect_admin`) reopens B7: admin changes are not
+    written to the audit log ("no unaccepted opt-out").
+  - `Route::dangerous_allow_early_data` (`id_effect_platform::quic`) reopens B20 at the transport:
+    the route accepts 0-RTT data, which an attacker can replay; refused on `idm/1` and on routes
+    that require a client certificate. `Http3Options::dangerous_allow_zero_rtt_for_queries` (0.12)
+    now turns it on for the `h3` route and admits only `GET` / `HEAD` early ("no unaccepted
+    opt-out").
+- Proof (r13-e-fuzz-security, r13-w8-kpis): 23 cargo-fuzz targets (6 new: `admin_form_body`,
+  `ai_sse_event`, `ai_tool_arguments`, `i18n_accept_language`, `mcp_jsonrpc_message`,
+  `sql_page_cursor`), 21 compile-fail cases (2 new: `r1_admin_site_without_guard`,
+  `r1_mcp_endpoint_without_access_decision`), `surface_013.rs` keeps every Security-table name
+  present, THREAT-MODEL.md boundary B10. 0 open highs (41 findings: 38 closed, 3 accepted), ADR
+  0013 10/10 rules enforced, secure stack +2,698 ns over bare (budget 5,000 ns), unary RPC
+  +1,768 ns (budget 3,000 ns). The scheduled ClusterFuzzLite batch crash in the 0.12 target
+  `rpc_duplex_frame` is fixed (next bullet, e9032b41); the batch workflow runs on main, so it
+  reports no open crash once this release merges. Open: the OpenSSF Scorecard 6.6 (target 7.5,
+  repository settings).
+- Release flow (owner decision 2026-10-24, #118): a pushed `v*` tag publishes every crate with
+  the `CARGO_REGISTRY_TOKEN` secret of the `crates-io` environment, which also creates the new
+  crates on their first publish; there is no signed-tag check. Findings S3 (long-lived registry
+  token) and S6 (unsigned tags) are recorded as accepted in `docs/security/findings.json` and
+  THREAT-MODEL.md "Accepted risks"; SECURITY.md "Supply chain" and `docs/RELEASING.md` describe
+  the flow. SLSA Build L3 provenance, SBOMs and the digest checks against crates.io stay.
+- `id_effect_rpc` refuses JSON payloads with serde_json's raw-value key
+  (`$serde_json::private::RawValue`) at any depth, as malformed: frames (`transport::frame::decode`,
+  `idrpc.json.v1`), batches, call inputs, NDJSON items, postcard failure values and SSE events.
+  With serde_json's `raw_value` feature on (axum, sqlx) such a member re-encoded first and the next
+  decode replaced the object with the JSON its string held, or failed: the `rpc_duplex_frame`
+  ClusterFuzzLite crash, now closed (`fuzz_rpc_duplex_frame_raw_value_key_is_refused`, seed
+  `fuzz/corpus/rpc_duplex_frame/seed-crash-raw-value-key`).
+
+### Performance
+
+- Breadth bench gates (r13-e-benches, `docs/benchmarks/README.md` "Breadth gates (0.13)"): benches
+  `id_effect_sql` `repository_eager` (`orm/eager_100x10`, `orm/n_plus_one_100x10`,
+  `orm/flat_100x10`; SQLite in memory), `id_effect_i18n` `format` (`i18n/format_plural`) and
+  `id_effect_axum` `ui_render` (`ui/render_list_50`, feature `ui`), all in `scripts/bench-run.sh`.
+  `gates.toml` adds the pair `orm/eager_100x10 / orm/n_plus_one_100x10 ≤ 0.45`, measured at
+  **0.313–0.416** over seven runs (0.348 in `v0.13.json`). The limit is 0.45, not the 0.25 D15
+  wrote before measuring, by owner decision 2026-10-24: eager loading is 2.9× faster than the
+  N+1 loop, but sqlx-sqlite's per-row cost puts even two plain reads at 0.25–0.29; follow-up F66
+  (the SQLite driver's per-row cost) brings the pair back toward 0.25. The D15 budgets (measured
+  median × 1.5, confirmed by the owner) are `delta` gates in `gates.toml` over an empty iteration
+  of the same bench (`i18n/empty_iter`, `ui/empty_iter`), so the release gate and `bench.yml`
+  enforce them with no base: `i18n/format_plural` ≤ 496 ns (330.9 ns measured),
+  `ui/render_list_50` ≤ 14,710 ns (9,807 ns measured). Against `v0.12.json` every 0.12 budget,
+  delta and pair gate passes (secure stack +2.76 µs, unary RPC +1.78 µs, batch 0.092, h3/h2
+  0.063) and the streaming group is unchanged (0.997–1.017).
+
+### Scorecard
+
+Planned (`bash scripts/scorecard.sh --targets 0.13.0`, METHOD 2.2, competitor snapshot
+2026-10-14, on the measured 0.12.0 baseline) against measured. The measured column is the blind
+re-score of `r13-x-rescore` (`docs/scorecard/results/v0.13.0.json`, `REPORT-0.13.0.md`, tree at
+182d65a6); adjudications and the carry-over are in that report.
+
+| Index | 0.12.0 measured | 0.13.0 planned | 0.13.0 measured |
+|---|---|---|---|
+| Universal (U) | 82.3 (#1) | 85.4 (#1) | 86.7 (#1) |
+| Enterprise (E) | 81.5 (#1) | 85.2 (#1), gate 84.2 | 86.8 (#1; .NET 78.8) |
+| Runtime (RT) | 85.9 (#1) | 87.8 (#1) | 88.7 (#1) |
+| Rows < 40 | 7 | ≤ 3 | 3 |
+| Rows ≥ 80 | 59 | 60 | 64 |
+
+| Row | 0.12.0 measured | 0.13.0 planned (checks) | Evidence | 0.13.0 measured |
+|---|---|---|---|---|
+| `data.orm` | 63 | 88 (#3 relations + eager loading, #7 lifecycle hooks) | r13-e3-3-relations, r13-e3-3-hooks, r13-e3-3-pagination; Pipeline | 88 (7/8, production) |
+| `web.ui` | 1 | 67 (#1 #2 #6 #8; margin #5) | r13-e9-5-views, r13-e9-4-i18n-web; Pipeline back office | 83 (5/6 scored with #5; #7 Leptos recipe not counted) |
+| `web.admin` | 1 | 50 (#1 #2 #3 #8; margin #4 #5 #6) | r13-e9-3-admin-core, r13-e9-3-admin-edit, r13-e1-3-generate-admin | 88 (7/8 with #4 #5 #6) |
+| `ai.llm` | 38 | 75 (#3 #5 #6; margin #4 #8) | r13-e9-1-promote, -tools, -embeddings, -mcp; Pipeline | 100 (8/8, production) |
+| `eco.i18n` | 1 | 63 (#1 #2 #3 #5 #7) | r13-e9-4-i18n-core, r13-e9-4-i18n-web; Pipeline en/de | 63 (5/8) |
+| `eco.tenancy` | 75 | 75 kept (margin #8) | r13-e5-5-tenancy, kit `tenancy`; Pipeline `globex` database | 88 (7/8 with #8 `TenantRouter`) |
+| `web.rpc` | 100 | 100 kept | T12 carry leaves; Relay, Ledger | 100 |
+| `web.realtime` | 100 | 100 kept | r13-f-ws-credit, r13-f-ext-connect, r13-f-webtransport-host | 100 |
+| `dist.tls` | 100 | 100 kept | r13-f-rcgen, r13-f-h3-settings, r13-f-mesh-session | 100 |
+| `sec.supply` | 88 | 100 (carried from 0.12: `sec.supply#7`, a published GHSA) | owner step below | 88 (miss: 0 published GHSA; carried over to 0.14) |
+| `web.validation` | 88 | 88 (no 0.13 target) | r13-e9-4-i18n-web (`schema` feature); Pipeline | 100 (#8 translated validation messages) |
+| `sec.web` | 88 | 88 (no 0.13 target) | r13-e9-5-views (maud, `ui::trusted_html`); Pipeline | 100 (#8 auto-escaping views) |
+
+`--compare-targets 0.13.0`: ok (measured E 86.8, tool-planned 87.1); `--diff 0.12.0 0.13.0`: ok
+(8 rows up, none down). Level production for the six breadth rows rests on the `reference-pipeline`
+CI job, which had not completed green on the release branch at scoring time.
+
+DX KPIs (`docs/benchmarks/dx-kpis-0.13.json`): K1 24.8 s (≤ 180), K2 1.47 s (≤ 8), K3 634 lines,
+K4 17/20 (≥ 17), K5 90.9 % (≥ 80 %), K6 31.9 s (budget 120 s); kit-feature cold-build deltas
+`ai` −0.1 s, `admin` +3.9 s, `ui` +1.3 s, `i18n` +3.3 s. Bench gates: eager pair 0.348 (limit 0.45
+by owner decision, F66), i18n and UI budgets met, every 0.12 gate unchanged.
+
+0.12 follow-ups: F5, F15, F21, F25, F27, F30, F34, F36, F39, F40, F43, F45, F46, F52, F55, F56 and
+F57 are closed by their leaves (lines above). Carried: F59's feature exercise in the Relay
+(server and client streams, SSE, postcard, batching, WebSocket resume) to 0.14 E13.2 (the 0.13
+part is closed by r13-f-relay-host); F53 (two Postgres idempotency stores) to 0.14; F62 (h3spec
+findings in the `server/h3.rs` adapter, `http3-conformance` outside `ci-pass`), F63 and F65 (the
+MySQL conformance test `dropped_streams_release_their_connections` in CI) and F64 (the first
+sysinfo sample blocking on Windows) to 0.14; F66 (sqlx-sqlite per-row cost behind the eager pair)
+recorded in 0.13 for 0.14.
+
+### Owner steps
+
+Not done by the release automation:
+
+- Publish the 0.10.1 GitHub Security Advisories (`sec.supply#7`, carried over to 0.14): each
+  "pending" row of SECURITY.md "Security releases" gets its GHSA id when published.
+- Push the `v0.13.0` tag on the merge commit (`git tag -a v0.13.0 -m "v0.13.0" && git push origin
+  v0.13.0`). `publish.yml` publishes every crate in dependency order with the
+  `CARGO_REGISTRY_TOKEN` secret, including the first publication of `id_effect_ai`,
+  `id_effect_admin` and `id_effect_i18n` (crates.io creates them on first publish; no name
+  reservation and no signed tag).
+- Still open from earlier releases: accept ADR 0013 (0.11 D22), register the OpenSSF Best
+  Practices badge (0.11 D16), allow `sudo tc` (netem) on the bench runner (0.12 D16).
+
+Done: ADR 0015 accepted (D16, 2026-10-21, defaults D1–D15 as written); the eager bench pair limit
+0.45 (F66) and keeping the #118 release flow (2026-10-24).
+
 ## 0.12.0 — 2026-10-20 — One call surface
 
 RPC becomes the first-party call surface (ADR 0014): `id_effect_rpc` leaves `labs/` with six

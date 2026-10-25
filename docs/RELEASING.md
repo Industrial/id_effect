@@ -1,6 +1,6 @@
 # Releasing id_effect
 
-A release is a signed `v*` tag. [`.github/workflows/publish.yml`](../.github/workflows/publish.yml)
+A release is a pushed `v*` tag. [`.github/workflows/publish.yml`](../.github/workflows/publish.yml)
 does the rest: it tests, packages, attests, publishes to crates.io, verifies what crates.io
 serves against the attestation and creates the GitHub Release.
 
@@ -14,8 +14,8 @@ serves against the attestation and creates the GitHub Release.
 3. Merge to `main`, then tag the merge commit and push the tag; GitHub Actions does the release:
 
    ```bash
-   git tag -a v0.12.0 -m "v0.12.0"
-   git push origin v0.12.0
+   git tag -a v0.13.0 -m "v0.13.0"
+   git push origin v0.13.0
    ```
 
 To rehearse, run the workflow by hand (Actions → Publish to crates.io → Run workflow) with
@@ -28,7 +28,7 @@ and runs `slsa-verifier` on them; it uploads nothing and creates no release. A r
 
 | Job | What it does |
 |-----|--------------|
-| `verify-versions` | The tag equals every publishable version; the tag is annotated and its signature verified. |
+| `verify-versions` | The tag equals every publishable version. There is no signed-tag check (owner decision 2026-10-24, #118). |
 | `test` | `cargo nextest run --workspace --locked`. |
 | `validate-packaging` | `scripts/validate-crate-packaging.sh`: publish levels, path-only dev-deps, `cargo package` per crate. |
 | `build` | `cargo package --locked` of every crate in `scripts/validate-crate-packaging.sh --print-order` (one invocation, so unpublished siblings resolve locally) and of `lints/id_effect_lints`; one CycloneDX SBOM per crate; the sha256 of each file is the provenance subject list. |
@@ -61,12 +61,16 @@ slsa-verifier verify-artifact id_effect-0.11.0.crate \
 
 The `publish` job publishes with the `CARGO_REGISTRY_TOKEN` secret of the `crates-io`
 environment, as up to 0.10.1; `publish-crate.sh` hands it to cargo with `cargo login` on stdin.
-The token also publishes a crate's first version, so a new crate needs no owner step.
+The token also publishes a crate's first version, so a new crate needs no owner step: the
+0.13.0 crates `id_effect_ai`, `id_effect_admin` and `id_effect_i18n` are created on crates.io by
+their first publish. The owner kept this flow for 0.13.0 on 2026-10-24 (#118); the accepted
+risks are S3 and S6 in [`docs/security/findings.json`](security/findings.json).
 
 ### Owner steps (D15)
 
 Not needed for the token flow above: they belong to the signed-tag and trusted-publishing flow
-of 0.11.0, which 0.12.0 replaced with the 0.10.1 flow.
+of 0.11.0, which 0.12.0 replaced with the 0.10.1 flow and 0.13.0 kept (owner decision
+2026-10-24, #118). They stay here as the record of that flow, not as steps to do.
 
 These need the owner's own crates.io and GitHub logins; the agent does not do them. Record the
 date of each in the r11-sc-publish task evidence.

@@ -21,6 +21,7 @@ pub use bootstrap::{
   HTTP3_WITHOUT_TLS_WARNING, HostConfig, HostTls, bootstrap_env, load_host_config,
   provide_host_config_env,
 };
+pub use bootstrap::{WEBTRANSPORT_KEY, WEBTRANSPORT_WITHOUT_HTTP3_WARNING};
 #[cfg(feature = "tls")]
 pub use connection::serve_tls_listener;
 pub use connection::{

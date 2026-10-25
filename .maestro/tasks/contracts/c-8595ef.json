@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 2,
+  "id": "c-8595ef",
+  "taskId": "tsk-mvf4xf42-qjodki",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T10:52:16.361Z",
+  "lockedAt": "2026-10-19T10:52:16.361Z",
+  "intent": "r12-e12-2-axum-ws-sse",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-09bca3",
+      "text": "web.realtime#1: effect-native WebSocket endpoints (axum ws feature) on typed routes that declare public or guarded access (H8); the socket is a pull-based Stream plus a Sink inside a supervised fiber, so a dropped client interrupts its handler and runs finalizers.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-090809",
+      "text": "web.realtime#2: an SSE helper with event ids and Last-Event-ID resume; web.realtime#8: heartbeats (ping every 20 s, two missed pongs close the socket) and an idle timeout, on the executor clock (TestClock in tests).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-173bac",
+      "text": "web.realtime#6 (connect half) and ADR 0013 R9: authentication on connect through the existing Authenticate layer; the Origin header is checked on upgrade against a configured allowlist, an empty list refuses every browser origin, and dangerous_any_origin() records a posture opt-out; the dev profile allows http://localhost:* by configuration.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-655cc3",
+      "text": "ADR 0013 R4: frame size 64 KiB (close 1009 above it), message rate per socket and sockets per client IP bounded by default (config).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-4ae3a9",
+      "text": "id_effect_axum/Cargo.toml declares, once, the features ws, sse, tls, http3, webtransport and their optional dependencies (tokio-rustls, hyper-util http2, h3 =0.0.8, h3-quinn =0.0.10, h3-webtransport =0.1.2, quinn, id_effect_platform/tls and /quic) for r12-e12-3-tls-h2, r12-e12-3-h3-server and r12-e12-3-webtransport.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-145a8f",
+      "text": "Tests `ws_round_trip_under_test_clock`, `sse_resumes_from_last_event_id`, `heartbeat_closes_dead_connection`, `dropped_socket_interrupts_handler`, `r9_ws_upgrade_from_foreign_origin_refused`, `r4_ws_frame_over_max_closes_1009`, `r4_ws_sockets_per_ip_capped`, `dangerous_any_origin_is_recorded`; examples 090_ws_echo.rs, 091_sse_ticker.rs; book part6/ch33-05-websocket-sse.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-019f2b",
+      "text": "Gate: `cargo nextest run -p id_effect_axum --all-features`; `cargo run -p id_effect_axum --features ws --example 090_ws_echo -- --self-test`; `bash scripts/check-dangerous.sh`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-4cf521",
+      "text": "Owns: `crates/id_effect_axum/Cargo.toml`, `crates/id_effect_axum/src/realtime/{mod.rs,ws.rs,sse.rs,origin.rs}`, `crates/id_effect_axum/tests/{ws.rs,sse.rs}`, `crates/id_effect_axum/examples/{090_ws_echo.rs,091_sse_ticker.rs}`, `crates/id_effect/book/src/part6/ch33-05-websocket-sse.md`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "b2-axum",
+  "lockedBy": "b2-axum",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

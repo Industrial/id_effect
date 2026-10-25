@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "c-1ba8bb",
+  "taskId": "tsk-mvdftqvl-77wo59",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-18T06:21:45.103Z",
+  "lockedAt": "2026-10-18T06:21:45.103Z",
+  "intent": "r11-e8-1-mailbox",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-184026",
+      "text": "M10 (0.11.0.md D17): every Mailbox is bounded (crates/id_effect_process/src/mailbox.rs:41 today says \"Unbounded\"), default 10,000 user messages, configurable per spawn; system messages (exit signals, monitor downs, kill) bypass the bound; a full mailbox makes local sends fail with SendError::Full (SendError becomes #[non_exhaustive], msg.rs:114) and Addr::send_now return false (addr.rs:66-71); remote delivery to a full mailbox (crates/id_effect_node/src/registry.rs:208,220,234) faults the remote call and drops + counts a remote cast.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0f4501",
+      "text": "fault.actors#7 selective receive: ProcessCtx::receive(matcher, timeout) returns the first message the matcher accepts and keeps every skipped message in arrival order for the normal loop; the scan is bounded by the mailbox capacity; a timeout yields a typed error.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-4d1950",
+      "text": "Regression tests `m10_bounded_mailbox_rejects_when_full`, `m10_remote_send_to_full_mailbox_faults`, `m10_system_messages_bypass_bound`; feature tests `selective_receive_keeps_order_of_skipped_messages`, `selective_receive_times_out`. MIGRATION-0.11 section for SendError.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-e90c4e",
+      "text": "Gate: `cargo nextest run -p id_effect_process -p id_effect_node --all-features`; `cargo clippy -p id_effect_process --all-targets --all-features -- -D warnings`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-6217ef",
+      "text": "Owns: `crates/id_effect_process/src/{mailbox.rs,addr.rs,msg.rs,node.rs,lib.rs}`, `crates/id_effect_node/src/registry.rs`, `crates/id_effect_process/tests/{mailbox_bounds.rs,selective_receive.rs}`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "high"
+}

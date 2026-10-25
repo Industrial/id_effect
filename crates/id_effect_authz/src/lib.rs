@@ -61,6 +61,7 @@ mod principal;
 mod rbac;
 mod registry;
 mod resource;
+pub mod tenant;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
@@ -93,6 +94,9 @@ pub use resource::{
   Acl, AclPolicy, Grantee, HasAcl, Owned, OwnerPolicy, SameTenant, TenantScope, TenantScoped,
   Tenanted, acl_permits, owner, same_tenant, tenant_scoped,
 };
+pub use tenant::{TenantEnv, TenantId, TenantResolver, current_tenant, tenant_env};
+#[cfg(feature = "axum")]
+pub use tenant::{TenantLayer, TenantService};
 
 /// Compiles and runs the README's code block as a doctest.
 #[cfg(doctest)]

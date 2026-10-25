@@ -16,7 +16,7 @@ use id_effect_kit::node::{
 };
 use id_effect_kit::platform::tls::{NodeCertificate, load_ca_bundle};
 use id_effect_kit::posture::{Enforcement, Posture, Surface};
-use id_effect_process::{Next, NodeName, Process, ProcessCtx, ProcessNode};
+use id_effect_kit::process::{Next, NodeName, Process, ProcessCtx, ProcessNode};
 use rcgen::{
     BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair,
     KeyUsagePurpose,

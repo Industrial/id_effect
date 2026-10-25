@@ -6,7 +6,9 @@
 //! limits see it).
 //!
 //! Plain TCP serves HTTP/1.1. TLS (feature `tls`, `HostTransport::tls`) serves the protocol
-//! ALPN chose: `h2` → HTTP/2, `http/1.1` or none → HTTP/1.1.
+//! ALPN chose: `h2` → HTTP/2, `http/1.1` or none → HTTP/1.1. HTTP/2 connections enable the
+//! extended `CONNECT` protocol (RFC 8441), so a WebSocket endpoint (feature `ws`) serves HTTP/2
+//! clients on the same route, each socket one stream under the concurrent-stream cap.
 //!
 //! Graceful shutdown is axum's: when the shutdown future completes the listener stops accepting,
 //! every open connection finishes its in-flight requests and closes (HTTP/2 with a `GOAWAY`),
@@ -306,6 +308,10 @@ impl ConnectionLimits {
       .http2()
       .timer(TokioTimer::new())
       .max_concurrent_streams(self.max_concurrent_streams)
+      // RFC 8441 (`SETTINGS_ENABLE_CONNECT_PROTOCOL`): a client may open a WebSocket on a
+      // stream with an extended `CONNECT`. The stream counts against the concurrent-stream cap;
+      // the WebSocket endpoint applies its Origin check and limits as on HTTP/1.1.
+      .enable_connect_protocol()
       // Dead peers: a PING every 20 s, closed when unanswered for 20 s.
       .keep_alive_interval(Some(Duration::from_secs(20)))
       .keep_alive_timeout(Duration::from_secs(20));
@@ -792,7 +798,7 @@ mod tests {
     std::fs::create_dir_all(&dir).unwrap();
     let (chain, key) = (dir.join("chain.pem"), dir.join("key.pem"));
     std::fs::write(&chain, ck.cert.pem()).unwrap();
-    std::fs::write(&key, ck.key_pair.serialize_pem()).unwrap();
+    std::fs::write(&key, ck.signing_key.serialize_pem()).unwrap();
     crate::server::bootstrap::HostTls::Files {
       cert_file: chain,
       key_file: key,

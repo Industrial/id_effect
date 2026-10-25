@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-7068f8",
+  "taskId": "tsk-mvbh3y0u-n3qtug",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T23:01:54.630Z",
+  "lockedAt": "2026-10-16T23:01:54.630Z",
+  "intent": "r09-e3-3-docs",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-e25238",
+      "text": "Chapter + example.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-c303d0",
+      "text": "Gate: book-snippets doctest",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7e6532",
+      "text": "Owns: `book/src/part6/ch28-03-repositories.md`, `crates/id_effect_sql/examples/040_repository.rs`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

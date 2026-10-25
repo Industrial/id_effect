@@ -37,15 +37,19 @@ audit = ["dep:sha2"]
 # tenant / custom global filters) over `query`'s sea-query statements. A feature of its own so
 # `query` stays the plain statement builder.
 repository = ["query"]
+# `outbox`: `repository::outbox`, an entity-hook adapter staging events in the transactional outbox
+# (`id_effect_outbox`, id_effect_messaging's row format) in the write's transaction. No dependency
+# on id_effect_messaging: it depends on this crate, and Cargo rejects the cycle even when optional.
+outbox = ["repository"]
 # MySQL driver (sqlx mysql) and `MySqlSqlClient`, tested against MySQL 8. sqlx-mysql brings `rsa`
 # (RUSTSEC-2023-0071, ignored with its reason in deny.toml). Date-times convert to jiff in
 # `mysql::value` (no sqlx `time`).
 mysql = ["dep:sqlx", "dep:tokio", "sqlx/mysql", "sqlx/tls-rustls-aws-lc-rs"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.12.0" }
+id_effect = { path = "../id_effect", version = "0.13.0" }
 # `#[derive(FromRow)]`, re-exported as `id_effect_sql::FromRow`.
-id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.12.0" }
+id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.13.0" }
 # Value crates are unconditional: `SqlValue` has the same variants under every feature set.
 # jiff: same floor as crates/id_effect.
 jiff = "0.2.23"
@@ -80,6 +84,8 @@ sea-query = { version = "1.0.2", optional = true, default-features = false, feat
 sha2 = { version = "0.10", optional = true, default-features = false }
 
 [dev-dependencies]
+# benches/repository_eager.rs (r13-e-benches): the version the other gate benches use.
+criterion = "0.8.2"
 id_effect_tokio = { path = "../id_effect_tokio" }
 proptest = "1"
 serde = { version = "1", features = ["derive"] }
@@ -89,8 +95,11 @@ trybuild = "1"
 # MySQL 8 container for tests/conformance/mysql.rs (feature `mysql`), and the TLS servers of
 # tests/tls.rs.
 testcontainers = { version = "0.28", default-features = false }
+# tests/repository_relations_pg.rs: its own PostgreSQL container. Path-only and without the `sql`
+# feature, so it does not depend back on this crate.
+id_effect_test = { path = "../id_effect_test" }
 # tests/tls.rs: a throwaway CA and server certificate (aws-lc-rs, as rustls uses).
-rcgen = { version = "0.13", default-features = false, features = [
+rcgen = { version = "0.14", default-features = false, features = [
   "aws_lc_rs",
   "pem",
 ] }
@@ -118,6 +127,12 @@ required-features = ["audit", "pg"]
 [[test]]
 name = "repository"
 required-features = ["repository"]
+
+# Eager loading against N+1 on SQLite in memory: the `orm/*` pair gate (docs/benchmarks/gates.toml).
+[[bench]]
+name = "repository_eager"
+harness = false
+required-features = ["repository", "sqlite"]
 
 # Typed values and rows (`params!`, `SqlRow::get`, `FromRow`) over `TestSqlClient`: no database,
 # no feature.

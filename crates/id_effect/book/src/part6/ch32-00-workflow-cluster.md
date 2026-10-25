@@ -90,8 +90,8 @@ variant, for compensations that need no durability.
 
 ```toml
 [dependencies]
-id_effect_workflow = "0.12"
-id_effect_jobs = "0.12"
+id_effect_workflow = "0.13"
+id_effect_jobs = "0.13"
 ```
 
 Apply `id_effect_workflow::migrator()` and `id_effect_jobs::migrator()`, build a

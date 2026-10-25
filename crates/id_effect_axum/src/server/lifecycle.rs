@@ -176,7 +176,10 @@ pub fn socket_addr(config: &HostConfig) -> Result<SocketAddr, HostError> {
 /// accepting while [`Host::drain`] drains, then stops. Count the requests in it with
 /// [`track_in_flight`](crate::track_in_flight). Connections are bounded by the default
 /// [`ConnectionLimits`], requests in flight by [`HostConfig::load_shed`] (`503` beyond it), and
-/// every request carries `ConnectInfo<SocketAddr>`.
+/// every request carries `ConnectInfo<SocketAddr>`. With TLS certificate files, HTTP/3 is served
+/// on the same port number; with [`HostConfig::webtransport`] (feature `webtransport`) that
+/// endpoint also takes the sessions of the app's `webtransport::endpoint` routes
+/// ([`ServerHandle`] alike).
 #[allow(clippy::result_large_err)]
 pub async fn serve_router(host: Host, app: Router) -> Result<(), HostError> {
   serve_router_with_limits(host, app, ConnectionLimits::default()).await
@@ -216,14 +219,50 @@ pub async fn serve_router_with_limits(
     .map_err(|e| HostError::Serve(e.to_string()))
 }
 
+/// The HTTP/3 endpoint of a host: plain HTTP/3, or HTTP/3 serving WebTransport
+/// ([`HostConfig::webtransport`], feature `webtransport`).
+#[cfg(feature = "http3")]
+enum HostH3 {
+  Plain(crate::server::h3::HostHttp3),
+  #[cfg(feature = "webtransport")]
+  WebTransport(crate::server::webtransport::HostWebTransport),
+}
+
+#[cfg(feature = "http3")]
+impl HostH3 {
+  fn port(&self) -> u16 {
+    match self {
+      Self::Plain(h3) => h3.port(),
+      #[cfg(feature = "webtransport")]
+      Self::WebTransport(h3) => h3.port(),
+    }
+  }
+
+  async fn serve<F>(self, app: Router, limits: ConnectionLimits, shutdown: F) -> std::io::Result<()>
+  where
+    F: Future<Output = ()> + Send + 'static,
+  {
+    match self {
+      Self::Plain(h3) => h3.serve(app, limits, shutdown).await,
+      #[cfg(feature = "webtransport")]
+      Self::WebTransport(h3) => h3.serve(app, limits, shutdown).await,
+    }
+  }
+}
+
 /// The HTTP/3 side of a host: `Some` endpoint when it serves HTTP/3 (feature `http3`).
 #[cfg(feature = "http3")]
-type Http3Side = Option<crate::server::h3::HostHttp3>;
+type Http3Side = Option<HostH3>;
 #[cfg(not(feature = "http3"))]
 type Http3Side = Option<Infallible>;
 
+/// Why a host with [`HostConfig::webtransport`] refuses to start without the feature.
+const WEBTRANSPORT_FEATURE_MISSING: &str = "server.http3.webtransport is set but id_effect_axum \
+  was built without feature `webtransport`";
+
 /// Binds UDP on the TCP port when the host serves HTTP/3 ([`HostConfig::http3`], TLS with an
-/// HTTP/3 identity).
+/// HTTP/3 identity), with WebTransport when [`HostConfig::webtransport`]; refuses WebTransport
+/// without the feature rather than start without it.
 #[allow(clippy::result_large_err)]
 fn bind_http3(
   config: &HostConfig,
@@ -231,12 +270,23 @@ fn bind_http3(
   tcp: SocketAddr,
   limits: &ConnectionLimits,
 ) -> Result<Http3Side, HostError> {
+  if config.webtransport && !cfg!(feature = "webtransport") {
+    return Err(HostError::Serve(WEBTRANSPORT_FEATURE_MISSING.to_owned()));
+  }
+  let bound = |e: std::io::Error| HostError::Serve(format!("bind udp {tcp}: {e}"));
+  #[cfg(feature = "webtransport")]
+  if config.webtransport {
+    return crate::server::webtransport::HostWebTransport::bind(config, transport, tcp, limits)
+      .map(|side| side.map(HostH3::WebTransport))
+      .map_err(bound);
+  }
   #[cfg(feature = "http3")]
   let side = crate::server::h3::HostHttp3::bind(config, transport, tcp, limits)
-    .map_err(|e| HostError::Serve(format!("bind udp {tcp}: {e}")))?;
+    .map(|side| side.map(HostH3::Plain))
+    .map_err(bound)?;
   #[cfg(not(feature = "http3"))]
   let side = {
-    let _ = (config, transport, tcp, limits);
+    let _ = (config, transport, tcp, limits, bound);
     None
   };
   Ok(side)
@@ -613,6 +663,27 @@ mod tests {
     .provide_layer(local(0));
     let exit = crate::EffectExecutor::global().run_effect(program).await;
     assert!(matches!(exit, Exit::Success("stopped")), "{exit:?}");
+  }
+
+  #[tokio::test]
+  async fn webtransport_needs_the_feature() {
+    let config = HostConfig {
+      bind_host: "127.0.0.1".into(),
+      bind_port: 0,
+      ..HostConfig::default()
+    }
+    .with_webtransport();
+    let started = ServerHandle::start(&config, crate::health_router()).await;
+    if cfg!(feature = "webtransport") {
+      // Without TLS there is no HTTP/3 to ride: TCP only, and a posture warning.
+      let handle = started.unwrap();
+      handle.shutdown().await;
+    } else {
+      let Err(HostError::Serve(why)) = started else {
+        panic!("a host with WebTransport but without the feature started");
+      };
+      assert_eq!(why, WEBTRANSPORT_FEATURE_MISSING);
+    }
   }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

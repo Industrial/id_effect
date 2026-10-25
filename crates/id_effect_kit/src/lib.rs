@@ -3,9 +3,9 @@
 //!
 //! ```toml
 //! [dependencies]
-//! id_effect_kit = { version = "0.12", features = ["web", "otel"] }
+//! id_effect_kit = { version = "0.13", features = ["web", "otel"] }
 //! # The derive and `effect!` macros expand to `::id_effect::` paths; keep the core crate too.
-//! id_effect = "0.12"
+//! id_effect = "0.13"
 //! ```
 //!
 //! ## Features
@@ -46,7 +46,15 @@
 //! | `rpc-ws` | `rpc` + every kind over one WebSocket, subscriptions and server streams over SSE | `rpc::transport` |
 //! | `http3` | `web` + TLS on TCP and HTTP/3 on the same port (`HostConfig::http3`, on by default; with `rpc`: RPC over HTTP/3; with `http-client`: the HTTP/3 client) | `axum::server::h3` |
 //! | `webtransport` | `http3` + `rpc-ws` + RPC over WebTransport sessions | `rpc::transport::webtransport` |
-//! | `test` | `id_effect_test` (containers, isolated databases, fixtures, HTTP client); for `[dev-dependencies]` | `test` |
+//! | `process` | `id_effect_process` (local processes: typed mailboxes, links, monitors, supervision trees); turned on by `cluster` | `process` |
+//! | `ai` | `id_effect_ai` (provider-neutral chat and streaming, OpenAI and Anthropic, typed tools, structured output, the bounded tool loop) | `ai` |
+//! | `embeddings` | `ai` + the `Embedder` capability (OpenAI, Ollama, similarity) | `ai::embeddings` |
+//! | `mcp` | `ai` + `web` + `authz` + the MCP server and client (stdio, the guarded Streamable HTTP `McpEndpoint`) | `ai::mcp` |
+//! | `ui` | `web` + id_effect_axum's `ui` (maud views, components, layouts, htmx, forms; with `i18n`: maud messages) | `ui` |
+//! | `i18n` | `id_effect_i18n` (Fluent catalogs, plurals, `CurrentLocale`, translated `Schema` messages; with `web`: the `Accept-Language` layer) | `i18n` |
+//! | `admin` | `ui` + `authz` + `repository` + `id_effect_admin` (the guarded back office; with `audit`: the audit trail; with `i18n`: translated labels) | `admin` |
+//! | `tenancy` | `authz` + `repository` + one tenant for both (`Tenancy`; with `web`: `TenancyLayer`) | `tenancy` |
+//! | `test` | `id_effect_test` (containers, isolated databases, fixtures, HTTP client; with `ai`: `ScriptedModel`; with `admin`: its request helpers); for `[dev-dependencies]` | `test` |
 //! | `full` | all of the above except `test` | |
 //!
 //! Each battery stays reachable whole under its short name (`id_effect_kit::axum::server`, …);
@@ -57,9 +65,9 @@
 //!
 //! ```toml
 //! [dependencies]
-//! id_effect_kit = { version = "0.12", features = ["web", "sql-pg", "migrate"] }
+//! id_effect_kit = { version = "0.13", features = ["web", "sql-pg", "migrate"] }
 //! [dev-dependencies]
-//! id_effect_kit = { version = "0.12", features = ["test"] }
+//! id_effect_kit = { version = "0.13", features = ["test"] }
 //! ```
 //!
 //! [`graph::LayerGraph`] registers an app's layers by name and renders their dependency edges
@@ -68,8 +76,8 @@
 //! [`posture::Posture`] is the startup security check of ADR 0013 (R10): named probes (console
 //! guarded, docs closed, mesh encrypted, redaction, SSRF guard, CSRF, load shedding, no
 //! memory-only security state, every procedure declared, realtime origins configured, 0-RTT off,
-//! QUIC Retry on, HTTP/3 only with TLS, no `id-effect dev` certificate in prod, no unaccepted
-//! opt-out) over what the app states and what the
+//! QUIC Retry on, HTTP/3 only with TLS, no `id-effect dev` certificate in prod, admin guarded,
+//! MCP guarded, prompts not logged, tenant not from a header, no unaccepted opt-out) over what the app states and what the
 //! posture registry recorded. The `prod` profile refuses to start on a failed probe; `dev` and
 //! `test` report and start.
 //!
@@ -186,6 +194,38 @@ pub use id_effect_workflow as workflow;
 /// keep that crate as a dependency next to the kit.
 #[cfg(feature = "rpc")]
 pub use id_effect_rpc as rpc;
+
+/// Local processes ([`id_effect_process`]): `Process`, `ProcessNode`, typed mailboxes, links,
+/// monitors and supervision trees, the layer the mesh distributes; feature `process` (turned on
+/// by `cluster`).
+#[cfg(feature = "process")]
+pub use id_effect_process as process;
+
+/// AI ([`id_effect_ai`]): provider-neutral chat and streaming (OpenAI, Anthropic), typed tools,
+/// structured output and the bounded tool loop; feature `ai` (`ai::embeddings` with
+/// `embeddings`, `ai::mcp` with `mcp`).
+#[cfg(feature = "ai")]
+pub use id_effect_ai as ai;
+
+/// Server-rendered UI (`id_effect_axum::ui`): maud views, components, layouts, htmx helpers and
+/// forms bound to `Schema` errors; feature `ui`. Its `html!` expands to `extern crate maud;`,
+/// so a project that writes markup keeps `maud` as a dependency too.
+#[cfg(feature = "ui")]
+pub use id_effect_axum::ui;
+
+/// Internationalization ([`id_effect_i18n`]): Fluent catalogs, CLDR plurals, `CurrentLocale`,
+/// translated `Schema` messages (with `web`, the `Accept-Language` layer; with `ui`, maud
+/// rendering); feature `i18n`.
+#[cfg(feature = "i18n")]
+pub use id_effect_i18n as i18n;
+
+/// The admin back office ([`id_effect_admin`]): `AdminSite`, mounted only behind a guard, each
+/// entity × action its own permission; feature `admin`.
+#[cfg(feature = "admin")]
+pub use id_effect_admin as admin;
+
+#[cfg(feature = "tenancy")]
+pub mod tenancy;
 
 /// Test support ([`id_effect_test`]): containers, isolated databases, fixtures, the in-process
 /// HTTP client; feature `test`, meant for `[dev-dependencies]`.

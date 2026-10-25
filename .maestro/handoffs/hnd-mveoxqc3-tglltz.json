@@ -1,0 +1,9 @@
+{
+  "id": "hnd-mveoxqc3-tglltz",
+  "task_id": "tsk-mveoxlor-3b9mxh",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-19T03:24:33.555Z",
+  "agent_id": "r11-e2-6-bench-ci",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.11/r11-e2-6-bench-ci.md",
+  "to_agent": "cli"
+}

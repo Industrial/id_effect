@@ -1,0 +1,9 @@
+[package]
+name = "shop"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+id_effect_kit = { version = "0.13.0", features = ["admin", "web"] }
+id_effect = "0.13.0"
+id_effect_sql = { version = "0.13.0", features = ["repository"] }

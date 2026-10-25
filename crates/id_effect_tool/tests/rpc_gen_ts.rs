@@ -647,3 +647,84 @@ fn generated_client_batches_same_microtask_calls() {
 fn generated_client_resumes_after_reconnect() {
   deno_test("tests/ts/resume.test.ts");
 }
+
+/// The shop on the host entry point (F43: `ServerHandle` with `server.http3.webtransport` on):
+/// HTTPS and HTTP/3 on one loopback port, WebTransport at `/rpc/wt`, with the 13-day ECDSA
+/// P-256 development certificate of `id-effect dev` issued into `dir`.
+fn serve_webtransport(
+  dir: &Path,
+) -> (
+  tokio::runtime::Runtime,
+  id_effect_axum::ServerHandle,
+  id_effect_tool::dev::cert::DevCertificate,
+) {
+  let cert = id_effect_tool::dev::cert::ensure(dir, std::time::SystemTime::now()).unwrap();
+  let rt = tokio::runtime::Builder::new_multi_thread()
+    .worker_threads(2)
+    .enable_all()
+    .build()
+    .unwrap();
+  let handle = rt.block_on(async {
+    let mut group = RpcGroup::new();
+    ShopService::register(&mut group, Store::default());
+    ShopV2Service::register(&mut group, Store::default());
+    let server = RpcServer::new(group);
+    let route = rpc::transport::webtransport::endpoint(
+      server.clone(),
+      rpc::transport::webtransport::RpcWebTransportConfig::default(),
+    );
+    let app = server
+      .router()
+      .route(route)
+      .with_state(DynEnv::new())
+      .into_axum();
+    let config = id_effect_axum::HostConfig {
+      bind_host: "127.0.0.1".into(),
+      bind_port: 0,
+      ..id_effect_axum::HostConfig::default()
+    }
+    .with_tls(id_effect_axum::server::HostTls::files(
+      &cert.cert, &cert.key,
+    ))
+    .with_webtransport();
+    id_effect_axum::ServerHandle::start(&config, app)
+      .await
+      .unwrap()
+  });
+  (rt, handle, cert)
+}
+
+/// F45: the generated client's streams over WebTransport under the pinned Deno (`deno` from
+/// devenv, 2.7.x; CI's `denoland/setup-deno` pin), whose `WebTransport` needs `--unstable-net`.
+/// The server is the host entry point with WebTransport on; the client pins the certificate with
+/// `serverCertificateHashes`, and `--cert` makes Deno's `fetch` trust the development CA for
+/// the HTTPS queries.
+#[test]
+fn generated_client_webtransport_round_trip_deno() {
+  let Some(deno) = deno() else { return };
+  let dir = tempfile::tempdir().unwrap();
+  let (_rt, handle, cert) = serve_webtransport(dir.path());
+  let addr = handle.local_addr();
+  let url = format!("https://127.0.0.1:{}/rpc", addr.port());
+  let session = format!("{url}/wt");
+  let net = format!("--allow-net=127.0.0.1:{}", addr.port());
+  let ca = format!("--cert={}", cert.ca.display());
+  let hash = cert.sha256_hex();
+  run_deno(
+    &deno,
+    &[
+      "test",
+      "--no-config",
+      "--no-remote",
+      "--no-prompt",
+      "--unstable-net",
+      &ca,
+      &net,
+      "tests/ts/webtransport.test.ts",
+      "--",
+      &url,
+      &session,
+      &hash,
+    ],
+  );
+}

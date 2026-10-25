@@ -1,5 +1,5 @@
 name: Publish to crates.io
-# Trigger: push a semver tag, e.g.  git tag v0.12.0 && git push origin v0.12.0
+# Trigger: push a semver tag, e.g.  git tag -a v0.13.0 -m v0.13.0 && git push origin v0.13.0
 # The tag must match the version in every publishable Cargo.toml. docs/RELEASING.md has the flow.
 #
 #   verify-versions  versions match the tag

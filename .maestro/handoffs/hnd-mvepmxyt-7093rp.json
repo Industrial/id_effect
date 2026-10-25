@@ -1,0 +1,9 @@
+{
+  "id": "hnd-mvepmxyt-7093rp",
+  "task_id": "tsk-mvepmv97-fe5jxj",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-19T03:44:09.845Z",
+  "agent_id": "r11-e8-2-statem",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.11/r11-e8-2-statem.md",
+  "to_agent": "cli"
+}

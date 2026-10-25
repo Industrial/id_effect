@@ -95,7 +95,11 @@ owner's email or other personal data to external services.
   hook on the root fiber; wire request spans with `RequestIdLayer::span_hook(telemetry.span_hook())`
   in `r10-w3-kit-template` (service-pg-otel variant). `server_layer_with_readiness` is only
   exported from `server::lifecycle`.
-- Bugs, id_effect_node (pre-existing, found by r10-e7-1-cron; fix before exit):
+- FIXED (c75f9f0d, 9a9a498a, 3e9cec38): the singleton/lease bugs below, figment error redaction,
+  derive(Schema) hygiene + single unsupported-field error. New from those fixes: derive(Schema)
+  uses `field_ident.to_string()` as the wire key, so `r#type` is sent as "r#type" (should be
+  "type"); `Profiles::load_for` TOML parse errors don't name the file.
+- Bugs, id_effect_node (pre-existing, found by r10-e7-1-cron; fixed in c75f9f0d):
   `ClusterSingleton::resign` clears `local_pid` only when release succeeds, so after a lost lease
   (`HeldBy`) it keeps the old pid; `PgAdvisoryLease::try_acquire` treats its in-memory `held` map
   as ownership without pinging, so after its session died the same holder "re-acquires". Also:
@@ -109,6 +113,19 @@ owner's email or other personal data to external services.
 - D1 checkpoint applied 2026-10-17 (dx.lint target 0.10.0 -> 0.11.0; planned 0.10.0 E 73.8 #2,
   RT 76.8 #1, red 12). TODO: add its PLAN-OF-PLANS §11 row once the other session's uncommitted
   PLAN-OF-PLANS edit (L14: 1.0 postponed, 0.13 / 0.14 inserted) is committed - do not mix them.
+- KPIs (from 07f02ce9): K6 budget 120 s is a proposal - owner to confirm at exit. r10-w3-kpis:
+  run idle without CARGO_BUILD_JOBS (it caps K6), re-measure K1 idle, K3 with the job (emit_json
+  K3 strings still say "none at 0.9"), update moon.yml:205 dx-kpis description (still "0.9",
+  K1/K3/K4/K5 only). PLAN-OF-PLANS:336 names docs/scorecard/results/<ver>.dx.json but the script
+  writes docs/benchmarks/dx-kpis-<release>.json. Accounts: moon.yml of id_effect_auth / mail
+  lack migrations/** and templates/** inputs; ch30-03 is not doctested.
+- Hardening batch (A: logger process-wide redaction + console CSRF + csrf_exempt_bearer + OTel
+  layers; B: InstrumentedSqlClient forwarding, SqlClient for Arc/Box, Inbox::handler, storage
+  Bytes, retry_now for failed; C: CI pg coverage (H1) + container port-race retry, 940b229c).
+  Leftover: a stray Maestro evidence record evd-1792271996399-ca0655 against a nonexistent task
+  tsk-000000 (placeholder, created by mistake; cannot be deleted with the tools). Logger minimum
+  level / annotations / spans are still per-thread (functional gap, 0.11). The console's
+  __Host-csrf cookie is Secure (needs HTTPS or localhost).
 - Index hygiene: something (likely a Maestro command) staged ~330 files incl. other agents' WIP
   during wave 1. Pathspec commits are unaffected; never run a bare `git commit`.
 - Fiber registry bench numbers came from a loaded machine: re-measure idle in `r10-w3-kpis`.

@@ -1,0 +1,154 @@
+[package]
+name = "id_effect_ai"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Provider-neutral LLM chat, streaming and test doubles for id_effect, secure by default"
+repository.workspace = true
+readme = "README.md"
+keywords = ["effect", "ai", "llm", "streaming", "mcp"]
+categories = ["api-bindings", "asynchronous"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+# Every 0.13 feature and optional dependency is declared here once (r13-e9-1-promote), so the
+# wave 2–3 leaves (tools, embeddings, MCP) add modules behind them without editing this file.
+[features]
+default = []
+# Chat vendors (ai.llm #1): OpenAI Chat Completions and the Anthropic Messages API.
+openai = []
+anthropic = []
+# Ollama (embeddings, r13-e9-1-embeddings; its chat speaks the OpenAI wire format).
+ollama = []
+# Cursor Cloud Agents (D6: non-default, kept with its fixture tests).
+cursor = []
+# Typed tool calling, structured output and the bounded agent loop (r13-e9-1-tools): tool
+# parameters are exported as JSON Schema through id_effect's `schema-serde`.
+tools = ["id_effect/schema-serde"]
+# The `Embedder` capability (r13-e9-1-embeddings).
+embeddings = []
+# MCP server and client over stdio (r13-e9-1-mcp); tools come from the `tools` feature.
+mcp = ["tools", "dep:tokio", "dep:rand"]
+# MCP Streamable HTTP: an id_effect_axum route behind a typed guard (r13-e9-1-mcp).
+mcp-http = [
+  "mcp",
+  "dep:axum",
+  "dep:futures-util",
+  "dep:http",
+  "dep:id_effect_authz",
+  "dep:id_effect_axum",
+  "id_effect_authz?/axum",
+  "id_effect_axum?/sse",
+  # `realtime::origin::OriginPolicy`, the Origin allowlist the endpoint checks (R9).
+  "id_effect_axum?/ws",
+]
+# `testing::ScriptedModel`: deterministic replies, tool calls and streams for tests (D8).
+test-util = []
+full = [
+  "openai",
+  "anthropic",
+  "ollama",
+  "cursor",
+  "tools",
+  "embeddings",
+  "mcp",
+  "mcp-http",
+]
+
+[dependencies]
+id_effect = { path = "../id_effect", version = "0.13.0" }
+id_effect_config = { path = "../id_effect_config", version = "0.13.0" }
+# Every HTTP call goes through the platform client: SSRF policy, timeouts, body caps (ADR 0013).
+id_effect_platform = { path = "../id_effect_platform", version = "0.13.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+base64 = "0.22"
+# Optional dependencies of the features above (the pins id_effect_rpc already uses).
+axum = { version = "0.8.9", optional = true, features = ["json"] }
+futures-util = { version = "=0.3.34", optional = true, default-features = false, features = [
+  "std",
+] }
+http = { version = "1", optional = true }
+id_effect_authz = { path = "../id_effect_authz", version = "0.13.0", optional = true }
+id_effect_axum = { path = "../id_effect_axum", version = "0.13.0", optional = true }
+# 128-bit random identifiers the MCP server mints (ADR 0015 §7).
+rand = { version = "0.9", optional = true }
+# The MCP stdio transport.
+tokio = { version = "1.50.0", optional = true, features = [
+  "io-std",
+  "io-util",
+  "rt",
+  "sync",
+  "time",
+] }
+
+[dev-dependencies]
+# Path-only dev-dependencies (cargo publish resolves path+version dev-deps on crates.io).
+# Self dev-dependency, so the integration tests see `testing::ScriptedModel`.
+id_effect_ai = { path = ".", features = ["test-util"] }
+id_effect_cli = { path = "../id_effect_cli", features = ["clap"] }
+id_effect_tokio = { path = "../id_effect_tokio" }
+tokio = { version = "1.50.0", features = [
+  "macros",
+  "rt-multi-thread",
+  "sync",
+  "time",
+] }
+wiremock = "0.6"
+clap = { version = "4", features = ["derive"] }
+# The MCP interop peer in tests, both directions (D7: dev-dependency only, exact pin; ADR 0015 §7).
+rmcp = { version = "=3.4.0", default-features = false, features = [
+  "client",
+  "macros",
+  "reqwest",
+  "server",
+  "transport-io",
+  "transport-streamable-http-client-reqwest",
+  "transport-streamable-http-server",
+] }
+
+[[example]]
+name = "mcp_server"
+path = "examples/mcp_server.rs"
+required-features = ["mcp", "mcp-http"]
+
+[[example]]
+name = "mcp_client"
+path = "examples/mcp_client.rs"
+required-features = ["mcp", "mcp-http"]
+
+[[example]]
+name = "005_scripted_model"
+path = "examples/005_scripted_model.rs"
+required-features = ["test-util"]
+
+[[example]]
+name = "010_openai_once"
+path = "examples/010_openai_once.rs"
+required-features = ["openai"]
+
+[[example]]
+name = "011_anthropic_once"
+path = "examples/011_anthropic_once.rs"
+required-features = ["anthropic"]
+
+[[example]]
+name = "ask_once"
+path = "examples/ask_once.rs"
+required-features = ["openai", "anthropic"]
+
+[[example]]
+name = "020_cursor_agent_once"
+path = "examples/020_cursor_agent_once.rs"
+required-features = ["cursor"]
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Amendment 9 (0.13): moved out of
+# labs/ by r13-t0-skeletons, promoted to `integration` by r13-e9-1-promote and to `platform` by
+# r13-w6-pipeline: the Pipeline reference app depends on it (kit features `ai`, `embeddings`,
+# `mcp`) and runs it in CI (job `reference-pipeline`; ADR 0012 rule 4, check P).
+tier = "platform"

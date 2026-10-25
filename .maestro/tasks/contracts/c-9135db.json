@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "id": "c-9135db",
+  "taskId": "tsk-mvepzuqe-owgjul",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:54:14.774Z",
+  "lockedAt": "2026-10-19T03:54:14.774Z",
+  "intent": "r11-e8-3-k8s-discovery",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-f29018",
+      "text": "dist.membership#4 (0.11.0.md D18): KubernetesDiscovery under feature kubernetes lists the ready addresses of a headless service through the in-cluster EndpointSlice API over rustls, with the service-account token and CA from /var/run/secrets/kubernetes.io/serviceaccount and the namespace from its file; no kube-rs; implements the Discovery trait (crates/id_effect_node/src/discovery.rs:14) beside StaticDiscovery (:21) and DnsDiscovery (:43) and composes with ChainedDiscovery (:69).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-258507",
+      "text": "Tests against an in-process fake API server: `kubernetes_discovery_lists_ready_endpoints`, `kubernetes_discovery_skips_not_ready`, `kubernetes_discovery_uses_service_account_token`, `kubernetes_discovery_rejects_untrusted_api_cert`; book section in part7/ch38-00-distribution.md.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-9d13e0",
+      "text": "Gate: `cargo nextest run -p id_effect_node --features kubernetes --test discovery_kubernetes`; `cargo nextest run -p id_effect_node --all-features`",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-2b7303",
+      "text": "Owns: `crates/id_effect_node/src/discovery.rs`, `crates/id_effect_node/tests/discovery_kubernetes.rs`, `crates/id_effect/book/src/part7/ch38-00-distribution.md` (section)",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-e8-3-k8s-discovery",
+  "lockedBy": "r11-e8-3-k8s-discovery",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

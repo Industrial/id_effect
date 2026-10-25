@@ -129,6 +129,13 @@ pub mod sqlite;
 pub mod routing;
 pub use routing::{ReadRouting, RoutingSqlClient};
 
+// One database per tenant: `TenantRouter`, a bounded, fail-closed tenant → client map (E5.5).
+pub mod tenant_routing;
+pub use tenant_routing::{
+  DEFAULT_MAX_TENANT_POOLS, TenantClientFactory, TenantConnector, TenantRouter, TenantSqlClient,
+  tenant_database, tenant_database_from,
+};
+
 // Hash-chained audit log appended in the caller's transaction (E5.5, feature `audit`).
 #[cfg(feature = "audit")]
 pub mod audit;
@@ -142,6 +149,10 @@ pub mod repository;
 pub use id_effect_proc_macro::Entity;
 #[cfg(feature = "repository")]
 pub use repository::{BoundRepository, CurrentTenant, Entity, Page, Repository, SqlExecutor};
+#[cfg(feature = "repository")]
+pub use repository::{EagerRepository, FieldMeta, Loaded, Relation, RelationMeta};
+#[cfg(feature = "repository")]
+pub use repository::{Keyset, PageCursor, Paged, SortOrder};
 
 // MySQL driver (E3.1b, feature `mysql`).
 #[cfg(feature = "mysql")]

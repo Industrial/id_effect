@@ -36,7 +36,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
-use super::anybox::{AnyEnv, downcast_env, downcast_env_arc, erase_exit, unerase_exit};
+use super::anybox::{AnyEnv, downcast_env, downcast_env_arc, erase_exit, hnil_env, unerase_exit};
 use super::bind::BindHold;
 use super::cause::{
   cause_from_panic, from_exit, map_fail_mut, map_fail_once, split_failure, to_exit,
@@ -619,6 +619,32 @@ impl<A: 'static, R: Send + Sync + 'static> LocalEffect<A, Never, R> {
   /// An infallible effect under any error type.
   pub fn widen<E: 'static>(self) -> LocalEffect<A, E, R> {
     self.map_err(|n| match n {})
+  }
+}
+
+impl<A: 'static, E: 'static> LocalEffect<A, E, HNil> {
+  /// Runs this environment-free local effect under any environment `R` (the `!Send` twin of
+  /// [`Effect::any_env`]): the result needs `R` in the type only and never reads it.
+  ///
+  /// A ready effect is returned as is (no allocation); an erased program gets one `Provide`
+  /// frame whose inner environment is the shared static `HNil` (no allocation per run).
+  ///
+  /// ```
+  /// use id_effect::{DynEnv, Exit, LocalEffect};
+  ///
+  /// let lifted: LocalEffect<u32, String, DynEnv> =
+  ///   LocalEffect::<u32, String>::sync(|| 7).any_env();
+  /// let exit = lifted.provide_env(DynEnv::new()).block_on();
+  /// assert!(matches!(exit, Exit::Success(7)));
+  /// ```
+  pub fn any_env<R: Send + Sync + 'static>(self) -> LocalEffect<A, E, R> {
+    match self.node {
+      LNode::Ready(r) => LocalEffect::ready(r),
+      LNode::Op(i, _) => LocalEffect::from_instr(LInstr::Provide(
+        Box::new(i),
+        Box::new(|_: &AnyEnv| hnil_env().clone()),
+      )),
+    }
   }
 }
 

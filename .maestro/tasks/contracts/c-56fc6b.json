@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "id": "c-56fc6b",
+  "taskId": "tsk-mveovo0t-2qcudv",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-19T03:23:00.050Z",
+  "lockedAt": "2026-10-19T03:23:00.050Z",
+  "intent": "r11-sec-secrets",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-8fe2cf",
+      "text": "M13: Secret<T: Zeroize> zeroizes its value on drop (crates/id_effect_config/src/secret.rs:16-48 has no Drop today); SecretString and SecretBytes aliases; id_effect_auth Password (crates/id_effect_auth/src/password.rs:110-119) zeroizes on drop. MIGRATION-0.11 section (the new bound).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-14f298",
+      "text": "L3: equality on Secret<String> and Secret<Vec<u8>> uses subtle::ConstantTimeEq; the generic PartialEq impl (secret.rs:55-58) is removed (MIGRATION-0.11).",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0f4c47",
+      "text": "M14: Session (crates/id_effect_auth/src/session/mod.rs:105, derived Debug) gets a manual Debug that prints the id prefix, user id and timestamps and only the attribute keys, never values.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-0e9dc1",
+      "text": "Regression tests `m13_secret_is_zeroized_on_drop` (a recording Zeroize type), `m13_password_is_zeroized_on_drop`, `m14_session_debug_hides_attr_values_and_tokens`, `l3_secret_eq_uses_constant_time_compare`.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-f45b36",
+      "text": "Gate: `cargo nextest run -p id_effect_config -p id_effect_auth --all-features`; `cargo deny check` (zeroize, subtle)",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3d18a3",
+      "text": "Owns: `crates/id_effect_config/{src/secret.rs,Cargo.toml,tests/secret.rs}`, `crates/id_effect_auth/{src/password.rs,src/session/mod.rs,Cargo.toml}`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "r11-sec-secrets",
+  "lockedBy": "r11-sec-secrets",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}

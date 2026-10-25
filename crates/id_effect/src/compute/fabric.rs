@@ -174,15 +174,15 @@ mod tests {
     let started = std::time::Instant::now();
     let _ = fabric.tick();
     let elapsed = started.elapsed();
-    // Windows' first system sample takes ~350 ms (CI, 0.12); moving it off the calling thread
-    // is a 0.13 follow-up. Elsewhere the first tick stays under 50 ms.
-    let bound = if cfg!(windows) {
-      Duration::from_secs(1)
-    } else {
-      Duration::from_millis(50)
-    };
-    assert!(elapsed < bound, "first tick blocked for {elapsed:?}");
+    // The priming sample (~350 ms on Windows) runs off the calling thread, everywhere.
+    assert!(
+      elapsed < Duration::from_millis(50),
+      "first tick blocked for {elapsed:?}"
+    );
     assert!(fabric.telemetry().is_initialized());
+    let primed = crate::compute::telemetry::wait_primed(fabric.telemetry());
+    assert!(primed.mem_pct > 0.0);
+    assert!(fabric.tick().mem_pct > 0.0);
   }
 
   #[test]

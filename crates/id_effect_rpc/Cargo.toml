@@ -22,15 +22,21 @@ name = "id_effect_rpc"
 default = ["client"]
 # `client`: `RpcClient` over id_effect_platform's `HttpClientService` (batching adds same-tick
 # batches in `client::http`).
-client = ["dep:id_effect_platform"]
+client = ["dep:id_effect_platform", "dep:id_effect_config"]
 # `postcard`: the binary codec negotiated per connection (D13; r12-e12-1-postcard).
 postcard = ["dep:postcard"]
 # `ws`: every kind over WebSocket frames, server (`transport::ws`, on id_effect_axum's realtime
-# layer) and client (`client::ws`, tokio-tungstenite at the pin axum's realtime layer uses).
+# layer) and client (`client::ws`, tokio-tungstenite at the pin axum's realtime layer uses). The
+# client dials `wss://` over rustls with the platform verifier (F40, r13-f-ws-client-tls):
+# tokio-tungstenite's `__rustls-tls` takes our `ClientConfig` and brings no root store of its
+# own (its `rustls-tls-*-roots` features would add a second root source).
 ws = [
   "id_effect_axum/ws",
   "dep:tokio-tungstenite",
   "dep:tungstenite",
+  "tokio-tungstenite/__rustls-tls",
+  "dep:rustls",
+  "dep:rustls-platform-verifier",
   "futures-util/sink",
 ]
 # `sse`: subscriptions and server streams over server-sent events (`transport::sse`, `client::sse`).
@@ -63,12 +69,12 @@ futures-util = { version = "=0.3.34", default-features = false, features = [
 ] }
 http = "1"
 http-body-util = "0.1"
-id_effect = { path = "../id_effect", version = "0.12.0", features = [
+id_effect = { path = "../id_effect", version = "0.13.0", features = [
   "schema-serde",
 ] }
-id_effect_axum = { path = "../id_effect_axum", version = "0.12.0" }
+id_effect_axum = { path = "../id_effect_axum", version = "0.13.0" }
 # `#[rpc::service]` (re-exported as `id_effect_rpc::service`).
-id_effect_rpc_macros = { path = "../id_effect_rpc_macros", version = "0.12.0" }
+id_effect_rpc_macros = { path = "../id_effect_rpc_macros", version = "0.13.0" }
 # 128-bit resume session ids (`wire::SessionId`); already in id_effect_axum's tree.
 rand = "0.9"
 serde = { version = "1", features = ["derive"] }
@@ -82,11 +88,14 @@ tokio = { version = "1", features = ["rt", "sync", "time"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 # Optional dependencies of the features above.
-id_effect_authz = { path = "../id_effect_authz", version = "0.12.0", optional = true }
-id_effect_events = { path = "../id_effect_events", version = "0.12.0", optional = true }
-id_effect_node = { path = "../id_effect_node", version = "0.12.0", optional = true }
-id_effect_process = { path = "../id_effect_process", version = "0.12.0", optional = true }
-id_effect_platform = { path = "../id_effect_platform", version = "0.12.0", optional = true }
+id_effect_authz = { path = "../id_effect_authz", version = "0.13.0", optional = true }
+# `Secret` bearer tokens of `HttpTransport::with_bearer` (feature `client`); already in
+# id_effect_axum's tree.
+id_effect_config = { path = "../id_effect_config", version = "0.13.0", optional = true, default-features = false }
+id_effect_events = { path = "../id_effect_events", version = "0.13.0", optional = true }
+id_effect_node = { path = "../id_effect_node", version = "0.13.0", optional = true }
+id_effect_process = { path = "../id_effect_process", version = "0.13.0", optional = true }
+id_effect_platform = { path = "../id_effect_platform", version = "0.13.0", optional = true }
 postcard = { version = "=1.1.3", optional = true, default-features = false, features = [
   "use-std",
 ] }
@@ -97,15 +106,24 @@ tokio-tungstenite = { version = "=0.29.0", optional = true, default-features = f
 tungstenite = { version = "=0.29.0", optional = true, default-features = false, features = [
   "handshake",
 ] }
+# `wss://` of `client::ws` (feature `ws`): the rustls and the platform verifier
+# id_effect_platform and reqwest already use (one copy of each in `cargo tree -d`; the rustls
+# floor carries the security fixes named in id_effect_platform's manifest).
+rustls = { version = "0.23.46", optional = true }
+rustls-platform-verifier = { version = "=0.7.1", optional = true }
 
 [dev-dependencies]
 # Path-only dev-dependencies (cargo publish resolves path+version dev-deps on crates.io).
 id_effect_events = { path = "../id_effect_events", features = ["pg"] }
+# `tls`: tests/ws_h2.rs serves the RPC WebSocket over TLS HTTP/2 (RFC 8441, r13-f-ext-connect).
+id_effect_axum = { path = "../id_effect_axum", features = ["tls"] }
 # tests/channels_three_nodes.rs: three nodes on QUIC with mutual TLS (r12-e12-2-channels).
 id_effect_node = { path = "../id_effect_node", features = ["quic"] }
 id_effect_opentelemetry = { path = "../id_effect_opentelemetry" }
+# `tls`: tests/ws_client_tls.rs serves `wss://` with a throwaway certificate.
 id_effect_platform = { path = "../id_effect_platform", features = [
   "test-util",
+  "tls",
 ] }
 id_effect_test = { path = "../id_effect_test", features = ["sql"] }
 id_effect_tokio = { path = "../id_effect_tokio" }

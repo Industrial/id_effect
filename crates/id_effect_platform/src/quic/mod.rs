@@ -31,7 +31,9 @@
 //! - Address validation (QUIC Retry) is on: a client proves its address before the server
 //!   spends a handshake on it. [`QuicEndpointConfig::dangerous_no_retry`] turns it off and is
 //!   recorded in the posture registry.
-//! - 0-RTT is off (the server never accepts early data; there is no opt-in).
+//! - 0-RTT is off: the server accepts no early data until a route takes it with
+//!   [`Route::dangerous_allow_early_data`] (recorded; never the mesh), and connections of the
+//!   other routes that send early data are closed with [`CLOSE_EARLY_DATA_REFUSED`] (F25).
 //! - [`QuicLimits`] bound streams per connection, the idle timeout, the UDP payload, the
 //!   receive windows, pending handshakes and the handshake time; datagrams are off. Raising any
 //!   limit above its default needs [`QuicEndpointConfig::dangerous_raise_limits`] (recorded).
@@ -86,6 +88,8 @@ pub use router::{
   AlpnRoute, AlpnRouter, ClientAuthMode, ClientCertPolicy, Refusal, Route,
   has_verified_client_chain, negotiated_alpn,
 };
+// r13-f-h3-settings: early data per route (F25).
+pub use router::{CLOSE_EARLY_DATA_REFUSED, DANGEROUS_ALLOW_EARLY_DATA, Handshake};
 
 /// ALPN of HTTP/3 (RFC 9114).
 pub const ALPN_H3: &[u8] = b"h3";

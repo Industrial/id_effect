@@ -1,0 +1,66 @@
+{
+	"schemaVersion": 2,
+	"id": "c-13f98e",
+	"taskId": "tsk-mva026ub-1u86pn",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-15T20:37:09.561Z",
+	"lockedAt": "2026-10-15T20:37:09.561Z",
+	"intent": "http-showcase DDD rewrite",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-21218a",
+			"text": "src/ is layer-first: domain/, application/, infrastructure/, interface/http/, bootstrap/; lib.rs and every mod.rs only declare modules and re-export.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-b7a162",
+			"text": "One construct per file: every struct, enum, trait, type alias, free function (use case, handler, layer constructor) has its own file; a type's inherent impls live with it; unit tests stay in a #[cfg(test)] block of the file they test; test doubles live in infrastructure/doubles/ under cfg(test).",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-0b9246",
+			"text": "Domain: TodoId and Title are brands/value objects; Todo holds a Title (not String) and owns its behaviour (rename, complete, reopen, apply(TodoChanges)); domain types derive EffectData where they qualify; no axum/sql types in domain/.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-40f8db",
+			"text": "Errors are typed per use case (Or<..> of domain errors and the store error); HTTP status mapping lives only in interface/http; SqlError mapping lives only in infrastructure/postgres.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-f02a1f",
+			"text": "Request bodies decode through #[derive(Schema)], reporting every bad field in one 422; the wire format and every status code of the README tables are unchanged.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-2d97b1",
+			"text": "Store selection is layer composition (in-memory vs scoped Postgres provider that migrates on acquire), not a hand-written match; id_effect_resilience CircuitBreaker wraps store calls alongside the Schedule retry + timeout; id_effect_logger emits a structured startup line (bind address, store kind).",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-8947b4",
+			"text": "Public API kept as re-exports used by tests/http_pg.rs and the README, or the callers updated in the same change.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-278f98",
+			"text": "Gates green: cargo clippy -p http_showcase --all-targets --all-features -- -D warnings; #![deny(missing_docs)]; cargo nextest run -p http_showcase with DATABASE_URL against devenv Postgres and ID_EFFECT_REQUIRE_PG=1; cargo test --doc -p http_showcase.",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"riskClass": "medium"
+}

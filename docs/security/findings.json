@@ -2,7 +2,7 @@
 	"schema": "id_effect findings v1",
 	"review": "2026-10-18",
 	"source": "THREAT-MODEL.md (Findings register, boundary tables B1-B8, Accepted risks, Residual risks); .maestro/specs/releases/0.11.0.md (Findings -> leaves)",
-	"updated": "2026-10-19",
+	"updated": "2026-10-25",
 	"revision": "834d9359",
 	"legend": {
 		"severity": "H = high, M = medium, L = low (the review's ranking); S = supply-chain and process findings, which the review did not rank",
@@ -631,14 +631,13 @@
 			"boundary": "B8",
 			"rule": "-",
 			"title": "Long-lived CARGO_REGISTRY_TOKEN.",
-			"status": "closed",
-			"release": "0.11.0",
-			"leaves": ["r11-sc-publish"],
-			"commits": ["edd5e5b8"],
+			"status": "accepted",
+			"release": "0.13.0",
+			"leaves": ["r11-sc-publish", "r13-w8-kpis"],
+			"commits": ["edd5e5b8", "3e9104ed"],
 			"tests": ["s3_no_registry_token_in_workflows"],
 			"gates": [".github/workflows/publish.yml", "scripts/security-kpis.sh"],
-			"owner_steps_open": "D15: trusted publisher on every crate, then delete the CARGO_REGISTRY_TOKEN secret (docs/RELEASING.md \"Owner steps\" 3 and 7)",
-			"note": "Closed in the workflow (crates.io trusted publishing). s3_no_registry_token_in_workflows is the check in scripts/security-kpis.sh."
+			"note": "owner decision 2026-10-24 (#118): keep main's GitHub Actions release flow, in which a pushed v* tag publishes with the CARGO_REGISTRY_TOKEN secret of the crates-io environment (handed to cargo on stdin by .github/scripts/publish-crate.sh) and new crates are created by their first publish. Trusted publishing (0.11.0, edd5e5b8) was replaced by #118 (3e9104ed). s3_no_registry_token_in_workflows in scripts/security-kpis.sh passes as accepted while this record stands."
 		},
 		{
 			"id": "S4",
@@ -684,16 +683,13 @@
 			"boundary": "B8",
 			"rule": "-",
 			"title": "DCO unenforced; unsigned commits and tags.",
-			"status": "closed",
-			"release": "0.11.0",
-			"leaves": ["r11-sc-dco-docs", "r11-sc-publish"],
-			"commits": ["d6c22982", "edd5e5b8"],
-			"tests": [
-				"s6_dco_check_rejects_unsigned_off_commit",
-				"s6_release_requires_signed_tag"
-			],
+			"status": "accepted",
+			"release": "0.13.0",
+			"leaves": ["r11-sc-dco-docs", "r11-sc-publish", "r13-w8-kpis"],
+			"commits": ["d6c22982", "edd5e5b8", "3e9104ed"],
+			"tests": ["s6_dco_check_rejects_unsigned_off_commit"],
 			"gates": [".github/workflows/dco.yml", ".github/workflows/publish.yml"],
-			"owner_steps_open": "D15: \"require signed commits\" on protected branches (2026-10-19: no signature rule on main, no ruleset on release/*)"
+			"note": "owner decision 2026-10-24 (#118): keep main's GitHub Actions release flow, with no signed-tag check (a pushed v* tag publishes); #118 (3e9104ed) removed the 0.11.0 check s6_release_requires_signed_tag. DCO sign-off stays enforced on every pull request (s6_dco_check_rejects_unsigned_off_commit); \"require signed commits\" on protected branches stays an optional owner setting (CONTRIBUTING.md)."
 		},
 		{
 			"id": "S7",

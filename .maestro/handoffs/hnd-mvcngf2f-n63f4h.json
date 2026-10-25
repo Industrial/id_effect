@@ -1,0 +1,8 @@
+{
+  "id": "hnd-mvcngf2f-n63f4h",
+  "task_id": "tsk-mvcjv38n-qmey5i",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-17T17:07:33.831Z",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/releases/0.10/r10-e4-3-tracing.md",
+  "to_agent": "cli"
+}

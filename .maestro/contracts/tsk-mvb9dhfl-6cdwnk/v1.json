@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 2,
+	"id": "c-d26a99",
+	"taskId": "tsk-mvb9dhfl-6cdwnk",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T17:45:38.735Z",
+	"lockedAt": "2026-10-16T17:45:38.735Z",
+	"intent": "0.8 W3-E4 — snippet dependencies",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-0d050d",
+			"text": "examples/book-snippets/Cargo.toml gains the crates the remaining dependency-blocked fences need: tokio (macros, rt, rt-multi-thread, signal), clap (derive), proptest, reqwest (json, no default TLS if it compiles), tower (util) + id_effect_axum feature tower, id_effect_logger, opentelemetry + opentelemetry_sdk (versions matching id_effect_opentelemetry), cli_minimal (path).",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-a707b4",
+			"text": "The hidden tokio stand-in in part1/ch01-01 and the hidden clap stand-in in cookbook/ch40-03 are replaced by the real crates; fences ignored only for \"needs dep\" reasons compile (no_run where they would block or need a network/collector); remaining ignores keep a reason (labs crates, type-definition copies, quick-reference list).",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-4f4154",
+			"text": "cargo test --doc -p book_snippets green; moon run :book green; report the new compiled/total count.",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"riskClass": "low"
+}

@@ -1,0 +1,14 @@
+{
+	"id": "msg_fixture_extraction",
+	"type": "message",
+	"role": "assistant",
+	"model": "claude-sonnet-4-20250514",
+	"content": [
+		{
+			"type": "text",
+			"text": "```json\n{\"title\": \"Rechnung R-42\", \"summary\": \"Eine Rechnung der Globex GmbH.\", \"language\": \"de\", \"organization\": \"Globex GmbH\"}\n```"
+		}
+	],
+	"stop_reason": "end_turn",
+	"usage": { "input_tokens": 118, "output_tokens": 44 }
+}

@@ -345,6 +345,15 @@ impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EventLog<E
         )
       })
   }
+
+  /// `MAX(position)` in one query (the unique index on `position` answers it).
+  fn head(&self) -> Effect<u64, EventStoreError> {
+    self
+      .client
+      .query(HEAD_SQL, &[])
+      .map_err(EventStoreError::from)
+      .flat_map(|rows| ready(first_u64(&rows, "head")))
+  }
 }
 
 #[cfg(test)]
@@ -454,6 +463,27 @@ mod tests {
   }
 
   #[test]
+  fn head_is_one_query_for_the_greatest_position() {
+    let test = connected();
+    let journal = SqlEventJournal::<Ping>::new(Arc::new(test.clone()));
+    assert_eq!(run_sync(journal.head()).expect("empty head"), 0);
+    test.script_query(HEAD_SQL, vec![SqlRow::from_pairs([("head", 12i64)])]);
+    assert_eq!(run_sync(journal.head()).expect("head"), 12);
+    let queries = test.recorded_queries();
+    assert_eq!(queries.len(), 2);
+    assert!(
+      queries
+        .iter()
+        .all(|(sql, params)| sql == HEAD_SQL && params.is_empty())
+    );
+    test.script_query(HEAD_SQL, vec![SqlRow::from_pairs([("head", -1i64)])]);
+    assert!(matches!(
+      run_sync(journal.head()).expect_err("negative"),
+      EventStoreError::Io(_)
+    ));
+  }
+
+  #[test]
   fn stale_expected_version_rolls_back() {
     let test = connected();
     test.script_query(LATEST_SQL, vec![SqlRow::from_pairs([("latest", 3i64)])]);
@@ -515,5 +545,223 @@ mod tests {
     ));
     assert!(to_version(-1).is_err());
     assert_eq!(latest_from(&[]).expect("empty"), 0);
+  }
+
+  // A test client over `TestSqlClient` whose transactions fail the journal insert with scripted
+  // errors (a unique violation is what a concurrent writer causes), and whose `LATEST_SQL`
+  // outside a transaction (read after the rollback) answers a scripted version.
+
+  use id_effect_sql::{SQLSTATE_UNIQUE_VIOLATION, SqlTransaction, SqlValue};
+  use std::collections::VecDeque;
+  use std::sync::Mutex;
+
+  type Failures = Arc<Mutex<VecDeque<SqlError>>>;
+
+  struct Racy {
+    inner: TestSqlClient,
+    insert_failures: Failures,
+    latest_after: Option<i64>,
+  }
+
+  impl Racy {
+    fn new(failures: impl IntoIterator<Item = SqlError>, latest_after: Option<i64>) -> Self {
+      Self {
+        inner: connected(),
+        insert_failures: Arc::new(Mutex::new(failures.into_iter().collect())),
+        latest_after,
+      }
+    }
+  }
+
+  fn unique_violation() -> SqlError {
+    SqlError::QueryFailed {
+      sql: INSERT_SQL.into(),
+      message: format!("duplicate key (SQLSTATE {SQLSTATE_UNIQUE_VIOLATION})"),
+    }
+  }
+
+  impl SqlClient for Racy {
+    fn connect(&self) -> Effect<(), SqlError> {
+      self.inner.connect()
+    }
+
+    fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
+      match self.latest_after {
+        Some(latest) if sql == LATEST_SQL => {
+          succeed(vec![SqlRow::from_pairs([("latest", latest)])])
+        }
+        _ => self.inner.query(sql, params),
+      }
+    }
+
+    fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError> {
+      self.inner.execute(sql, params)
+    }
+
+    fn begin(&self) -> Effect<Arc<dyn SqlTransaction>, SqlError> {
+      let failures = Arc::clone(&self.insert_failures);
+      self.inner.begin().map(move |tx| {
+        Arc::new(RacyTx {
+          tx,
+          insert_failures: failures,
+        }) as Arc<dyn SqlTransaction>
+      })
+    }
+  }
+
+  struct RacyTx {
+    tx: Arc<dyn SqlTransaction>,
+    insert_failures: Failures,
+  }
+
+  impl SqlTransaction for RacyTx {
+    fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
+      self.tx.query(sql, params)
+    }
+
+    fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError> {
+      let scripted = (sql == INSERT_SQL)
+        .then(|| self.insert_failures.lock().expect("failures").pop_front())
+        .flatten();
+      match scripted {
+        Some(e) => fail(e),
+        None => self.tx.execute(sql, params),
+      }
+    }
+
+    fn commit(&self) -> Effect<(), SqlError> {
+      self.tx.commit()
+    }
+
+    fn rollback(&self) -> Effect<(), SqlError> {
+      self.tx.rollback()
+    }
+  }
+
+  #[test]
+  fn append_that_lost_the_position_to_another_stream_is_retried() {
+    let racy = Racy::new([unique_violation()], Some(0));
+    let test = racy.inner.clone();
+    let journal = SqlEventJournal::<Ping>::new(Arc::new(racy));
+    let stored = run_sync(journal.append("s", &[Ping { n: 1 }])).expect("retried");
+    assert_eq!(stored[0].version, 1);
+    assert_eq!((test.commits(), test.rollbacks()), (1, 1));
+    assert_eq!(test.recorded_executes().len(), 1);
+  }
+
+  #[test]
+  fn append_raced_on_its_own_stream_is_a_version_conflict() {
+    let racy = Racy::new([unique_violation()], Some(4));
+    let test = racy.inner.clone();
+    let journal = SqlEventJournal::<Ping>::new(Arc::new(racy));
+    let err = run_sync(journal.append_expected("s", 0, &[Ping { n: 1 }])).expect_err("raced");
+    assert_eq!(
+      err,
+      EventStoreError::VersionConflict {
+        stream_id: "s".into(),
+        expected: 0,
+        actual: 4,
+      }
+    );
+    assert_eq!((test.commits(), test.rollbacks()), (0, 1));
+  }
+
+  #[test]
+  fn append_gives_up_after_position_retries() {
+    let failures = (0..=POSITION_RETRIES).map(|_| unique_violation());
+    let racy = Racy::new(failures, Some(0));
+    let test = racy.inner.clone();
+    let journal = SqlEventJournal::<Ping>::new(Arc::new(racy));
+    let err = run_sync(journal.append("s", &[Ping { n: 1 }])).expect_err("exhausted");
+    assert_eq!(
+      err,
+      EventStoreError::Io(format!(
+        "append to `s` lost the global position {} times",
+        POSITION_RETRIES + 1
+      ))
+    );
+    assert_eq!(test.rollbacks(), POSITION_RETRIES as usize + 1);
+    assert_eq!(test.commits(), 0);
+  }
+
+  #[test]
+  fn append_reports_other_insert_failures_as_sql_errors() {
+    let boom = SqlError::QueryFailed {
+      sql: INSERT_SQL.into(),
+      message: "disk full".into(),
+    };
+    let racy = Racy::new([boom.clone()], None);
+    let test = racy.inner.clone();
+    let journal = SqlEventJournal::<Ping>::new(Arc::new(racy));
+    let err = run_sync(journal.append("s", &[Ping { n: 1 }])).expect_err("insert");
+    assert_eq!(err, EventStoreError::Sql(boom));
+    assert_eq!((test.commits(), test.rollbacks()), (0, 1));
+  }
+
+  #[test]
+  fn append_rejects_bad_journal_state_inside_the_transaction() {
+    // A negative stream version, a negative head and a head whose next position exceeds i64
+    // each fail the append and roll it back.
+    let cases = [
+      (LATEST_SQL, SqlRow::from_pairs([("latest", -1i64)])),
+      (HEAD_SQL, SqlRow::from_pairs([("head", -1i64)])),
+      (HEAD_SQL, SqlRow::from_pairs([("head", i64::MAX)])),
+    ];
+    for (i, (sql, row)) in cases.into_iter().enumerate() {
+      let test = connected();
+      test.script_query(sql, vec![row]);
+      let journal = SqlEventJournal::<Ping>::new(Arc::new(test.clone()));
+      let err = run_sync(journal.append("s", &[Ping { n: 1 }])).expect_err("bad state");
+      assert!(matches!(err, EventStoreError::Io(_)), "case {i}: {err:?}");
+      assert_eq!((test.commits(), test.rollbacks()), (0, 1), "case {i}");
+      assert!(test.recorded_executes().is_empty(), "case {i}");
+    }
+  }
+
+  #[test]
+  fn append_fails_on_an_unserializable_event_and_a_failed_query() {
+    #[derive(Clone, Debug, serde::Deserialize)]
+    struct Unserializable;
+
+    impl Serialize for Unserializable {
+      fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+        Err(serde::ser::Error::custom("no json"))
+      }
+    }
+
+    let test = connected();
+    let journal = SqlEventJournal::<Unserializable>::new(Arc::new(test.clone()));
+    let err = run_sync(journal.append("s", &[Unserializable])).expect_err("serde");
+    assert!(matches!(err, EventStoreError::Serde(_)));
+    assert_eq!(test.commits() + test.rollbacks(), 0);
+
+    test.fail_queries("down");
+    let journal = SqlEventJournal::<Ping>::new(Arc::new(test.clone()));
+    let err = run_sync(journal.append("s", &[Ping { n: 1 }])).expect_err("query");
+    assert!(matches!(err, EventStoreError::Sql(_)));
+    assert_eq!(test.rollbacks(), 1);
+  }
+
+  #[test]
+  fn read_all_reports_failed_queries_and_undecodable_rows() {
+    let test = connected();
+    test.script_query(
+      READ_ALL_SQL,
+      vec![SqlRow::from_pairs([("position", SqlValue::I64(1))])],
+    );
+    let journal = SqlEventJournal::<Ping>::new(Arc::new(test.clone()));
+    assert!(matches!(
+      run_sync(journal.read_all(0, usize::MAX)).expect_err("missing columns"),
+      EventStoreError::Sql(_)
+    ));
+    test.fail_queries("down");
+    assert!(matches!(
+      run_sync(journal.read_all(0, 1)).expect_err("down"),
+      EventStoreError::Sql(_)
+    ));
+    assert!(matches!(
+      run_sync(journal.head()).expect_err("down"),
+      EventStoreError::Sql(_)
+    ));
   }
 }

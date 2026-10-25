@@ -25,6 +25,10 @@ web = [
   "id_effect_authz?/axum",
   "id_effect_redis?/rate-limit",
   "id_effect_mail?/preview",
+  "id_effect_i18n?/axum",
+  "dep:axum",
+  "dep:tower-layer",
+  "dep:tower-service",
 ]
 # OpenAPI 3.1 from the typed routes, `/openapi.json` and `/docs` (id_effect_axum `openapi`).
 openapi = ["web", "id_effect_axum/openapi"]
@@ -45,13 +49,14 @@ migrate = ["sql", "id_effect_sql/migrate", "id_effect_test?/migrate"]
 # Entities and repositories: `#[derive(Entity)]`, `Repository<T>` over sea-query statements.
 repository = ["sql", "id_effect_sql/repository"]
 # Hash-chained audit log appended in the caller's transaction (`kit::sql::audit`; PostgreSQL).
-audit = ["sql", "id_effect_sql/audit"]
+audit = ["sql", "id_effect_sql/audit", "id_effect_admin?/audit"]
 # OpenTelemetry export: `kit::otel` (id_effect_opentelemetry, OTLP on, config loading on).
 otel = ["dep:id_effect_opentelemetry", "id_effect_opentelemetry/config"]
 # Distribution: `kit::node` (id_effect_node) with its TLS TCP transport (`TcpTransport::tls`, mutual
 # TLS from PEM files, feature `tls-tcp`) and the certificates of `kit::platform::tls`; with `web`,
 # also id_effect_axum's `cluster` module.
 cluster = [
+  "process",
   "dep:id_effect_node",
   "id_effect_node/tls-tcp",
   "id_effect_axum?/cluster",
@@ -89,6 +94,10 @@ webtransport = [
   "id_effect_axum/webtransport",
   "id_effect_rpc/webtransport",
 ]
+# Local processes (ADR 0009): `kit::process` (id_effect_process: `Process`, `ProcessNode`,
+# typed mailboxes, links, monitors, supervision trees), the layer the mesh distributes. Turned on
+# by `cluster`.
+process = ["dep:id_effect_process"]
 # The QUIC mesh transport (`kit::node::transport::quic`, always mutual TLS) next to TLS TCP, on
 # top of `cluster`.
 mesh-mtls = ["cluster", "id_effect_node/quic"]
@@ -162,6 +171,37 @@ auth-accounts = [
   "id_effect_auth/accounts",
   "id_effect_mail/auth",
 ]
+# AI (ADR 0015 D6, D9): `kit::ai` (id_effect_ai: provider-neutral chat and streaming with the
+# OpenAI and Anthropic vendors, typed tools, structured output, the bounded tool loop) and its
+# prelude items. Prompts are not logged unless `AiConfig::dangerous_log_prompts` is taken.
+ai = [
+  "dep:id_effect_ai",
+  "id_effect_ai/openai",
+  "id_effect_ai/anthropic",
+  "id_effect_ai/tools",
+]
+# The `Embedder` capability (`kit::ai::embeddings`: OpenAI and Ollama, similarity helpers), on top
+# of `ai`.
+embeddings = ["ai", "id_effect_ai/embeddings", "id_effect_ai/ollama"]
+# MCP server and client (`kit::ai::mcp`: stdio and the guarded Streamable HTTP endpoint
+# `McpEndpoint`), on top of `ai` and `web`.
+mcp = ["ai", "web", "authz", "id_effect_ai/mcp", "id_effect_ai/mcp-http"]
+# Server-rendered UI: `kit::ui` (id_effect_axum's `ui`: maud views, components, layouts, htmx
+# helpers, forms bound to `Schema` errors), on top of `web`. With `i18n`, translated messages
+# render as maud markup.
+ui = ["web", "id_effect_axum/ui", "id_effect_i18n?/maud"]
+# Internationalization: `kit::i18n` (id_effect_i18n: Fluent catalogs, CLDR plurals,
+# `CurrentLocale`, translated `Schema` messages). With `web`, the `Accept-Language` layer; with
+# `ui`, maud rendering; with `admin`, translated admin labels.
+i18n = ["dep:id_effect_i18n", "id_effect_i18n/schema", "id_effect_admin?/i18n"]
+# The admin back office: `kit::admin` (id_effect_admin: `AdminSite`, mounted only behind a guard,
+# per-entity permissions), on top of `ui`, `authz` and `repository`. With `audit`, admin changes
+# go to the hash-chained audit log; with `i18n`, translated labels.
+admin = ["ui", "authz", "repository", "dep:id_effect_admin"]
+# Tenancy (ADR 0015 D10): `kit::tenancy`, one `TenantResolver` feeding both the authorization
+# tenant (`TenantId`, a `TenantScope`) and the SQL tenant (`CurrentTenant`), on top of `authz`
+# and `repository`; with `web`, the `TenancyLayer` that sets both per request.
+tenancy = ["authz", "repository"]
 # Test support: `kit::test` (id_effect_test: containers, isolated PostgreSQL databases,
 # fixtures, the in-process HTTP client, OpenAPI contract checks). For tests: enable it on a
 # `[dev-dependencies]` entry of id_effect_kit, not in `[dependencies]`. Not part of `full`.
@@ -172,6 +212,8 @@ test = [
   "id_effect_test/http",
   "id_effect_test/contract",
   "id_effect_test/fault",
+  "id_effect_ai?/test-util",
+  "id_effect_admin?/test-util",
 ]
 # Every battery a program ships with; builds without Docker or system libraries. `test` is
 # left out: it belongs to dev-dependencies.
@@ -211,36 +253,53 @@ full = [
   "rpc-ws",
   "http3",
   "webtransport",
+  "process",
+  "ai",
+  "embeddings",
+  "mcp",
+  "ui",
+  "i18n",
+  "admin",
+  "tenancy",
 ]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.12.0" }
-id_effect_cli = { path = "../id_effect_cli", version = "0.12.0", default-features = false }
-id_effect_config = { path = "../id_effect_config", version = "0.12.0" }
-id_effect_axum = { path = "../id_effect_axum", version = "0.12.0", optional = true }
-id_effect_sql = { path = "../id_effect_sql", version = "0.12.0", optional = true }
-id_effect_opentelemetry = { path = "../id_effect_opentelemetry", version = "0.12.0", optional = true }
-id_effect_node = { path = "../id_effect_node", version = "0.12.0", optional = true }
-id_effect_auth = { path = "../id_effect_auth", version = "0.12.0", optional = true }
-id_effect_authz = { path = "../id_effect_authz", version = "0.12.0", optional = true }
-id_effect_redis = { path = "../id_effect_redis", version = "0.12.0", optional = true }
-id_effect_test = { path = "../id_effect_test", version = "0.12.0", optional = true }
-id_effect_jobs = { path = "../id_effect_jobs", version = "0.12.0", optional = true }
-id_effect_messaging = { path = "../id_effect_messaging", version = "0.12.0", optional = true }
-id_effect_mail = { path = "../id_effect_mail", version = "0.12.0", optional = true }
-id_effect_console = { path = "../id_effect_console", version = "0.12.0", optional = true }
-id_effect_storage = { path = "../id_effect_storage", version = "0.12.0", optional = true }
-id_effect_events = { path = "../id_effect_events", version = "0.12.0", optional = true }
-id_effect_platform = { path = "../id_effect_platform", version = "0.12.0", optional = true }
-id_effect_logger = { path = "../id_effect_logger", version = "0.12.0", optional = true }
-id_effect_workflow = { path = "../id_effect_workflow", version = "0.12.0", optional = true }
-id_effect_rpc = { path = "../id_effect_rpc", version = "0.12.0", optional = true, default-features = false }
+id_effect = { path = "../id_effect", version = "0.13.0" }
+id_effect_cli = { path = "../id_effect_cli", version = "0.13.0", default-features = false }
+id_effect_config = { path = "../id_effect_config", version = "0.13.0" }
+id_effect_axum = { path = "../id_effect_axum", version = "0.13.0", optional = true }
+id_effect_sql = { path = "../id_effect_sql", version = "0.13.0", optional = true }
+id_effect_opentelemetry = { path = "../id_effect_opentelemetry", version = "0.13.0", optional = true }
+id_effect_node = { path = "../id_effect_node", version = "0.13.0", optional = true }
+id_effect_auth = { path = "../id_effect_auth", version = "0.13.0", optional = true }
+id_effect_authz = { path = "../id_effect_authz", version = "0.13.0", optional = true }
+id_effect_redis = { path = "../id_effect_redis", version = "0.13.0", optional = true }
+id_effect_test = { path = "../id_effect_test", version = "0.13.0", optional = true }
+id_effect_jobs = { path = "../id_effect_jobs", version = "0.13.0", optional = true }
+id_effect_messaging = { path = "../id_effect_messaging", version = "0.13.0", optional = true }
+id_effect_mail = { path = "../id_effect_mail", version = "0.13.0", optional = true }
+id_effect_console = { path = "../id_effect_console", version = "0.13.0", optional = true }
+id_effect_storage = { path = "../id_effect_storage", version = "0.13.0", optional = true }
+id_effect_events = { path = "../id_effect_events", version = "0.13.0", optional = true }
+id_effect_platform = { path = "../id_effect_platform", version = "0.13.0", optional = true }
+id_effect_logger = { path = "../id_effect_logger", version = "0.13.0", optional = true }
+id_effect_workflow = { path = "../id_effect_workflow", version = "0.13.0", optional = true }
+id_effect_rpc = { path = "../id_effect_rpc", version = "0.13.0", optional = true, default-features = false }
+id_effect_process = { path = "../id_effect_process", version = "0.13.0", optional = true }
+id_effect_ai = { path = "../id_effect_ai", version = "0.13.0", optional = true }
+id_effect_i18n = { path = "../id_effect_i18n", version = "0.13.0", optional = true }
+id_effect_admin = { path = "../id_effect_admin", version = "0.13.0", optional = true }
+# `tenancy` with `web`: the `TenancyLayer` and the `Tenancy` extractor (the versions
+# id_effect_axum already uses).
+axum = { version = "0.8.9", optional = true, default-features = false }
+tower-layer = { version = "0.3.3", optional = true }
+tower-service = { version = "0.3.3", optional = true }
 
 [dev-dependencies]
 axum = "0.8.9"
 # tests/posture.rs: a certificate carrying the `id-effect dev` organization (C13), with the
 # same rcgen the platform issues certificates with.
-rcgen = { version = "=0.13.2", default-features = false, features = [
+rcgen = { version = "=0.14.10", default-features = false, features = [
   "aws_lc_rs",
   "pem",
 ] }

@@ -1,0 +1,430 @@
+# Migrating to id_effect 0.13
+
+This guide is the "if you used X, now do Y" companion to the `0.13.0` section of
+[CHANGELOG.md](../CHANGELOG.md). It assumes you are on 0.12. If you are on 0.11, apply
+[MIGRATION-0.12.md](MIGRATION-0.12.md) first.
+
+Every intentional public-API break in 0.13 is listed here, each with its shim (rule L9) or the
+reason it has none. A break reported by `cargo semver-checks` (the `semver` CI job, baseline the
+last 0.12.x release) that is not listed below is a bug. The deprecation rule and semver policy are
+in [STABILITY.md](STABILITY.md).
+
+0.13 is the "Breadth" release: AI (`id_effect_ai`, promoted from labs), an admin back office
+(`id_effect_admin`), server-rendered UI (`id_effect_axum` feature `ui`), i18n (`id_effect_i18n`),
+ORM relations, keyset pagination and lifecycle hooks, and tenancy helpers.
+
+Each section below names the leaf that made the change. The list was checked against
+`cargo semver-checks` 0.51 run per published crate with `--baseline-rev v0.12.0` at the release
+exit (r13-t0-migration-guide). Changes the tool does not flag (behaviour changes, additive items
+worth knowing, the labs crate) are listed as well, so this list is a superset of its report.
+
+Crates new in 0.13 (`id_effect_admin`, `id_effect_i18n`) have no 0.12 API to break;
+`id_effect_ai` was a labs crate without a semver promise, and its changes are listed anyway.
+
+The report at the exit, and where each finding is answered:
+
+| Crate | `cargo semver-checks` finding | Section |
+|---|---|---|
+| `id_effect_axum` | `constructible_struct_adds_field` `HostConfig.webtransport` | Axum: `HostConfig::webtransport` |
+| `id_effect_axum` | `auto_trait_impl_removed` `WsConfig` (`UnwindSafe`, `RefUnwindSafe`) | Axum: `WsConfig` control-frame cap |
+| `id_effect_rpc` | `enum_variant_added` `MeshRpcError::PeerSilent` | RPC / node: session pump |
+| `id_effect_rpc` | `auto_trait_impl_removed` `WsClient`, `WsCall` | RPC: `WsClient` over `wss://` |
+| `id_effect_tool` | `constructible_struct_adds_field` `CheckArgs.allow_retired` | Tool: `rpc::check::CheckArgs::allow_retired` |
+| `id_effect_ai` (against `labs/id_effect_ai` at v0.12.0) | `struct_pub_field_missing` `ChatResponse.tokens_used`, `AiConfig.anthropic_max_tokens`; `constructible_struct_adds_field` / `_adds_private_field` `AiConfig`; `struct_marked_non_exhaustive` `ChatMessage`, `ChatRequest`, `ChatResponse`; `enum_marked_non_exhaustive` `AiError`; `enum_variant_added` `ChatRole::Tool`; `derive_trait_impl_removed` `ChatResponse: Eq`; `auto_trait_impl_removed` `AiConfig` | AI: the two tables |
+
+Every other published crate reports "no semver update required"; the proc-macro crates
+(`id_effect_proc_macro`, `id_effect_rpc_macros`) have no library API the tool can check, and
+`id_effect_admin` / `id_effect_i18n` have no baseline.
+
+## SQL: `id_effect_sql::repository` split into a module tree
+
+Owners: r13-e3-3-relations, r13-e3-3-pagination, r13-e3-3-hooks. `src/repository.rs` became
+`src/repository/{mod,relations,page,hooks,outbox}.rs`. Every 0.12 path is the same module
+(`id_effect_sql::repository`), and every 0.12 item is still defined in it or re-exported from it
+with `pub use`, so nothing to change:
+
+```rust,ignore
+// 0.12 and 0.13 alike
+use id_effect_sql::repository::{BoundRepository, CurrentTenant, Entity, Page, Repository, SqlExecutor};
+use id_effect_sql::{Entity, Repository};
+```
+
+The new items live in submodules and are re-exported from `repository` (and the most used ones
+from the crate root, feature `repository`): `Relation`, `RelationKind`, `RelationMeta`,
+`FieldMeta`, `Loaded`, `EagerRepository`, `BoundEagerRepository`, `MAX_EAGER_DEPTH`
+(`repository::relations`); `Keyset`, `PageCursor`, `PageCursorError`, `PageLimits`, `Paged`,
+`SortOrder` (`repository::page`); `EntityHooks`, `HookContext`, `HookedRepository`,
+`BoundHookedRepository` (`repository::hooks`); `repository::outbox` (feature `outbox`). The only
+source break is a name clash: code that glob-imports `id_effect_sql::*` or
+`id_effect_sql::repository::*` and also glob-imports a type with one of these names (for example
+its own `Relation` or `SortOrder`) gets an ambiguity error where it uses the name. Import the one
+you mean by name:
+
+```rust,ignore
+// before (0.12): compiled, the glob had no `SortOrder`
+use id_effect_sql::*;
+use my_app::query::*; // defines SortOrder
+// after (0.13)
+use id_effect_sql::*;
+use my_app::query::SortOrder; // a named import wins over the glob
+```
+
+## SQL: `Entity` gains associated items
+
+Owner: r13-e3-3-relations (r13-e3-3-pagination and r13-e3-3-hooks add no trait item). `Entity`
+gains three associated constants, each with a default, so a hand-written `impl Entity` compiles
+unchanged:
+
+| New item | Default | Filled by `#[derive(Entity)]` from |
+|---|---|---|
+| `const LABEL: &'static str` | `Self::NAME` | `#[entity(label = "..")]`, else the type name in snake case |
+| `const FIELDS: &'static [FieldMeta]` | `&[]` | each field: column, type, nullable, `#[entity(editable)]`, `#[entity(label = "..")]`, relation |
+| `const RELATIONS: &'static [RelationMeta]` | `&[]` | `#[entity(belongs_to(..))]`, `has_many(..)`, `many_to_many(.., through = "..")` |
+
+```rust,ignore
+// before (0.12) and after (0.13): unchanged
+impl Entity for Order {
+  type Id = i64;
+  const NAME: &'static str = "Order";
+  const TABLE: &'static str = "orders";
+  const COLUMNS: &'static [&'static str] = &["id", "customer", "total"];
+  const ID: &'static str = "id";
+  fn id(&self) -> i64 { self.id }
+  fn values(&self) -> Vec<(&'static str, SqlValue)> { /* as in 0.12 */ }
+}
+// optional in 0.13, for the admin and other generic tools: add to the same impl
+  const LABEL: &'static str = "order";
+  const FIELDS: &'static [FieldMeta] = &[/* one FieldMeta per column */];
+```
+
+Two edge cases: a type with an inherent `const FIELDS` / `LABEL` / `RELATIONS` still compiles
+(the inherent item wins for `Order::FIELDS`), but generic code reading `T::FIELDS` sees the
+trait's default; move the constant into the `impl Entity` block. And `id_effect_admin` (and
+`id-effect generate admin`) builds its forms and columns from `FIELDS`, so an entity for the admin
+uses the derive or fills `FIELDS` itself.
+
+## Events: `EventLog::head`
+
+Owner: r13-f-eventlog-head. `EventLog<E>` gains `fn head(&self) -> Effect<u64, EventStoreError>`
+(`where E: Send + 'static`), the position of the last event appended (`0` for an empty log). It
+is a provided method, so an `EventLog` implemented outside the workspace compiles unchanged; the
+default reads the whole log (`read_all(0, usize::MAX)`) and takes the greatest position, so a
+store that knows its head should override it:
+
+```rust,ignore
+// before (0.12): read every event to find the position to start "from now"
+let start = log
+  .read_all(0, usize::MAX)
+  .map(|events| events.iter().map(|e| e.position).max().unwrap_or(0));
+// after (0.13)
+let start = log.head();
+// optional override in a custom store (one query instead of a scan)
+impl EventLog<MyEvent> for MyStore {
+  fn read_all(&self, after: u64, limit: usize) -> Effect<Vec<RecordedEvent<MyEvent>>, EventStoreError> {
+    /* as in 0.12 */
+  }
+  fn head(&self) -> Effect<u64, EventStoreError> {
+    /* SELECT MAX(position) */
+  }
+}
+```
+
+`MemoryEventStore` and `SqlEventJournal` already override it. In `id_effect_rpc` (feature
+`events`), `EventSubscription::from_now()` is new; a subscription without it still starts after
+`starting_after` (default `0`), as in 0.12.
+
+## Core: live streams deliver partial chunks
+
+Owner: r13-f-stream-chunking. No signature change; one behaviour change. A pull from
+`Stream::unfold_effect` (and everything built on it: RPC client and server streams,
+subscriptions, queues) now returns the elements that are ready, at least one and at most the
+requested chunk size, instead of waiting until 64 (`DEFAULT_CHUNK_SIZE`) have arrived. Pure and
+bounded sources still yield full chunks. Code that assumed every chunk but the last is full
+should not; group explicitly if it needs fixed-size batches:
+
+```rust,ignore
+// before (0.12): relied on run_for_each seeing chunks of 64 from a live source
+// after (0.13): ask for the batch size you need
+stream.grouped(64).run_for_each(|batch| handle(batch))
+```
+
+## Axum: `WsConfig` control-frame cap
+
+Owner: r13-f-ws-credit. No signature break besides the auto traits below
+(`WsConfig::control_messages_per_second`, `WsConfig::classify`, `WsFrameClass` and
+`DEFAULT_CONTROL_RATE_FACTOR` are new); one behaviour
+change: inbound WebSocket pings and pongs, which 0.12 did not count at all, now count against
+the control cap (default 4 × `messages_per_second`, i.e. 400 per second) and a client above it is
+closed with 1008. Raise it with `.control_messages_per_second(n)` if a client legitimately pings
+faster. The rpc WebSocket transport installs `transport::ws::classify_frame`, so `credit` and
+`ping` frames no longer count against the data rate; a custom `WsConfig` passed to the rpc
+transport gets the same classifier.
+
+One auto-trait break (`cargo semver-checks`: `auto_trait_impl_removed`): `WsConfig` now holds the
+classifier hook (a shared `dyn Fn`), so it is no longer `UnwindSafe` / `RefUnwindSafe`. Only code
+that moves a `WsConfig` into `std::panic::catch_unwind` (or requires those bounds on it) notices;
+wrap it:
+
+```rust,ignore
+// before (0.12)
+let result = std::panic::catch_unwind(|| build(&config));
+// after (0.13)
+let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| build(&config)));
+```
+
+## Axum: WebSockets over HTTP/2 (RFC 8441)
+
+Owner: r13-f-ext-connect. No signature break; two behaviour changes on the TLS host. Its HTTP/2
+connections now advertise `SETTINGS_ENABLE_CONNECT_PROTOCOL`, so an `h2` client (browsers among
+them) may open a `ws::endpoint` route with an extended `CONNECT` instead of falling back to a
+separate HTTP/1.1 connection; the socket is one stream, so `ConnectionLimits::max_concurrent_streams`
+now also bounds the sockets of one connection. And `AccessLayer::admits` admits `CONNECT` wherever
+it admits `GET` (as it already did `HEAD`): a typed `GET` route that is not a WebSocket endpoint
+still answers `405` to a `CONNECT`. Guards, `Authenticate`, the Origin allowlist and every
+`WsConfig` limit apply to the HTTP/2 opening unchanged, so no configuration change is needed; a
+reverse proxy in front of the host that terminates HTTP/2 must forward extended `CONNECT` (or
+keep speaking HTTP/1.1 upstream, which is unchanged).
+
+## Axum / platform: `Http3Options` early-data and congestion settings
+
+Owner: r13-f-h3-settings. No signature breaks (new items only; `Refusal` and `EndpointStats`
+are `#[non_exhaustive]`); two behaviour changes:
+
+- `Http3Options::dangerous_allow_zero_rtt_for_queries` is no longer a recorded no-op: the `h3`
+  route now takes 0-RTT early data (`Route::dangerous_allow_early_data`, also recorded) and
+  serves early `GET` / `HEAD` requests before the handshake completes; every other early
+  request is answered `425 Too Early`. `Http3Options::admits_early` no longer admits `OPTIONS`.
+  If you set the opt-out "for later", remove it unless your safe-method handlers are idempotent
+  and reveal nothing a replay could exploit.
+- `AlpnRoute::accept` on a route with early data waits for each connection's handshake; use
+  `AlpnRoute::accept_early` to receive connections at once with their `Handshake`. Routes
+  without early data (the default, and always the mesh) are unchanged.
+
+New: `Http3Options::congestion(CongestionControl::Cubic)` (default stays BBR) and
+`Http3Options::config()` for the config key `server.http3.congestion`; `CongestionControl`
+implements `FromStr` (`bbr`, `cubic`).
+
+## RPC: `HttpTransport::with_header` / `with_bearer`
+
+Owner: r13-f-client-batching. Additive: `HttpTransport::with_header`, `with_bearer`,
+`service::HttpHeaderError` and the provided method `RpcTransport::unary_effect` are new; code that
+implements `RpcTransport` or builds an `HttpTransport` compiles unchanged. A wrapper
+`HttpClient` that only added an `authorization` header can go:
+
+```rust,ignore
+// before (0.12): a custom HttpClient that pushed the header onto every HttpRequest
+// after (0.13)
+let transport = HttpTransport::new(RpcClient::new(url), http)
+  .with_bearer(id_effect_config::Secret::new(token))?;
+```
+
+Behavior: a generated client over `HttpTransport` now sends the calls it makes in the same tick
+(the children of one `all`, for example) as one batch request, like `RpcClient::call`. A server
+whose `BatchConfig` caps a batch below 50 calls or 1 MiB refuses a larger window with its
+Problem, given to each call of it; raise the server caps or call through
+`RpcTransport::unary`, which still sends one call per request.
+
+## RPC: `WsClient` over `wss://` and postcard
+
+Owner: r13-f-ws-client-tls. Additive (`WsClientConfig`, `WsClient::connect_with`,
+`WsClient::over_postcard`, `WsClient::codec`); `WsClient::connect` keeps its signature and now
+dials `wss://` with the platform's root certificates (there is no "accept invalid certificates"
+option; add a private CA with `WsClientConfig::add_root_certificate_der`).
+
+One auto-trait break (`cargo semver-checks`: `auto_trait_impl_removed`): `WsClient` and `WsCall`
+share connection state that now carries the codec and TLS setup, so they are no longer
+`UnwindSafe` / `RefUnwindSafe`. They stay `Send` and `Sync`. Code that captures them in
+`std::panic::catch_unwind` wraps the closure:
+
+```rust,ignore
+// before (0.12): a ws:// URL only, JSON only
+let client = WsClient::connect("ws://127.0.0.1:8080/rpc").await?;
+let outcome = std::panic::catch_unwind(|| inspect(&client));
+// after (0.13): wss:// verified against the platform roots (or your CA), postcard if asked
+let config = WsClientConfig::new().add_root_certificate_der(ca_der).postcard(schemas);
+let client = WsClient::connect_with("wss://relay.internal/rpc", &config).await?;
+let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| inspect(&client)));
+```
+
+## RPC / node: session pump, `MeshRpcError::PeerSilent`
+
+Owner: r13-f-mesh-session. One break, two behaviour changes; everything else is additive
+(`id_effect_node::session_pump`, `MeshLiveness`, `MeshRpc::{with_liveness, liveness, heartbeat,
+of}`, `MeshTransport::{in_current_span, with_trace_context, trace_context}`, `SessionLink::stats`).
+
+- `id_effect_rpc::client::mesh::MeshRpcError` gains the variant `PeerSilent { node, silent_for }`
+  (the enum is not `#[non_exhaustive]`), so an exhaustive `match` needs one more arm. No shim:
+  the error is new behaviour. Treat it like `NodeDown` (`MeshRpcError::is_endpoint_gone` is true
+  for it):
+
+  ```rust,ignore
+  match error {
+    MeshRpcError::NodeDown | MeshRpcError::PeerSilent { .. } => reconnect_later(),
+    other => fail(other),
+  }
+  ```
+
+- Mesh streams (server streams, subscriptions, two-way streams) now heartbeat. A stream whose
+  endpoint's node answers nothing for 3 × 5 s fails with `PeerSilent` even when no `peer_down` was
+  reported. Tune it with `MeshRpc::with_liveness(MeshLiveness::new().every(..).silent_after(..))`;
+  the interval and the deadline are clamped finite. An endpoint on 0.12 does not answer the
+  heartbeats: upgrade the serving nodes before (or with) the calling ones.
+- `channels::attach_session` on a bare mesh now delivers through the node's `MeshRpc` when one is
+  built over that mesh, so mesh RPC calls over the link run instead of being dropped as
+  unverified; and every envelope a session carries is checked against the session's peer (an
+  envelope naming a third node's process, or claiming a third node's name, is dropped and counted
+  in `SessionLink::stats`). Code that relied on `attach_session` dropping RPC calls should not
+  build a `MeshRpc` over that mesh.
+
+## Tool: `rpc::check::CheckArgs::allow_retired`
+
+Owner: r13-f-rpc-retire. `id_effect_tool::rpc::check::CheckArgs` (the clap arguments of
+`id-effect rpc check`) gains the public field `allow_retired: Vec<RetiredVersion>` for the new
+`--allow-retired Service:N` flag. The command line is unchanged for existing invocations. Code
+that builds `CheckArgs` with a struct literal adds the field:
+
+```rust,ignore
+// before (0.12)
+let args = CheckArgs { contract, against: Some(spec), generated: None };
+// after (0.13)
+let args = CheckArgs { contract, against: Some(spec), generated: None, allow_retired: Vec::new() };
+```
+
+No shim: a struct literal cannot default a field. Parsing arguments with clap (`CheckArgs` derives
+`Args`) needs no change.
+
+## Axum: `HostConfig::webtransport` (WebTransport in the host entry points)
+
+Owner: r13-f-webtransport-host. `id_effect_axum::HostConfig` gains the public field
+`webtransport: bool` (config key `server.http3.webtransport`, environment form
+`server_http3_webtransport`; default `false`). Code that builds `HostConfig` with a struct literal
+without `..HostConfig::default()` adds the field:
+
+```rust,ignore
+// before (0.12)
+let config = HostConfig { bind_host, bind_port, shutdown_timeout, load_shed, tls, http3 };
+// after (0.13)
+let config = HostConfig { bind_host, bind_port, shutdown_timeout, load_shed, tls, http3, webtransport: false };
+```
+
+No shim: a struct literal cannot default a field (`..HostConfig::default()` keeps working
+unchanged). Behaviour is unchanged unless you turn it on. With it on (and feature `webtransport`,
+HTTP/3 and TLS certificate files), `ServerHandle`, `serve_router` and `serve` serve the app's
+`webtransport::endpoint` routes on the host's own HTTP/3 endpoint, so an app that ran a private
+`serve_h3` endpoint for WebTransport can drop it:
+
+```rust,ignore
+// before (0.12): a second QUIC endpoint of the app's own
+let endpoint = QuicEndpoint::bind(addr, QuicEndpointConfig::new(identity)
+  .with_limits(webtransport::quic_limits(&limits)))?;
+tokio::spawn(serve_h3(&endpoint, app.clone(), limits, Http3Options::default().webtransport(), stop));
+// after (0.13): the host does it on its port (or set server.http3.webtransport = true)
+ServerHandle::start(&HostConfig::default().with_tls(tls).with_webtransport(), app).await?;
+```
+
+A host with `webtransport` set but built without the feature refuses to start
+(`HostError::Serve`); without HTTP/3 or TLS files it starts TCP only and its posture warnings
+include `WEBTRANSPORT_WITHOUT_HTTP3_WARNING`.
+
+## TLS: rcgen 0.14
+
+Owner: r13-f-rcgen. `id_effect_platform`, `id_effect_node`, `id_effect_axum`, `id_effect_sql`,
+`id_effect_tool` and `id_effect_kit` move from rcgen 0.13 to 0.14 (the version `instant-acme`
+already brought), so the dependency graph holds one rcgen. No public signature of any id_effect
+crate names an rcgen type (rcgen is used inside `id_effect_platform::tls::certs` and
+`id-effect dev` only), so there is nothing to change in code that uses id_effect. Behaviour is
+unchanged: `id-effect dev` still writes an ECDSA P-256 CA and a 13-day leaf.
+
+Only code that uses rcgen itself next to id_effect (test fixtures that mint certificates, say) and
+wants a single rcgen in its own graph ports to 0.14:
+
+```rust,ignore
+// before (rcgen 0.13)
+let ca = ca_params.self_signed(&ca_key)?;
+let leaf = params.signed_by(&leaf_key, &ca, &ca_key)?;
+let pem = certified.key_pair.serialize_pem();
+// after (rcgen 0.14)
+let ca = ca_params.self_signed(&ca_key)?;
+let issuer = Issuer::from_params(&ca_params, &ca_key);
+let leaf = params.signed_by(&leaf_key, &issuer)?;
+let pem = certified.signing_key.serialize_pem();
+```
+
+## CLI: `crates/id_effect_cli/templates/admin-stub` removed
+
+Owner: r13-t0-skeletons. The `admin-stub` directory shipped as unused files in the `id_effect_cli`
+package; no API, command or template ever read it (`id-effect new` uses its own templates in
+`crates/id_effect_tool/templates/`). Nothing to change in code. For an admin, use the new
+`id_effect_admin` crate (ADR 0010 Amendment 9) and `id-effect generate admin <Entity>`.
+
+## AI: `id_effect_ai` published from `crates/` (was `labs/`)
+
+Owner: r13-e9-1-promote. The crate moved from `labs/id_effect_ai` to `crates/id_effect_ai` (ADR 0010
+Amendment 9) and is a root-workspace member. A path dependency on the labs crate changes its path:
+
+```toml
+# before (0.12, labs)
+id_effect_ai = { path = "../id_effect/labs/id_effect_ai" }
+# after (0.13)
+id_effect_ai = { path = "../id_effect/crates/id_effect_ai" }   # or: id_effect_ai = "0.13"
+```
+
+The API changes of the promotion (the labs crate had no semver promise; each has its
+replacement):
+
+| 0.12 (labs) | 0.13 |
+|---|---|
+| `ChatRequest { model, messages }` literal | `ChatRequest::new(model, messages)` or `ChatRequest::user(model, text)`; the struct is `#[non_exhaustive]` and gains `max_tokens: Option<u32>` (`with_max_tokens`) |
+| `ChatMessage { role, content }` | still valid; also `ChatMessage::system` / `user` / `assistant` |
+| `ChatResponse { content, tokens_used }`, `resp.tokens_used` | `ChatResponse::text(..)` (`#[non_exhaustive]`); `resp.usage.total()` (`Usage { input_tokens, output_tokens }`), plus `stop_reason` and `tool_calls` |
+| `AiConfig { openai_api_key: Some(..), .. }` literal | `AiConfig::default().with_openai_api_key(..).with_openai_base_url(..)` (and the Anthropic, Ollama and Cursor twins); fields stay public for reading and assignment |
+| `AiConfig::anthropic_max_tokens`, `ANTHROPIC_MAX_TOKENS` | `AiConfig::limits.max_tokens` (`AiLimits`), now sent by both vendors; `AI_MAX_TOKENS` (the old variable is still read) |
+| `provide_*_language_model(client, config)` with any platform `HttpClient` | unchanged; `config.http_client()` builds the guarded client from `AiConfig::http` (keep a local mock or Ollama reachable with `HttpClientConfig::allow_hosts`, never by turning the SSRF guard off). Each request now carries `AiLimits::request_timeout` and a body cap |
+| `id_effect_ai::model::*`, `id_effect_ai::streaming::*`, `id_effect_ai::sse::*` (private modules, root re-exports) | `id_effect_ai::chat::*` and `id_effect_ai::stream::*`; the root re-exports are unchanged |
+| `id_effect_ai::vendors::openai::*`, `vendors::anthropic::*` | `vendors::openai::chat::*`, `vendors::anthropic::chat::*` (re-exported from `vendors::openai` / `vendors::anthropic` and the crate root as before) |
+| `AiError` (exhaustive) | `#[non_exhaustive]`, with `InvalidRequest`, `Blocked`, `LimitExceeded` and `Timeout`; HTTP 529 is `Transient` |
+| `ChatResponse: Eq` (used as a `HashSet` key, `assert_eq!` on `Eq` bounds) | `PartialEq` only (the derive no longer lists `Eq`); `==` and `assert_eq!` work unchanged. Where an `Eq` bound is needed, use the fields, which are each `Eq` (`content`, `usage`, `tool_calls`, `stop_reason`) |
+| `AiConfig: UnwindSafe + RefUnwindSafe` | no longer (it holds the platform `HttpClientConfig` and its hooks); wrap closures given to `catch_unwind` in `AssertUnwindSafe`. A struct literal is no longer possible at all (private field `log_prompts`, set by `dangerous_log_prompts()`): use `AiConfig::default().with_*` |
+| `SseParser::feed` trimmed every leading space of a value | one leading space is removed (the SSE rule); `feed_bytes` takes raw bytes |
+| streamed chunks parsed after the whole body was read | decoded incrementally, under `AiLimits::max_stream_bytes` / `max_stream_events` |
+
+## AI: tool calling in `ChatMessage`, `ChatRole` and `ChatRequest`
+
+Owner: r13-e9-1-tools. Tool calling (feature `tools`) needs the conversation to carry tool calls
+and their results, so the chat types grow (the labs crate had no semver promise; this supersedes
+the "`ChatMessage { role, content }` still valid" row above):
+
+| 0.12 (labs) | 0.13 |
+|---|---|
+| `ChatMessage { role, content }` literal | `ChatMessage::new(role, content)` or `ChatMessage::system` / `user` / `assistant`; the struct is `#[non_exhaustive]` and gains `tool_calls: Vec<ToolCall>` (`assistant_tool_calls`) and `tool_call_id: Option<String>` (`tool_result`); both are skipped in serde when empty, so stored JSON of plain messages is unchanged |
+| `match role { System, User, Assistant }` | add an arm for `ChatRole::Tool` (a tool result fed back to the model) |
+| `ChatRequest` without tools | gains `tools: Vec<ToolDefinition>` (`with_tools`; empty by default, so no request changes); `validate` refuses a `ChatRole::Tool` message without `tool_call_id` |
+| `ChatResponse` text only | a reply with tool calls and no text is no longer `AiError::EmptyResponse`: `content` is empty and `tool_calls` is set (both vendors) |
+
+## AI: `mcp_server_template` example replaced by the `mcp` module
+
+Owner: r13-e9-1-mcp. The labs example `examples/mcp_server_template.rs` (a hand-written JSON-RPC
+loop answering `tools/list` and `tools/call` without a protocol version) is gone. MCP is now the
+`id_effect_ai::mcp` module (features `mcp`, `mcp-http`), pinned to revision 2026-07-28:
+
+| Before (0.12, labs) | After (0.13) |
+|---|---|
+| `cargo run -p id_effect_ai --example mcp_server_template` | `cargo run -p id_effect_ai --features mcp,mcp-http --example mcp_server` (stdio; `--http addr`; `--self-test`) |
+| a match on `"tools/list"` / `"tools/call"` | `McpServer::new(name, version).with_tools(tool_set)`, then `serve_stdio()` or `McpEndpoint::new(server).guard(g).router()` |
+| no `initialize`, no version check | clients call `server/discover` and send the revision in each request's `_meta`; older revisions get `UnsupportedProtocolVersion` (`-32022`) |
+
+The `mcp` feature now also enables the optional `rand` dependency (handle and cursor ids), and
+`mcp-http` enables `id_effect_authz/axum` and `id_effect_axum/ws` (for `OriginPolicy`).
+
+## Kit: posture probes, `PROBES` and the generated admin's dependency
+
+Owner: r13-w5-kit-template. The kit gains features `process`, `ai`, `embeddings`, `mcp`, `ui`,
+`i18n`, `admin` and `tenancy` (all off by default, so nothing changes until you turn one on) and
+four posture probes. No shim: the changes are additive except these:
+
+| 0.12 | 0.13 |
+|---|---|
+| `id_effect_kit::posture::PROBES: [&str; 15]` | `[&str; 19]`: "admin guarded", "mcp guarded", "prompts not logged" and "tenant not from header" come before "no unaccepted opt-out". Code that names the array type or indexes it by position updates the length; code that iterates it needs nothing |
+| an opt-out such as `AiConfig::dangerous_log_prompts` failed only "no unaccepted opt-out" | `dangerous_log_prompts`, `McpServer::dangerous_mcp_write_tools` and `TenantResolver::dangerous_tenant_from_header` also fail their own probe; the one entry under `security.accepted_risks` (with a reason) accepts both, so an accepted opt-out needs no new configuration |
+| `id-effect generate admin` added `id_effect_admin = "<version>"` and the kit's `authz` feature, and imported `id_effect_admin::` | it turns on the kit's `admin` feature and imports `id_effect_kit::admin::`. Projects generated before keep working; to switch, replace `id_effect_admin::` with `id_effect_kit::admin::` in `src/admin/`, add `"admin"` to the kit's features and drop the `id_effect_admin` dependency |
+| the `cluster` template depended on `id_effect_process` | it imports `id_effect_kit::process` (the kit's `cluster` feature turns on `process`); an existing project may keep its direct dependency or switch the same way |

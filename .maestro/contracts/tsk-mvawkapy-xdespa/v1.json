@@ -1,0 +1,37 @@
+{
+	"schemaVersion": 2,
+	"id": "c-df7c71",
+	"taskId": "tsk-mvawkapy-xdespa",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-16T11:47:22.822Z",
+	"lockedAt": "2026-10-16T11:47:22.822Z",
+	"intent": "0.8 E0.4 governance",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-3c4753",
+			"text": "GOVERNANCE.md: current maintainers (truthfully: one), decision process, ADR process, path to co-maintainer with merge rights, how releases are cut against PLAN-OF-PLANS; .github/CODEOWNERS.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-7878a1",
+			"text": ".github/FUNDING.yml only if the owner confirms an existing GitHub Sponsors or OpenCollective account (otherwise omitted and noted).",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mvawbp5i-g5m6ot",
+	"riskClass": "low"
+}

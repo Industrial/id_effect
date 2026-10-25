@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "c-be3c11",
+  "taskId": "tsk-mvbh3z7s-2ol5gk",
+  "repoRoot": ".",
+  "status": "locked",
+  "createdAt": "2026-10-16T22:36:34.505Z",
+  "lockedAt": "2026-10-16T22:36:34.505Z",
+  "intent": "r09-e6-5-isolation-fixtures",
+  "scope": {
+    "filesExpected": [
+      "**/*"
+    ],
+    "filesForbidden": []
+  },
+  "doneWhen": [
+    {
+      "id": "dw-8a9dbf",
+      "text": "`isolated_db()` per test: transaction rolled back at end, or template-database clone for tests that commit (#3); `Fixture`/factory trait with `FromRow` + Schema-arbitrary defaults (#4); re-export of the in-process HTTP client (#1). Book `part4` integration-testing chapter, example.",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-3b92ff",
+      "text": "Gate: same + tier-conformance id_effect_test",
+      "kind": "manual"
+    },
+    {
+      "id": "dw-7e6a7a",
+      "text": "Owns: `crates/id_effect_test/src/{db.rs,fixtures.rs,http.rs}`",
+      "kind": "manual"
+    }
+  ],
+  "amendments": [],
+  "createdBy": "maestro",
+  "lockedBy": "maestro",
+  "configSnapshot": {
+    "strict": false,
+    "overlapPolicy": "annotate",
+    "rebaseFallback": "best-effort",
+    "staleReclaimContractPolicy": "inherit"
+  },
+  "riskClass": "medium"
+}
