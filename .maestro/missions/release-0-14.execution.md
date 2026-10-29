@@ -3,7 +3,7 @@
 Mission: `pln-mvtj1svc-m1yw2w` (`maestro mission from-spec .maestro/specs/releases/0.14.0.md`, decomposed
 into 38 tasks, one per `.maestro/specs/releases/0.14/r14-*.md` leaf) · spec
 `.maestro/specs/releases/0.14.0.md` (approved under the owner's L15 goal of 2026-10-18; every "Taken
-(default)" row stands until the owner overturns it; 14 open questions) · branch `release/0.14.0` (off
+(default)" row stands until the owner overturns it; owner decisions D2 D5 D8 D9 D10 of 2026-10-29 recorded; 10 open questions remain) · branch `release/0.14.0` (off
 main at `v0.13.0`, 0ae051c3, 2026-10-29).
 
 ## Preconditions (day 0) — done at kickoff
@@ -35,7 +35,7 @@ main at `v0.13.0`, 0ae051c3, 2026-10-29).
 | `r14-s-core-di` (`tsk-mvtj22h3-652dv4`) | skeletons; kit `graph.rs` + tool `doctor/graph.rs` only |
 | `r14-s-data-fp` (`tsk-mvtj22h3-swwxcr`) | skeletons (Amendment 10 exception) |
 | `r14-s-events-upcast` (`tsk-mvtj22h3-34m5zn`) | skeletons; journal column migration |
-| ★`r14-s-kafka` (`tsk-mvtj22h3-563we9`) | skeletons — **critical path**; Windows matrix risk (Open question 7) |
+| ★`r14-s-kafka` (`tsk-mvtj22h3-563we9`) | skeletons — **critical path**; dispatch first: must build on the Windows `matrix` leg (D9, no exclusion) |
 | `r14-s-amqp` (`tsk-mvtj22h3-ye85fh`) | skeletons; deny.toml BSD-2-Clause line |
 | `r14-s-testing` (`tsk-mvtj22h3-3qm28i`) | skeletons; `mock!`, seeded order harness |
 | `r14-s-governance` (`tsk-mvtj22h3-i2jh1z`) | adr0016; docs + `security-kpis.sh --only` |
