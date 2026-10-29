@@ -1,0 +1,34 @@
+---
+title: 'E13.1 Sweep — inbound mail routing and multi-channel notifications in id_effect_mail: r14-s-mail'
+slug: r14-s-mail
+mode: heavy
+work_type: spec-slice
+risk_class: medium
+version: 1
+acceptance_criteria:
+  - 'msg.email#6 (feature `inbound`, new): crates/id_effect_mail/src/inbound/ gives `InboundMail` (envelope recipient(s), from, subject, text and HTML bodies, attachments as the existing `Attachment` of src/message.rs:100, raw headers), `parse_mime(bytes, MimeLimits)` over `mail-parser` (exact pin recorded), an `InboundRouter` that matches the envelope recipient (exact address, `local+tag@domain` with the tag handed to the handler, whole domain) to handler effects with an explicit fallback (default: reject), and `InboundWebhook::router()`, an axum route `POST /_mail/inbound` taking a raw RFC 5322 body (`message/rfc822`) signed with HMAC-SHA256 over timestamp + body (`X-Id-Effect-Signature: t=<unix>,v1=<hex>`, key a `Secret`, 5-minute tolerance, constant-time compare). Today id_effect_mail is outbound only (src/lib.rs:93-119: smtp, sendgrid, templates, preview, deliver_later).'
+  - 'msg.email#7 (feature `notify`, new; `notify-db` adds the database channel): crates/id_effect_mail/src/notify/ gives the `Notification` trait (`channels()` naming the channels per notifiable, one render method per channel), the `Channel` trait (apps add SMS or push providers through it) and three real channels: `MailChannel` (any `Mailer`, src/mailer.rs), `DatabaseChannel` (Postgres table `id_effect_notifications`, migration `crates/id_effect_mail/migrations/0001_id_effect_notifications.{up,down}.sql`, `notify::migrator()`, `unread(notifiable)`, `mark_read`) and `WebhookChannel` (JSON POST through id_effect_platform `HttpClientService`, with a Slack incoming-webhook payload builder); `notify(notifiable, notification)` fans out and reports the outcome per channel; with feature `jobs`, `notify_later` delivers through `deliver_later` (src/later.rs:249). Row msg.email 75 → 100.'
+  - 'Tests: crates/id_effect_mail/tests/inbound.rs `inbound_mime_parses_text_html_and_attachments`, `inbound_routes_by_recipient_plus_tag_and_domain`, `unrouted_inbound_mail_is_rejected`, `inbound_webhook_rejects_missing_or_bad_signature`, `inbound_webhook_rejects_a_stale_timestamp`, `inbound_body_over_cap_is_413`, `inbound_mime_depth_and_part_caps_hold`; crates/id_effect_mail/tests/notify.rs `notification_fans_out_to_each_channel_it_names`, `webhook_channel_posts_a_slack_payload` (wiremock), `webhook_channel_refuses_a_private_network_target`, `one_failing_channel_does_not_stop_the_others`, `notify_later_retries_a_transient_channel_failure`; crates/id_effect_mail/tests/notify_pg.rs `database_channel_stores_lists_unread_and_marks_read`, `database_channel_scopes_rows_to_the_notifiable` (DATABASE_URL + `ID_EFFECT_REQUIRE_PG=1`, as tests/mail.rs:232-246 does).'
+  - 'Book: new section "## Receiving mail" in `crates/id_effect/book/src/part6/ch31-03-mail.md` (after "## Testing against a real SMTP server", :216); new chapter `crates/id_effect/book/src/part6/ch31-06-notifications.md`; examples `crates/id_effect_mail/examples/030_inbound.rs` (required-features `inbound`) and `crates/id_effect_mail/examples/040_notifications.rs` (required-features `notify`).'
+  - 'Tier: platform (id_effect_mail; Ledger consumer). Secure by default (ADR 0013): R4 bounded input before buffering: webhook body cap 10 MiB (`DefaultBodyLimit`), `MimeLimits` default depth 8, 100 parts, 1 000 header lines, checked on the raw bytes before `mail-parser` builds the tree; R1 the inbound route is declared and its access decision is the signature check (no unsigned mode; `dangerous_unsigned_inbound()` only for local tests, recorded with `posture::record_dangerous`); R2 the HMAC key and webhook URLs are `Secret`, redacted; R3 bodies and recipient lists are not logged; R6 `WebhookChannel` targets pass `SsrfPolicy::check_url` (crates/id_effect_platform/src/http/ssrf.rs:295) at construction and the platform client guard per request. The fuzz target is r14-e-fuzz-security''s (`mail_inbound_mime` there, `inbound_mime` in the release spec''s Security table); it calls the public `parse_mime`.'
+  - 'Coverage: `cargo llvm-cov nextest -p id_effect_mail --all-features --summary-only --fail-under-regions 96` (with `ID_EFFECT_REQUIRE_PG=1`).'
+  - 'Gate: `ID_EFFECT_REQUIRE_PG=1 cargo nextest run -p id_effect_mail --all-features`; `cargo clippy -p id_effect_mail --all-targets --all-features -- -D warnings`; `cargo deny check`; `bash scripts/check-dangerous.sh`; `bash scripts/tier-conformance.sh id_effect_mail`; CI `pg-integration` runs notify_pg.rs (its `--features` list gains `id_effect_mail/notify-db`)'
+  - 'Owns: `crates/id_effect_mail/src/inbound/**` (new), `crates/id_effect_mail/src/notify/**` (new), `crates/id_effect_mail/migrations/**` (new), `crates/id_effect_mail/tests/{inbound.rs,notify.rs,notify_pg.rs}` (new), `crates/id_effect_mail/tests/fixtures/inbound/**` (new MIME samples), `crates/id_effect_mail/examples/{030_inbound.rs,040_notifications.rs}` (new), `crates/id_effect_mail/Cargo.toml` (features `inbound`, `notify`, `notify-db`, their optional dependencies, `[[example]]` entries), `crates/id_effect/book/src/part6/ch31-03-mail.md` (the new section), `crates/id_effect/book/src/part6/ch31-06-notifications.md` (new), the kit feature lines `mail-inbound` and `mail-notify` in `crates/id_effect_kit/Cargo.toml`, `.github/workflows/ci.yml` (the `id_effect_mail/notify-db` token of the `pg-integration` `--features` list, ci.yml:319); append-only: `crates/id_effect_mail/src/lib.rs` (mod and `pub use` lines), `crates/id_effect_kit/src/lib.rs` (the two feature-table rows), `crates/id_effect/book/src/SUMMARY.md`, `CHANGELOG.md`, `Cargo.lock`'
+---
+
+# r14-s-mail
+
+Leaf of `.maestro/specs/releases/0.14.0.md`, section "E13.1 Sweep". The release spec's row is binding;
+this file exists so Maestro can track the leaf as its own task.
+
+Wave 2. Blocked by: the wave-1 merge (no wave-1 leaf owns its files). Blocks r14-e-fuzz-security
+(`mail_inbound_mime`). msg.email#7 is cut 2 in the scope-cut table: if it is cut, the leaf ships #6 only and
+the row stays 88; split the leaf (`maestro_task_split`) rather than let #7 hold #6.
+
+Defaults the owner may overturn: inbound arrives as a signed raw-MIME webhook (any relay or MTA hook
+can post it) plus `parse_mime` for apps that receive SMTP themselves; vendor-specific inbound formats
+(SendGrid Inbound Parse multipart, Postmark JSON) are not in this leaf; no first-party SMS or push
+provider (the `Channel` trait is the seam; the check names SMS/push as examples and the leaf ships
+mail, database and webhook/Slack as the real channels); the notifications table carries `notifiable`
+as an opaque `(type, id)` pair, not a foreign key. Not done here: an SMTP server, bounce/complaint
+processing, a notifications UI.

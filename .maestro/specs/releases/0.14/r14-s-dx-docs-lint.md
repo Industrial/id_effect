@@ -1,0 +1,36 @@
+---
+title: 'E13.1 Sweep — versioned book per supported release, lints in the IDE, templates enable the lints: r14-s-dx-docs-lint'
+slug: r14-s-dx-docs-lint
+mode: heavy
+work_type: spec-slice
+risk_class: low
+version: 1
+acceptance_criteria:
+  - 'dx.docs#7 (row dx.docs 88 → 100 once r14-p-toolchain promotes the row, D3): versioned guides for each supported release. At HEAD .github/workflows/docs.yml builds one book from `main` into the Pages root (`cp -r crates/id_effect/book/book/. site/`, api under site/api/). New: `scripts/book-versions.sh` builds the book of every release line listed as supported in SECURITY.md "## Supported versions" (SECURITY.md:33-43; every row but `< 0.6`) from that line''s newest `vX.Y.Z` tag (a `git worktree`, the pinned mdBook 0.4.43, which every tag''s docs.yml already uses) into `site/v/<X.Y>/`, the current book stays at the site root as "latest", and writes `site/versions.json`; `crates/id_effect/book/theme/version-switch.js` (+ `.css`, through `[output.html] additional-js` / `additional-css` in crates/id_effect/book/book.toml, injected into the older books by the script) shows a version menu on every page and a banner on a non-latest version. `docs/book-versions.json` records the line → tag mapping the script derives, so a PR that adds a release line without its book fails `--check`.'
+  - 'dx.lint#6 (row dx.lint 75 → 88 with #8 → 100, promotion r14-p-toolchain): the Dylint lints (lints/id_effect_lints, run today by `cargo dylint`, .github/workflows/lint.yml:41-42) surface in the IDE through rust-analyzer''s check command: `lints/id_effect_lints/ide/vscode-settings.json` holds the tested `rust-analyzer.check.overrideCommand` (`cargo dylint --all -- --all-targets --message-format=json`) and the book shows the same setting for VS Code, Neovim (lspconfig) and Helix. `scripts/lint-ide-check.sh` runs exactly that command (read from the JSON file) in lints/id_effect_lints/examples/demo and asserts JSON `compiler-message` diagnostics for `effect_map_identity` and `raw_sql_non_literal` with spans in the demo''s sources, and that the book''s snippet equals the file.'
+  - 'dx.lint#8: the new-project templates enable the framework lints. Today no template mentions Dylint (REPORT-0.13.0.md:175). Each `crates/id_effect_tool/templates/{service,worker,cli,cluster}/Cargo.toml.template` gains `[package.metadata.dylint] libraries = [{ git = "https://github.com/Industrial/id_effect", tag = "v{{id_effect_version}}", pattern = "lints/id_effect_lints" }]` (a `path` to the checkout with `--local-workspace`, through a new `dylint_library` variable in `render()`, crates/id_effect_tool/src/render.rs:309-312), each README gains a "Lints" section, and the generated CI (templates/common/_github/workflows/ci.yml.template) gains a `lints` job running `cargo dylint --all` with cargo-dylint pinned as lint.yml:37 pins it.'
+  - 'Tests: crates/id_effect_tool/tests/template_lints.rs `every_template_enables_the_framework_lints`, `dylint_tag_matches_the_tool_version`, `local_workspace_points_lints_at_the_checkout`, `template_ci_runs_cargo_dylint`; .github/workflows/lint.yml `dylint` job new steps "Lints through the rust-analyzer check command" (`bash scripts/lint-ide-check.sh`) and "Framework lints on a generated service" (`id-effect new --template service --local-workspace .` then `cargo dylint --all` in it, must find no lint errors); `bash scripts/book-versions.sh --self-test` (a fixture repository with two tagged lines: both books built, `versions.json` and the switch present, a missing line fails `--check`).'
+  - 'Book: crates/id_effect/book/src/appendix-d-workspace-tooling.md new section "In the IDE (rust-analyzer)" and a paragraph "In a new project" (the template metadata); new page crates/id_effect/book/src/appendix-f-book-versions.md (which versions are published, where, how to read the book of the version you use). Examples: lints/id_effect_lints/examples/demo (existing) is the IDE example; a generated `service` is the template example.'
+  - 'Tier: integration (id_effect_tool); the book and scripts carry no tier. Secure by default: no new runtime surface; the version switch is a static script with no third-party origin (no CDN), and docs.yml keeps its read-only build job and Pages-only deploy permissions (S2).'
+  - 'Coverage: `cargo llvm-cov nextest -p id_effect_tool --all-features --summary-only --fail-under-regions 96`'
+  - 'Gate: `bash scripts/book-versions.sh --self-test && bash scripts/book-versions.sh --check`; `bash scripts/book-versions.sh --out .tmp/site` (every supported line builds); `bash scripts/lint-ide-check.sh` (needs cargo-dylint 6.2.0); `cargo nextest run -p id_effect_tool --test template_lints`; `bash scripts/template-smoke.sh`; `bash scripts/check-workflows.sh`; `cargo clippy -p id_effect_tool --all-targets --all-features -- -D warnings`'
+  - 'Owns: `.github/workflows/docs.yml` (the build and assemble steps), `scripts/book-versions.sh` (new), `docs/book-versions.json` (new), `crates/id_effect/book/book.toml` (`[output.html]` additional-js / additional-css), `crates/id_effect/book/theme/version-switch.{js,css}` (new), `crates/id_effect/book/src/appendix-f-book-versions.md` (new), `crates/id_effect/book/src/appendix-d-workspace-tooling.md` (sections "In the IDE (rust-analyzer)" and "In a new project"), `lints/id_effect_lints/ide/vscode-settings.json` (new), `lints/id_effect_lints/README.md` (an "In the IDE" paragraph), `scripts/lint-ide-check.sh` (new), `.github/workflows/lint.yml` (the two new steps of job `dylint`), `crates/id_effect_tool/templates/{service,worker,cli,cluster}/Cargo.toml.template` (the `[package.metadata.dylint]` table), `crates/id_effect_tool/templates/{service,worker,cli,cluster}/README.md.template` (section "Lints"), `crates/id_effect_tool/templates/common/_github/workflows/ci.yml.template` (job `lints`), `crates/id_effect_tool/src/render.rs` (the `dylint_library` variable in `render()` and its unit test), `crates/id_effect_tool/tests/template_lints.rs` (new), append-only: `crates/id_effect/book/src/SUMMARY.md`, `CHANGELOG.md`'
+---
+
+# r14-s-dx-docs-lint
+
+Leaf of `.maestro/specs/releases/0.14.0.md`, section "E13.1 Sweep". The release spec's row is binding;
+this file exists so Maestro can track the leaf as its own task. `dx.diagnostics#8` (dev error page) is
+split off into `r14-s-dev-error-page` (different crate, different risk).
+
+Wave 3. Blocked by: r14-s-tool-generate (wave 2; the service README template and template-smoke).
+Blocks r14-p-toolchain (wave 5 promotes `dx.docs` and `dx.lint`). Same-wave neighbour r14-s-deploy-k8s
+owns `cli.rs`, `template.rs`, `templates/deploy/**` and ch34-00; this leaf touches none of them.
+Scope-cut order 1 in the release spec is dx.docs#7 (versioned guides) only; #6 and #8 are never cut.
+
+Defaults the owner may overturn: (1) "each supported release" = every line SECURITY.md lists as
+supported (0.6.x to 0.13.x at HEAD, 0.14.x added at the release); older lines are not built. If a
+tag's book no longer builds, the leaf fixes the script, not the tag; a line that cannot be built is a
+FAIL, not a skip. (2) Latest stays at the Pages root so no existing link breaks; old versions live
+under `/v/<X.Y>/`. (3) The template CI's `lints` job is a separate job (needs a nightly through
+Dylint), so a project can drop it without touching the build job.

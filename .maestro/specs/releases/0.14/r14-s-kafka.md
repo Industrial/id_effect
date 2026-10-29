@@ -1,0 +1,37 @@
+---
+title: 'E13.1 Sweep — Kafka MessageBroker in id_effect_kafka (consumer groups, offset commit): r14-s-kafka'
+slug: r14-s-kafka
+mode: heavy
+work_type: spec-slice
+risk_class: high
+version: 1
+acceptance_criteria:
+  - 'msg.brokers#1 and eco.fit#6 (D2): crates/id_effect_kafka (skeleton from r14-t0-skeletons) gives `KafkaBroker` over rdkafka (`cmake-build`, `ssl-vendored`, exact pin recorded) implementing `id_effect_messaging::MessageBroker` (crates/id_effect_messaging/src/broker.rs:404) with the semantics of `RedisStreamsBroker` (crates/id_effect_redis/src/streams.rs:333): `publish` completes on the broker ack (acks=all, idempotent producer); `subscribe` joins a Kafka consumer group (`ConsumerGroup` = group.id; `StartFrom` = auto.offset.reset for a new group), and completes once the group is assigned; offsets are committed only up to the highest contiguous acked offset per partition; `Nack::Requeue` and an unsettled dropped `Delivery` redeliver to the same group only, with attempt + 1 (republished to the group''s retry topic `<topic>.<group>.retry`, which the subscription also consumes, carrying `headers::DELIVERY_COUNT`, then the original offset committed; other groups never see a redelivery; a retry-topic name over `Topic::MAX_LEN` is `BrokerError::InvalidOptions`); the `max_deliveries`-th failure and `Nack::DeadLetter` move the message to the resolved dead-letter topic with the `DeadLetterReason` header (crates/id_effect_messaging/src/delivery.rs:28); `prefetch` bounds unsettled deliveries per subscription (partitions paused at the bound); `close` ends every stream; an unreachable bootstrap is `BrokerError::Connection`. Row msg.brokers 75 → 100 together with r14-s-amqp (#2); eco.fit 63 → 75 (Redis Streams + Kafka = two first-party brokers).'
+  - 'Container: `Kafka` / `KafkaContainer` in crates/id_effect_test/src/containers/kafka.rs (official `apache/kafka` KRaft single-node image, tag pinned, digest recorded; ready on the "Kafka Server started" log line); because Kafka advertises its listener, `ContainerSpec::host_port(container_port, host_port)` (crates/id_effect_test/src/containers/spec.rs, next to `port` at :102 and the binding at :158) maps a free host port picked at spec time and the image sets KAFKA_ADVERTISED_LISTENERS to it. Tests start it through `id_effect_test::Shared`, read `ID_EFFECT_REQUIRE_DOCKER=1` and fail rather than skip; the CI run is the `-p id_effect_kafka` line that r14-t0-skeletons adds to `containers-integration` (.github/workflows/ci.yml:347).'
+  - 'Tests in crates/id_effect_kafka/tests/broker.rs (names mirror crates/id_effect_redis/tests/streams.rs:126-557): `kafka_consumer_group_ack_and_redelivery`, `kafka_poison_message_moves_to_dlq`, `kafka_max_deliveries_dead_letters_with_reason`, `kafka_unsettled_drop_redelivers`, `kafka_prefetch_bounds_in_flight`, `kafka_redelivery_reaches_only_the_nacking_group`, `kafka_offsets_commit_only_contiguous_acks` (a restarted subscription resumes after the last contiguous ack, nothing acked is delivered again), `kafka_subscriptions_share_a_group_and_new_groups_start_where_asked` (topic with 2 partitions), `kafka_outbox_relay_end_to_end` (PgOutbox + Relay from crates/id_effect_messaging/src/relay.rs into Kafka), `kafka_close_ends_subscription`, `kafka_unreachable_is_a_connection_error`, `kafka_plaintext_requires_dangerous_opt_out`, `kafka_oversize_record_is_dead_lettered`; unit test `offset_tracker_commits_highest_contiguous` (proptest) in src; crates/id_effect_test/tests/kafka.rs `kafka_container_round_trips_a_record`.'
+  - 'Book: new chapter `crates/id_effect/book/src/part6/ch31-04-kafka.md` (config, TLS/SASL, groups and partitions, offset commit, redelivery and DLQ, ordering caveat), linked from SUMMARY.md and one row in the table of part6/ch31-00-async-messaging.md; example `crates/id_effect_kafka/examples/010_kafka.rs` (publish, consume with `ack_on_success`), README `rust` fence compiled.'
+  - 'Tier: integration (new crate, ADR 0010 Amendment 10 from r14-t0-skeletons; moves to platform when Warden consumes it in r14-w-warden-mesh). Secure by default (ADR 0013): R8 TLS on by default (security.protocol SSL; plaintext only through `KafkaConfig::dangerous_plaintext()`, which records itself with `posture::record_dangerous` and is listed by scripts/check-dangerous.sh); R2 SASL passwords are `Secret` and redacted in `Debug`; R4 bounded input: record and header size caps (`max_record_bytes` default 1 MiB, at most 64 headers / 16 KiB) checked before decode, an oversize record is dead-lettered as `rejected` without its payload. The fuzz target is r14-e-fuzz-security''s (`kafka_message_headers` there, `kafka_headers` in the release spec''s Security table); this leaf makes the record key/header decoder a documented public fn for it (`id_effect_kafka::decode_record`).'
+  - 'Coverage: `cargo llvm-cov nextest -p id_effect_kafka --all-features --summary-only --fail-under-regions 96` (with Docker; `cargo llvm-cov nextest -p id_effect_test --all-features --summary-only --fail-under-regions 96` stays green).'
+  - 'Gate: `ID_EFFECT_REQUIRE_DOCKER=1 cargo nextest run -p id_effect_kafka -p id_effect_test --all-features`; `cargo clippy -p id_effect_kafka -p id_effect_test --all-targets --all-features -- -D warnings`; `cargo deny check`; `bash scripts/check-dangerous.sh`; `bash scripts/tier-conformance.sh id_effect_kafka`; the `matrix` job (ubuntu, macos, windows; ci.yml:169-212) builds the crate with `--all-features`'
+  - 'Owns: `crates/id_effect_kafka/**`, `crates/id_effect_test/src/containers/kafka.rs` (new), `crates/id_effect_test/src/containers/spec.rs` (`host_port` and the port binding only), `crates/id_effect_test/tests/kafka.rs` (new), `crates/id_effect/book/src/part6/ch31-04-kafka.md` (new); append-only: `crates/id_effect_test/src/containers/mod.rs` and `crates/id_effect_test/src/lib.rs` (the `kafka` module and re-export lines), the Kafka row of `crates/id_effect/book/src/part6/ch31-00-async-messaging.md`, `crates/id_effect/book/src/SUMMARY.md`, `CHANGELOG.md`, `Cargo.lock`, `deny.toml` (license/skip entries rdkafka needs, if any)'
+---
+
+# r14-s-kafka
+
+Leaf of `.maestro/specs/releases/0.14.0.md`, section "E13.1 Sweep". The release spec's row is binding;
+this file exists so Maestro can track the leaf as its own task.
+
+Wave 1, critical path (skeletons → kafka → warden-core → warden-mesh). Blocked by: r14-t0-skeletons
+(crate skeleton, Amendment 10, ci.yml `-p` line, kit feature `kafka`). Blocks r14-w-warden-mesh (Kafka
+intake), r14-e-fuzz-security (`kafka_message_headers`) and r14-e-benches (broker throughput). Never cut.
+Runs beside r14-s-amqp, which owns `containers/rabbitmq.rs` and never edits `spec.rs`.
+
+Defaults the owner may overturn: rdkafka with `cmake-build` + `ssl-vendored` (open question 2 of the
+release spec offers a pure-Rust client); redelivery by republish-to-a-per-group-retry-topic then commit (so
+the attempt count survives restarts and other groups are untouched; per-partition order is not kept
+across a redelivery, documented in the chapter; the alternative, seeking back in memory, loses the
+count on restart);
+topics the broker does not have are created on first `publish`/`subscribe` with
+`KafkaConfig::partitions` (default 1) through the admin client; a free host port per container (no
+fixed port table). Not done here: a shared broker conformance suite in id_effect_messaging (each
+broker crate mirrors the Redis test names instead), transactions / exactly-once, schema registry.
