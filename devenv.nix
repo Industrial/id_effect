@@ -34,6 +34,38 @@
     };
   };
 
+  blaze = pkgs.stdenv.mkDerivation rec {
+    pname = "blaze";
+    version = "0.20261030.1";
+    src = pkgs.fetchurl {
+      url = "https://github.com/indexable-inc/blaze/releases/download/v${version}/blaze-v${version}-x86_64-unknown-linux-gnu.tar.gz";
+      hash = "sha256-QSH+6gaAnrXU1vT7W/5C/dSSge1zrc/fqjpdbGYcbOQ=";
+    };
+    sourceRoot = "blaze-v${version}-x86_64-unknown-linux-gnu";
+    nativeBuildInputs = [pkgs.autoPatchelfHook];
+    buildInputs = [pkgs.stdenv.cc.cc.lib pkgs.zlib];
+    dontStrip = true;
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out/bin $out/libexec/blaze
+      for f in blaze blaze-engine blaze-proc-macro-srv blaze-rustc; do
+        if [ -f "$f" ]; then
+          install -m755 "$f" "$out/libexec/blaze/$f"
+          ln -s "../libexec/blaze/$f" "$out/bin/$f"
+        fi
+      done
+      [ -e $out/bin/blaze ] || { echo "no blaze binary in the release" >&2; exit 1; }
+      runHook postInstall
+    '';
+    meta = {
+      description = "blaze: cargo's build, check, run and test from a daemon that keeps the workspace compiled";
+      homepage = "https://ix.dev/blaze";
+      license = with pkgs.lib.licenses; [mit asl20];
+      platforms = ["x86_64-linux"];
+      mainProgram = "blaze";
+    };
+  };
+
   # roam-code: architectural intelligence CLI (https://github.com/Cranot/roam-code)
   roam-code-src = pkgs.fetchFromGitHub {
     owner = "Cranot";
@@ -79,6 +111,7 @@ in {
     mold
     git
     gh
+    blaze
     moon
     roam-code
     actionlint

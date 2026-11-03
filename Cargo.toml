@@ -63,3 +63,10 @@ repository = "https://github.com/Industrial/id_effect"
 [profile.bench]
 lto = "thin"
 codegen-units = 1
+
+# blaze runs proc macros as sandboxed WebAssembly so it can cache what they
+# expand to; neither of these builds that way. Expanding just them natively is
+# the narrow fix — do not add a `version` key here, blaze would then download
+# and run its own release instead of the Nix-pinned one.
+[workspace.metadata.blaze]
+native-proc-macros = ["maud_macros", "pear_codegen"]
