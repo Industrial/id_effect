@@ -1,9 +1,9 @@
 # release-0-14 — execution overlay
 
 Mission: `pln-mvtj1svc-m1yw2w` (`maestro mission from-spec .maestro/specs/releases/0.14.0.md`, decomposed
-into 38 tasks, one per `.maestro/specs/releases/0.14/r14-*.md` leaf) · spec
+into 38 tasks, plus r14-s-nats added 2026-11-03 (D11) = 39, one per `.maestro/specs/releases/0.14/r14-*.md` leaf) · spec
 `.maestro/specs/releases/0.14.0.md` (approved under the owner's L15 goal of 2026-10-18; every "Taken
-(default)" row stands until the owner overturns it; owner decisions D2 D5 D8 D9 D10 of 2026-10-29 recorded; 10 open questions remain) · branch `release/0.14.0` (off
+(default)" row stands until the owner overturns it; owner decisions D2 D5 D8 D9 D10 of 2026-10-29 and D11 of 2026-11-03 recorded; 10 open questions remain) · branch `release/0.14.0` (off
 main at `v0.13.0`, 0ae051c3, 2026-10-29).
 
 ## Preconditions (day 0) — done at kickoff
@@ -23,7 +23,7 @@ main at `v0.13.0`, 0ae051c3, 2026-10-29).
 | Leaf (task id) | Files (owned, summary) | Note |
 |---|---|---|
 | `r14-t0-adr0016` (`tsk-mvtj22h3-64bbte`) | docs/adrs/0016-sweep-promote-warden.md, scorecard.json `targets["0.14.0"]`, index.html, PLAN-OF-PLANS §6/§11, release spec `scorecard:` block | the Security-table rule numbers were already corrected at kickoff (R4/R7/R8/R10); the leaf only confirms them |
-| `r14-t0-skeletons` (`tsk-mvtj22h3-cme3vy`) | ADR 0010 Amendment 10 (incl. the id_effect_fp exception, Open question 6), root Cargo.toml, id_effect_kafka/amqp + warden skeletons, packaging order, kit features `kafka` `amqp` `fsm` + `full`, ci.yml `breadth` job, MIGRATION-0.14 headings | blocks kafka, amqp, warden-core and every leaf that appends to the kit |
+| `r14-t0-skeletons` (`tsk-mvtj22h3-cme3vy`) | ADR 0010 Amendment 10 (incl. the id_effect_fp exception, Open question 6), root Cargo.toml, id_effect_kafka/amqp/nats + warden skeletons, packaging order, kit features `kafka` `amqp` `nats` `fsm` + `full`, ci.yml `breadth` job, MIGRATION-0.14 headings | blocks kafka, amqp, nats, warden-core and every leaf that appends to the kit |
 | `r14-f-sqlite-per-row` (`tsk-mvtj22h3-kdvszu`) | sql `sqlite/value.rs`, `repository/relations.rs` (key path), gates.toml orm block | benches: never at the same time as core-errors |
 | `r14-s-core-errors` (`tsk-mvtj22h3-muqac7`) | core `failure/**`, `kernel/{cause,runloop}.rs` (panic path) | strict tier; kernel bench subset vs v0.13 |
 
@@ -35,12 +35,13 @@ main at `v0.13.0`, 0ae051c3, 2026-10-29).
 | `r14-s-core-di` (`tsk-mvtj22h3-652dv4`) | skeletons; kit `graph.rs` + tool `doctor/graph.rs` only |
 | `r14-s-data-fp` (`tsk-mvtj22h3-swwxcr`) | skeletons (Amendment 10 exception) |
 | `r14-s-events-upcast` (`tsk-mvtj22h3-34m5zn`) | skeletons; journal column migration |
-| ★`r14-s-kafka` (`tsk-mvtj22h3-563we9`) | skeletons — **critical path**; dispatch first: must build on the Windows `matrix` leg (D9, no exclusion) |
+| `r14-s-kafka` (`tsk-mvtj22h3-563we9`) | skeletons; dispatch first: must build on the Windows `matrix` leg (D9, no exclusion); off the critical path since D11 |
+| ★`r14-s-nats` (`tsk-mvzyehvk-7rx34u`) | skeletons — **critical path** (D11: the Warden's broker); JetStream container with TLS |
 | `r14-s-amqp` (`tsk-mvtj22h3-ye85fh`) | skeletons; deny.toml BSD-2-Clause line |
 | `r14-s-testing` (`tsk-mvtj22h3-3qm28i`) | skeletons; `mock!`, seeded order harness |
 | `r14-s-governance` (`tsk-mvtj22h3-i2jh1z`) | adr0016; docs + `security-kpis.sh --only` |
 
-kafka and amqp both append to `crates/id_effect_test/src/{lib.rs,containers/mod.rs}` (module lines).
+kafka, amqp and nats all append to `crates/id_effect_test/src/{lib.rs,containers/mod.rs}` (module lines).
 
 ## Wave 2
 
@@ -73,10 +74,10 @@ mail, web-uploads, authz-views and idempotency-pg each append one kit feature li
 
 | Leaf (task id) | Depends on |
 |---|---|
-| ★`r14-w-warden-mesh` (`tsk-mvtj22h3-aqq7ue`) | warden-core, kafka, parallel-supervision, core-runtime — **critical path**; split seam `r14-w-warden-concurrency` named in the leaf |
+| ★`r14-w-warden-mesh` (`tsk-mvtj22h3-aqq7ue`) | warden-core, nats, parallel-supervision, core-runtime — **critical path**; split seam `r14-w-warden-concurrency` named in the leaf |
 | `r14-p-ledger` (`tsk-mvtj22h3-0c965b`) | data-fp, testing, parallel-supervision |
 | `r14-p-relay` (`tsk-mvtj22h3-xzfovk`) | idempotency-pg, h3spec (F59) |
-| `r14-e-fuzz-security` (`tsk-mvtj22h3-4hldm3`) | kafka, amqp, events-upcast, web-uploads, mail, console-profiling |
+| `r14-e-fuzz-security` (`tsk-mvtj22h3-4hldm3`) | kafka, amqp, nats, events-upcast, web-uploads, mail, console-profiling |
 
 ## Wave 5
 
@@ -84,7 +85,7 @@ mail, web-uploads, authz-views and idempotency-pg each append one kit feature li
 |---|---|
 | ★`r14-w-warden-ops` (`tsk-mvtj22h3-gdzyd5`) | warden-mesh, console-profiling, chaos — the §6 exit KPI |
 | `r14-p-toolchain` (`tsk-mvtj22h3-d8uqca`) | tool-generate, cli-prompts, dx-docs-lint, deploy-k8s, dev-error-page, warden-mesh, p-ledger, p-relay; owns `warden/{Dockerfile,deploy/**}` only |
-| `r14-e-benches` (`tsk-mvtj22h3-57aecm`) | sqlite-per-row, core-runtime, kafka, amqp, parallel-supervision, p-relay; idle machine |
+| `r14-e-benches` (`tsk-mvtj22h3-57aecm`) | sqlite-per-row, core-runtime, kafka, amqp, nats, parallel-supervision, p-relay; idle machine |
 
 ## Wave 6 and 7 — exit
 
@@ -95,7 +96,7 @@ mail, web-uploads, authz-views and idempotency-pg each append one kit feature li
 | `r14-x-rescore` (`tsk-mvtj22h3-sxid36`) | level-audit, kpis; blind assessor who built no 0.14 leaf (METHOD §6) |
 | `r14-t0-migration-guide` (`tsk-mvtj22h3-ra1d4s`) | every leaf; then CHANGELOG Scorecard + Security, owner steps |
 
-Critical path: skeletons → kafka → (parallel-supervision) → warden-core → warden-mesh → warden-ops →
+Critical path: skeletons → nats → (parallel-supervision) → warden-core → warden-mesh → warden-ops →
 level audit → re-score. The sweep leaves have two or more waves of slack and fill free slots.
 
 ## Rules (as 0.13)
@@ -112,7 +113,7 @@ level audit → re-score. The sweep leaves have two or more waves of slack and f
   ≥ 96 % regions per touched crate (examples report only), `missing_docs` denied, CHANGELOG line,
   MIGRATION-0.14 section per semver break, `dangerous_*` APIs recorded and listed by
   `scripts/check-dangerous.sh`.
-- New pre-1.0 dependencies exact-pinned (rdkafka, lapin, pprof, libtest-mimic) and `cargo deny check`
+- New pre-1.0 dependencies exact-pinned (rdkafka, lapin, async-nats, pprof, libtest-mimic) and `cargo deny check`
   clean; `cargo tree -d` shows one rcgen, one quinn, one rustls, one tungstenite.
 - Two bench leaves never run at the same time (W0: sqlite-per-row, core-errors; W5: benches; W6: kpis).
 - Scorecard commands with `--report` / `--html` write files even with `--file`: run them only in the

@@ -1,10 +1,10 @@
 # NOW
-Updated: 2026-10-29T12:36:30.892Z
+Updated: 2026-11-03T00:32:42.045Z
 
 ## In flight (0)
 None.
 
-## Ready to pick up (38)
+## Ready to pick up (39)
 ### tsk-mvtj22h3-64bbte . T0 — ADR 0016 "Sweep, promote and Warden", the stored 0.14.0 targets and the 0.14 roadmap restatement: r14-t0-adr0016
 Mission: pln-mvtj1svc-m1yw2w
 Spec: .maestro/specs/releases/0.14/r14-t0-adr0016.md
@@ -25,7 +25,7 @@ Spec: .maestro/specs/releases/0.14/r14-s-core-errors.md
 Mission: pln-mvtj1svc-m1yw2w
 Spec: .maestro/specs/releases/0.14/r14-s-core-runtime.md
 
-(and 33 more)
+(and 34 more)
 
 
 ## Ready to ship (0)

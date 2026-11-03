@@ -21,8 +21,8 @@ acceptance_criteria:
 Leaf of `.maestro/specs/releases/0.14.0.md`, section "E13.1 — Sweep". The release spec's row is binding;
 this file exists so Maestro can track the leaf as its own task.
 
-Wave 1. Blocked by: r14-t0-skeletons (it edits crates/id_effect_kit/Cargo.toml for the `kafka` / `amqp`
-features; this leaf does not touch the manifest). Blocks: r14-x-level-audit, r14-x-rescore. Shares no
+Wave 1. Blocked by: r14-t0-skeletons (it edits crates/id_effect_kit/Cargo.toml for the `kafka` / `amqp` /
+`nats` features; this leaf does not touch the manifest). Blocks: r14-x-level-audit, r14-x-rescore. Shares no
 file with r14-s-core-runtime (wave 1): this leaf edits nothing under crates/id_effect/src.
 
 Defaults the owner may overturn: (1) cycle detection lives where the graph already lives, in

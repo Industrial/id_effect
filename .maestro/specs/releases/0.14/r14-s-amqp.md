@@ -24,11 +24,11 @@ this file exists so Maestro can track the leaf as its own task.
 
 Wave 1. Blocked by: r14-t0-skeletons (crate skeleton, Amendment 10, ci.yml `-p` line, kit feature
 `amqp`). Blocks r14-e-fuzz-security (`amqp_properties`) and r14-e-benches (broker throughput). Runs
-beside r14-s-kafka: never edits `crates/id_effect_test/src/containers/spec.rs`. Third in the scope-cut
+beside r14-s-kafka and r14-s-nats: never edits `crates/id_effect_test/src/containers/spec.rs`. Third in the scope-cut
 table (msg.brokers would stay 88).
 
 Defaults the owner may overturn: one direct exchange with routing key = topic (not one exchange per
 topic); quorum queues (for `x-delivery-count`; classic queues do not count redeliveries); dead-lettering
 done by the client with our headers, not RabbitMQ's DLX (so the DLQ message is the same shape as on
-Redis and Kafka). Not done here: RabbitMQ streams (offset replay), AMQP 1.0, a shared broker
+Redis, Kafka and NATS). Not done here: RabbitMQ streams (offset replay), AMQP 1.0, a shared broker
 conformance suite.
