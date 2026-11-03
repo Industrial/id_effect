@@ -321,7 +321,7 @@ Prerequisites: E11.1 and E8.3.
 - **E13.2 Promote (0.14):**
   - bring the 46 rows below production level up to it, by making the Ledger, Relay and Pipeline exercise each feature in CI
   - **Warden** becomes the fourth reference app (`examples/reference/warden`, extending L4): a supervised, durable, capability-typed agent runtime on the workflow, ai, mesh, jobs and messaging crates
-  - Warden covers what the other three do not use (AI, a real broker, durable workflows)
+  - Warden covers what the other three do not use (AI, a real broker, durable workflows); [ADR 0016](../../../docs/adrs/0016-sweep-promote-warden.md) §1 defines it (durable agent runs, capability-typed tools, an FSM lifecycle with STM budgets, Redis Streams and NATS JetStream intake, three supervised nodes in a mesh, the operations surface)
 - **E13.3 Medium items (0.15):**
   - web: admin extensions, form helpers, GCS and Azure storage
   - data: changesets, a two-level cache
@@ -353,10 +353,10 @@ whose target moves in that release.
 | **0.11.0** | Distribution & hardening | E2.5, E7.5, E8.1–E8.3, E11.2, E11.3, E11.4 part 1 | 12 | 79.2 (#1) | 83.7 (#1) | ≤ 9 | 0 open highs; ADR 0013 accepted with an enforcement point per rule; Scorecard ≥ 7.5; Best Practices Passing; a verified attestation per crate; ≥ 8 fuzz targets |
 | **0.12.0** | One call surface | E12.1–E12.5 | 3 | 80.9 (#1) | 84.8 (#1) | ≤ 7 | Relay reference app (3-node chat + presence over HTTP/3 and WebSocket) green; `web.rpc` 100, `web.realtime` ≥ 88, `dist.tls` ≥ 88; the T12 bench gates (unary delta ≤ 3 µs, ADR 0014 D5) |
 | **0.13.0** | Breadth | E1.3 admin, E3.3 part 2, E5.5 tenancy, E9.1, E9.3–E9.5 | 7 | 85.2 (#1) | 87.8 (#1) | ≤ 3 | Pipeline reference app green |
-| **0.14.0** | Sweep & promote | E13.1, E13.2 | 0 † | 85.2 (#1) † | 87.8 (#1) † | ≤ 3 † | Warden reference app green; every promoted row cites a reference-app CI test |
-| **0.15.0** | Medium items | E13.3, E13.4, E11.5 starts | 0 † | 85.2 (#1) † | 87.8 (#1) † | ≤ 3 † | AppHost brings up the Ledger and its services with one command; outside audit applied for |
-| **0.16.0** | Scale | E13.5 | 0 † | 85.2 (#1) † | 87.8 (#1) † | ≤ 3 † | split-brain and sharding chaos tests green on Relay and Warden |
-| **0.17.0** | Ergonomics & cloud | E13.6 | 0 † | 85.2 (#1) † | 87.8 (#1) † | ≤ 3 † | cold build of the `service` template < 60 s; migration diffing used by the Ledger |
+| **0.14.0** | Sweep & promote | E13.1, E13.2 | 35 | 92.8 (#1) | 94.8 (#1) | ≤ 2 | Warden reference app green; every promoted row cites a reference-app CI test |
+| **0.15.0** | Medium items | E13.3, E13.4, E11.5 starts | 0 † | 92.8 (#1) † | 94.8 (#1) † | ≤ 2 † | AppHost brings up the Ledger and its services with one command; outside audit applied for |
+| **0.16.0** | Scale | E13.5 | 0 † | 92.8 (#1) † | 94.8 (#1) † | ≤ 2 † | split-brain and sharding chaos tests green on Relay and Warden |
+| **0.17.0** | Ergonomics & cloud | E13.6 | 0 † | 92.8 (#1) † | 94.8 (#1) † | ≤ 2 † | cold build of the `service` template < 60 s; migration diffing used by the Ledger |
 | **0.18.0** | Consolidation (no new crates) | E10.1–E10.4, E10.6, E11.4 complete, E1.7 compile budget | 0 | ≥ 0.17 measured | ≥ 0.17 measured | ≤ 0.17 measured | No row −5 or worse; soak window passes for all four reference apps; ≥ 15 fuzz targets in CI with no open crash; ASVS L2 ≥ 90 %; K2 ≤ 5 s; K6 budget met; zero deprecation shims left |
 | **0.19.0** | Adoption & release candidate | E0.3 freeze RFC, E0.5 consumer migration, E1.6 docs complete, E10.8, E11.5 audit | 0 | ≥ 0.18 measured | ≥ 0.18 measured | ≤ 0.18 measured | API freeze RFC accepted; downstream consumers migrated; K5 = 100 %; consolidated migration guide; outside audit published with fixes; `1.0.0-rc.1` published |
 | **1.0.0** | Stability | E0.3 LTS, E0.4, E0.5 case studies, snapshot refresh | 24 (still stored at 1.0.0; L15 moves them earlier) | 86.4 (#1), and ≥ 0.19 measured | 88.4 (#1) | ≤ 1 | K1 ≤ 90 s, ≥ 5 public adopters, ≥ 3 maintainers; Scorecard ≥ 8.5; Best Practices Silver; ASVS L2 100 %; 0 open highs; **calendar gates:** the freeze has held ≥ 4 weeks with no accepted breaking change, and ≥ 2 adopters have run an rc in production ≥ 30 days |
@@ -386,8 +386,22 @@ forward. 0.13.0 "Rows" counts the six breadth rows and the `sec.supply` carry-ov
 (target 100, `sec.supply#7`). On the same baseline `--targets 1.0.0` reads E 87.2, RT 89.2, red 1;
 the 1.0.0 cell is left for the next retro (§7.5).
 
-† No row target is stored for 0.14.0–0.17.0 yet, so the tool carries the 0.13.0 plan forward
-(METHOD §5.1). Each of those kickoffs moves its share of the 24 rows still targeted at 1.0.0.
+The 0.14.0 cell was restated at the 0.14 kickoff (leaf `r14-t0-adr0016`,
+[ADR 0016](../../../docs/adrs/0016-sweep-promote-warden.md) §6) once the 35 row targets of
+`.maestro/specs/releases/0.14.0.md` (`scorecard.rows_in_scope`, 0.14 D6) were stored as
+`targets["0.14.0"]` in `docs/scorecard/scorecard.json` (computed by
+`.maestro/specs/releases/0.14/plan-targets.jq`: every sweep check met, every promoted row at level
+production). `scripts/scorecard.sh --targets 0.14.0` on the measured 0.13.0 baseline (E 86.8 #1, RT
+88.7, red 3) reads E 92.8 (#1), RT 94.8 (#1), ≥80 75, red ≤ 2 (`eco.community`, `eco.production`),
+leader 64, so the 0.14 gate is 91.8. Before the targets were stored the tool carried the 0.13.0
+measurement forward: E 87.1, RT 88.8, red 3. 0.14.0 "Rows" counts the 35 stored rows (the
+`sec.supply` carry-over from 0.13.0 among them, target 100). With them stored, `--targets 1.0.0` reads
+E 93.7, RT 95.2, red 1 (METHOD §5.2 and the self-test copy in `scripts/scorecard.sh` restated); the
+1.0.0 cell is left for the retro (§7.5).
+
+† No row target is stored for 0.15.0–0.17.0 yet, so the tool carries the 0.14.0 plan forward
+(METHOD §5.1). Of the 24 rows still targeted at 1.0.0, only `eco.community` and `eco.production`
+(people and time, §9) stay above that plan.
 
 ```mermaid
 flowchart LR
@@ -566,3 +580,4 @@ snapshot.
 | 2026-10-21 | Owner decision 0.13 D16: ADR 0015 "Breadth batteries" **Accepted**, with the defaults of D1–D15 as written. The 0.13.0 release spec's `scorecard:` block is no longer provisional. |
 | 2026-10-24 | Owner decisions (0.13 exit): (1) the eager-loading bench pair `orm/eager_100x10 / orm/n_plus_one_100x10` is gated at **≤ 0.45**, not the 0.25 that ADR 0015 §15 / D15 wrote before measuring (measured 0.313–0.416; sqlx-sqlite's per-row cost puts two plain reads at 0.25–0.29); follow-up **F66** (the SQLite driver's per-row cost) brings it back toward 0.25 in 0.14. (2) Keep main's GitHub Actions release flow (#118, 3e9104ed): a pushed `v*` tag publishes with the `CARGO_REGISTRY_TOKEN` secret of the `crates-io` environment, new crates are created automatically on first publish, and there is no signed-tag check; findings S3 and S6 become accepted risks (`docs/security/findings.json`, THREAT-MODEL.md "Accepted risks"). The 0.11.0 trusted-publishing / signed-tag owner steps (0.11 D15) no longer apply. |
 | 2026-10-25 | 0.13.0 exit, leaf `r13-x-rescore`: blind re-score (METHOD §6, an assessor who built no 0.13 leaf, tree at release/0.13.0 182d65a6) measured **U 86.7, E 86.8 (#1), RT 88.7 (#1), ≥80 64, red 3, leader 40** against the plan E 85.2 / RT 87.8 / red ≤ 3 (gate 84.2; full margin 86.7); `--compare-targets 0.13.0` ok (tool-planned 87.1), `--diff 0.12.0 0.13.0` ok (8 rows up, none down). Rows: `data.orm` 88, `web.ui` 83, `web.admin` 88, `ai.llm` 100, `eco.i18n` 63, `eco.tenancy` 88, all production through the Pipeline; kept `web.rpc`, `web.realtime`, `dist.tls` 100; side-effect rows `web.validation` 88 → 100 (#8 translated Schema messages) and `sec.web` 88 → 100 (#8 auto-escaping views). Adjudications in `docs/scorecard/REPORT-0.13.0.md` (web.ui #7 Leptos recipe not counted, examples-only). **Miss:** `sec.supply` 88 vs 100 (`sec.supply#7`: 0 published GHSA on 2026-10-25, 12 of 13 SECURITY.md rows pending); **carried over to 0.14** (target 100, owner step: publish the 0.10.1 advisories); not written as a stored target (0.13 D13). Production rests on `reference-pipeline`, `reference-relay` and `reference-ledger`, which had not run green in CI at scoring time (run 40220400953 in progress); if `reference-pipeline` is red on the tag, `ai.llm` falls to 89 and E by about 0.4. Results `docs/scorecard/results/v0.13.0.json`. |
+| 2026-11-03 | 0.14 kickoff, leaf `r14-t0-adr0016`: ADR 0016 "Sweep, promote and Warden" written as Proposed (owner acceptance at the 0.14 exit, 0.14 D4), recording 0.14 D1–D6 and D11, the 0.13 follow-ups (F53, F59, F62, F66, `sec.supply#7`) and the Security table S1–S17. **D1:** the Warden reference app is defined (§5 T13 E13.2, ADR 0016 §1). **D3:** a row moves documented → production only when a reference-app test that CI runs exercises its met checks and the level audit cites it. **D6:** the 35 row targets of the release spec are stored as `targets["0.14.0"]` in `docs/scorecard/scorecard.json` (only `targets` objects change). §6 row 0.14.0 restated from `scorecard.sh --targets 0.14.0` on the measured 0.13.0 baseline: Rows 35, E 92.8 (#1), RT 94.8 (#1), red ≤ 2, gate 91.8 (carried plan before storing: E 87.1, RT 88.8, red 3); the † rows 0.15.0–0.17.0 now carry 92.8 / 94.8 / ≤ 2; `--targets 1.0.0` reads E 93.7, RT 95.2, red 1, so METHOD §5.2 and the self-test copy in `scripts/scorecard.sh` are restated (the 1.0.0 cell is left for the retro). Security-table numbering: ADR 0016 and the release spec's table use ADR 0013's rule numbers (R1 deny by default, R4 bounded input, R7 operator surfaces, R8 transports, R9 browser defences, R10 opt-outs and the prod posture) and the compile-fail ids `r4_upload_route_without_size_cap` and `r7_profiling_endpoint_without_guard`; the release table's dev-error-page row is corrected from R7 / R10 to R7 / R9. The release spec's `scorecard:` block is no longer provisional. |

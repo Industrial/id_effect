@@ -188,7 +188,8 @@
 			},
 			"evidence": "Effect<A,E,R> with trybuild fail and gallery suites, book part1 ch01-03, examples 001-018. Used by the CI-tested Ledger (ci.yml reference-ledger job, cargo nextest -p ledger): src/main.rs:27 Effect<LedgerConfig, StartupError>, src/db.rs:108 need::<MigrationsApplied>. #5 not met: no catchTag-style combinator; book part3/ch08-03-recovery.md lists only catch/map_err/exit.",
 			"targets": {
-				"1.0.0": 100
+				"1.0.0": 100,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -391,7 +392,8 @@
 			"evidence": "Layer succeed/effect/scoped/acquire_release/fresh/merge/provide_to with UI and layer tests, book part2 ch06-07. Ledger: src/db.rs:108-110 need + Layer::succeed + provide_layer/provide_merge, tests/common/mod.rs:154-174, CI job reference-ledger. #8 not met: crates/id_effect_kit/src/graph.rs LayerGraph renders text/DOT (book part6/ch34-01-doctor-graph.md, tests/graph.rs) and reports missing needs, but has no cycle detection.",
 			"targets": {
 				"0.9.0": 88,
-				"1.0.0": 100
+				"1.0.0": 100,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -871,7 +873,8 @@
 			},
 			"evidence": "failure/{cause,exit,pretty}.rs, tests/panic.rs, book part3 ch08-01..03, examples 017-018. Used by the CI-tested Ledger: src/main.rs:94-98 describe(Cause<StartupError>), tests/common/mod.rs:178 Exit::Failure(Cause::Die(defect)). #7 not met: Defect carries message + payload only, no stack or span trace.",
 			"targets": {
-				"1.0.0": 88
+				"1.0.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -1365,7 +1368,8 @@
 			},
 			"evidence": "Masks, structured child interruption, race/timeout loser semantics; tests fibers.rs/race_timeout.rs; book part3/ch09-03-cancellation.md. Upgraded to production: the CI-tested Ledger's request timeout (src/app.rs:427 TimeoutLayer) interrupts the handler fiber (crates/id_effect_axum/src/middleware/limits.rs:4-7, DropPolicy::Interrupt), tested by ledger tests/http.rs:166 slow_requests_time_out; src/main.rs:78 aborts background fibers on shutdown. #6 not met: no on_interrupt/on_cancel hook (only emulation via acquire_use_release ExitKind).",
 			"targets": {
-				"0.8.0": 88
+				"0.8.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -1594,7 +1598,8 @@
 			},
 			"evidence": "race.rs/par.rs with tests race_timeout.rs, par.rs and fibers.rs, book part3 ch09, example 049_fiber_all.rs. The Ledger does not call Effect::race/timeout/zip_par directly (its HTTP timeout is the axum TimeoutLayer), so documented. #8 not met: race_with (race.rs:135) is a private fn; no public race_with/disconnect.",
 			"targets": {
-				"0.8.0": 88
+				"0.8.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -1809,7 +1814,8 @@
 			},
 			"evidence": "Fiber runtime fork/fork_daemon/join/interrupt with tests/fibers.rs, book part3 ch09-01/02, examples 048-049, spawn+join benchmark in docs/benchmarks. Upgraded to production: the CI-tested Ledger runs on fibers and exposes the live fiber dump through its console (examples/reference/ledger/src/console.rs:1, tests/console.rs). #2 not met: no 1M idle-fiber measurement or documented claim found.",
 			"targets": {
-				"1.0.0": 88
+				"1.0.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -2036,7 +2042,8 @@
 			},
 			"evidence": "coordination/* with tests coordination*.rs, examples 100-102, book part3 ch09-ch10. The Ledger does not use these primitives directly, so documented. #8 not met: zero capacity is clamped (queue.rs:194 capacity.max(1)) and closed queues return values, but there is no misuse/no-panic guarantee or test across the primitives (e.g. Semaphore::acquire_n above total permits just waits).",
 			"targets": {
-				"0.8.0": 88
+				"0.8.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -2261,7 +2268,8 @@
 			},
 			"evidence": "STM moved into core in 0.11: id_effect::stm (crates/id_effect/src/stm/, lib.rs:121; id_effect_fp::stm keeps deprecated aliases, crates/id_effect_fp/src/lib.rs:14,73). TRef, TMap, TQueue and TSemaphore plus the 0.11 collections TSet, TArray, TPriorityQueue, TPromise and TReentrantLock; contention tests crates/id_effect/tests/stm_contention.rs and stm_collections.rs; examples 077-091; book part4 ch12-00..04 (ch12-04-collections.md). Not used by the Ledger, so the level is documented (cap 89). 8/8.",
 			"targets": {
-				"0.11.0": 89
+				"0.11.0": 89,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -2470,7 +2478,8 @@
 			},
 			"evidence": "compute/* fabric, admission, governor with tests fabric.rs and compute_adaptive.rs, examples 120-122, book part3/ch12-00-compute-fabric.md. Not used by the Ledger. #8 not met: only AdmissionController::waiting() (admission.rs:66) and host CPU/mem telemetry; no exported pool-utilisation metrics (queue depth, active workers).",
 			"targets": {
-				"1.0.0": 88
+				"1.0.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -3066,7 +3075,8 @@
 			},
 			"evidence": "id_effect_process supervisor/dynamic with tests supervision_contracts.rs and supervision_trees.rs, examples 130_process_tree.rs and 154_cookbook_supervised_daemon.rs, book part7/ch37-00 and cookbook ch40-04. The Ledger starts no supervisor (it only shows the console's supervisors panel), so documented. #8 not met: no significant children/auto_shutdown/max_children (dynamic.rs:25-34 spec has none).",
 			"targets": {
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -3474,7 +3484,8 @@
 			},
 			"evidence": "id_effect_fsm machine/interpreter/visualize/behaviour, and new in 0.11 the Statem behaviour with gen_statem parity (crates/id_effect_fsm/src/statem.rs: data-carrying states, state/event/generic timeouts, postpone). Book part5 ch19-00..05 (ch19-05-statem.md), examples door_fsm.rs, supervised_traffic_light.rs, statem_door_lock.rs; tests tests/statem.rs, fsm_process.rs, derive_fsm.rs. Not used by the Ledger, so the level is documented (cap 89). 8/8.",
 			"targets": {
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -7017,7 +7028,8 @@
 			},
 			"evidence": "Published crate crates/id_effect_events; book part5/ch23-00-events-and-projections.md, examples 001_expected_version.rs, 010_account.rs, 020_sqlite_journal.rs, integration tests pg_events.rs, sql_journal.rs. New in 0.12: RPC subscriptions over the event log with resumable cursors (crates/id_effect_rpc/src/subscription/events.rs:86 EventSubscription; tests subscription_events.rs). Production: the CI-tested Relay keeps room history in a PostgreSQL SqlEventJournal (examples/reference/relay/src/rooms.rs:66 Journal = SqlEventJournal<Posted>) tailed by EventSubscription (src/handlers.rs:44), tested by tests/chat.rs relay_resume_after_client_reconnect_no_gaps (:301) with PostgreSQL in a container (ci.yml reference-relay). Not met: #7, because EventEnvelope.version is the stream version and there is no upcasting. CI caveat: the release/0.12.0 branch has no GitHub Actions run (gh run list shows none), so the reference-relay, rpc and ts-client jobs and the new Ledger RPC tests in reference-ledger have never run in CI.",
 			"targets": {
-				"0.10.0": 75
+				"0.10.0": 75,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -7232,7 +7244,7 @@
 				"0.13.0": 75
 			},
 			"evidence": "No changes since v0.9.0 (git diff is empty for id_effect_fp and id_effect_optics). Not met: #7 and #8, because no Validation or NonEmpty type is found in id_effect or id_effect_fp. Book part5 (ch17 functional patterns, ch18-00-optics.md), examples in both crates, tests in id_effect_fp/tests. The Ledger does not use it, so the level is documented.",
-			"targets": {},
+			"targets": { "0.14.0": 100 },
 			"checks": [
 				{
 					"id": "data.fp#1",
@@ -9285,7 +9297,8 @@
 			},
 			"evidence": "New in 0.10: the published crate id_effect_storage. Covered by book part6/ch28-05-storage.md, examples crates/id_effect_storage/examples/010_object_keys.rs and 020_storage.rs, and tests/conformance.rs and s3.rs (CI). The Ledger stores statements in S3 with signed URLs (src/jobs.rs:352-358), tested in CI by tests/statements.rs:29 against SeaweedFS. Not met: #4 (no GCS or Azure backend) and #6, because the axum form decoder skips file fields (route/decode.rs:255,272) and there is no upload extractor. Level production.",
 			"targets": {
-				"0.10.0": 75
+				"0.10.0": 75,
+				"0.14.0": 88
 			},
 			"checks": [
 				{
@@ -9679,7 +9692,8 @@
 			"evidence": "Published id_effect_authz plus tenant-scoped id_effect_sql repositories; book part6/ch30-02-authorization.md; examples crates/id_effect_authz/examples/010_policies.rs, 020_route_guards.rs; integration tests crates/id_effect_authz/tests/guards.rs, policies.rs; Ledger tests/authz.rs, accounts.rs in CI -> production. #7 not met: id_effect_authz has no template or view helpers. 0.13: the tenant-scoped repository moved to crates/id_effect_sql/src/repository/mod.rs (split); #7 still not met: the admin decides its own links and buttons through a crate-private check (id_effect_admin/src/site.rs allowed), and there is no public view or template helper for applications.",
 			"targets": {
 				"0.9.0": 75,
-				"1.0.0": 88
+				"1.0.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -10315,7 +10329,8 @@
 				"0.11.0": 100,
 				"0.12.0": 100,
 				"0.13.0": 100,
-				"1.0.0": 88
+				"1.0.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -11500,7 +11515,8 @@
 			"evidence": "New published crate id_effect_console; book part6/ch27-03-console.md; examples crates/id_effect_console/examples/010_bind.rs, 020_console.rs; integration tests crates/id_effect_console/tests/api.rs, console.rs, csrf.rs; the CI-tested Ledger mounts it (src/console.rs) and tests it (tests/console.rs: only_an_operator_with_a_second_factor_opens_the_console) -> production. #4 not met: no REPL or remote shell. #7 not met: no CPU or heap profiling; the fiber dump lists span names, not stack traces, and is already counted under #1.",
 			"targets": {
 				"0.10.0": 75,
-				"1.0.0": 88
+				"1.0.0": 88,
+				"0.14.0": 88
 			},
 			"checks": [
 				{
@@ -11875,7 +11891,8 @@
 			"evidence": "Book part3/ch11-05-cron.md and part6/ch31-01-jobs.md#Cron; examples crates/id_effect/examples/123_cron_jobs.rs, crates/id_effect_jobs/examples/010_jobs.rs; integration tests crates/id_effect/tests/cron.rs, crates/id_effect_jobs/tests/cron_pg.rs. Raised to production: the CI-tested Ledger runs CronRegistry plus CronLeader (src/jobs.rs:150-171), tested by tests/statements.rs:29 the_statement_cron_mails_every_account_its_csv_once. #6 not met: CronScheduler (cron_job.rs:459-492) only reads; it cannot add or remove schedules at runtime.",
 			"targets": {
 				"0.8.0": 75,
-				"0.10.0": 88
+				"0.10.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -12099,7 +12116,8 @@
 			},
 			"evidence": "Moved from labs to the published crates id_effect_messaging and id_effect_redis (feature streams); book part6/ch31-02-messaging.md; examples crates/id_effect_messaging/examples/010_topics.rs, 020_memory_broker.rs, 030_outbox_inbox.rs; integration tests crates/id_effect_messaging/tests/pg_outbox.rs, crates/id_effect_redis/tests/streams.rs; the CI-tested Ledger uses outbox -> Redis Streams -> inbox (src/notifications.rs; tests/notifications.rs:56, :166) -> production. #1 and #2 not met: no Kafka or AMQP adapter in any published crate (Kafka appears only in a doc comment, broker.rs:39).",
 			"targets": {
-				"0.10.0": 75
+				"0.10.0": 75,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -12528,7 +12546,8 @@
 			},
 			"evidence": "Was absent in 0.9; now the published crate id_effect_mail (Cargo.toml:31); book part6/ch31-03-mail.md; examples crates/id_effect_mail/examples/010_mail.rs, 020_templates.rs; integration tests crates/id_effect_mail/tests/* (PG and container CI jobs); the CI-tested Ledger sends mail through it with Mailpit in CI (src/mail.rs; tests/statements.rs:29, tests/signup.rs, tests/observability.rs SendGrid) -> production. #6 not met: no inbound mail. #7 not met: no SMS, Slack, push or database notification channel abstraction.",
 			"targets": {
-				"0.10.0": 75
+				"0.10.0": 75,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -12898,7 +12917,8 @@
 			},
 			"evidence": "Production: first-party testing module (run_test, Exit assertions, golden files), in-memory doubles, book part4 ch15; the Ledger's CI tests (examples/reference/ledger/tests/common/mod.rs) swap layers and services. #4 not met: ch15-03 says 'no mocking framework'.",
 			"targets": {
-				"0.8.0": 88
+				"0.8.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -13152,7 +13172,8 @@
 			},
 			"evidence": "Documented: book ch11-04, ch15-02, ch15-05, cookbook ch40-01, tests/interleavings.rs. Not production: git grep finds no TestExecutor/TestRandom/Random::seeded in examples/reference/ledger. #8 not met: no seeded test-order shuffle in CI.",
 			"targets": {
-				"0.8.0": 88
+				"0.8.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -13379,7 +13400,8 @@
 			},
 			"evidence": "Documented: book ch15-04/06, example crates/id_effect/examples/110_property_testing.rs, tests/testing_property.rs (+ golden files). Not production: the Ledger has no property tests (only Factory::seeded fixture generation, common/mod.rs:395).",
 			"targets": {
-				"0.8.0": 88
+				"0.8.0": 88,
+				"0.14.0": 100
 			},
 			"adr": {
 				"0.7.0": "Removed testing::proptest helpers in 0.7 (MIGRATION-0.7.md:108); restoration planned in PLAN-OF-PLANS E2.2 (0.8)."
@@ -13844,7 +13866,8 @@
 			},
 			"evidence": "Production (new in 0.10): id_effect_test feature fault, book ch15-09, example crates/id_effect_test/examples/030_faults.rs, tests/faults.rs; the Ledger's examples/reference/ledger/tests/faults.rs:56-117 runs a seeded FaultPlan (delay + 40001 conflicts) against the posting path in CI reference-ledger. #5 and #6 not met: ch15-09:444-448 says there is no runtime toggle and no toxiproxy-style proxy.",
 			"targets": {
-				"0.10.0": 75
+				"0.10.0": 75,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -14231,7 +14254,8 @@
 			"targets": {
 				"0.8.0": 63,
 				"0.10.0": 88,
-				"1.0.0": 88
+				"1.0.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -14434,7 +14458,8 @@
 			},
 			"evidence": "Documented: book ch16-00..04 + cookbook ch40-03, examples/cli-minimal with tests, crates/id_effect_cli/tests/cli_probe_exit.rs. Not production: the Ledger's main.rs does not use id_effect_cli. #4/#5 not met: id_effect_cli/src only has completions.rs, exit_code.rs, run.rs (no prompts or progress).",
 			"targets": {
-				"0.8.0": 75
+				"0.8.0": 75,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -14647,7 +14672,8 @@
 			"evidence": "Documented: book + tutorial + cookbook, snippets compiled as doctests, migration guide per release. #7 not met: .github/workflows/docs.yml deploys a single unversioned Pages site from main.",
 			"targets": {
 				"0.8.0": 88,
-				"1.0.0": 88
+				"1.0.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -14908,7 +14934,8 @@
 			"evidence": "Documented: book ch34-01, docs/diagnostics.md, trybuild ui suite, tool tests/doctor.rs. Not production: the Ledger CI does not run doctor. #6 (IDE plugin) and #8 (dev error page) not found in crates/.",
 			"targets": {
 				"0.8.0": 75,
-				"1.0.0": 88
+				"1.0.0": 88,
+				"0.14.0": 88
 			},
 			"checks": [
 				{
@@ -15138,7 +15165,8 @@
 			"evidence": "Promoted in 0.11 (E1.9): the Dylint library lints/id_effect_lints (version 0.11.0, tier integration; replaces labs/id_effect_lint), packaged, attested and published by the tag's publish workflow (.github/workflows/publish.yml:324-337) and installable from the tag through [workspace.metadata.dylint] (book appendix-d-workspace-tooling.md:31-49). Its UI tests (ui/*.rs + .stderr, .fixed for the auto-fixed lints) run in CI (lint.yml:39-40), cargo dylint runs over the workspace (lint.yml:42), and the runnable demo crate lints/id_effect_lints/examples/demo must trip every lint (lint.yml:43-50); the ast-grep rules run on the stable toolchain in the lint.yml ast-grep job. Level documented. Not met: #6, because no IDE or rust-analyzer setup is shipped or documented, and #8, because the id_effect_tool templates do not enable the lints (no dylint metadata under crates/id_effect_tool/templates).",
 			"targets": {
 				"0.11.0": 63,
-				"1.0.0": 75
+				"1.0.0": 75,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -15337,7 +15365,8 @@
 			"evidence": "Documented (up from published): first-party watch mode `id-effect dev` with book ch34-02, the end-to-end test crates/id_effect_tool/tests/dev.rs, and a runnable invocation against generated templates; measurements published in dx-kpis-0.10.json (still not run in CI). #3 not met: ch34-02 says 'nothing is hot-swapped in a running app'.",
 			"targets": {
 				"0.8.0": 50,
-				"1.0.0": 67
+				"1.0.0": 67,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -15560,7 +15589,8 @@
 			},
 			"evidence": "Production: config profiles and the operator console are used and CI-tested by the Ledger (tests/config.rs, tests/console.rs); new in 0.10: `id-effect dev` (book ch34-02, tests/dev.rs) and devcontainers. #1 (REPL) and #6 (seed command) not met: git grep -i seed finds nothing in id_effect_tool src/templates. #3 counts only as restart-based live reload; #5 has no request/trace/log views.",
 			"targets": {
-				"0.10.0": 63
+				"0.10.0": 63,
+				"0.14.0": 88
 			},
 			"checks": [
 				{
@@ -15757,7 +15787,8 @@
 			"evidence": "Documented: book ch34-00 + tutorial, generated Dockerfile/Kamal built in the CI templates job, axum health/drain tests; new in 0.12 the HTTP/3 deployment guide (book part6/ch29-07-http3-deployment.md) with docs/deploy/http3/kamal.yml and helm-values.yaml. Not production: neither the Ledger nor the Relay has a Dockerfile or deploy config. #6 not met: docs/deploy/http3/helm-values.yaml is an untested values file for a generic `helm create` chart; no chart, manifests or operator are shipped or tested.",
 			"targets": {
 				"0.8.0": 63,
-				"0.10.0": 88
+				"0.10.0": 88,
+				"0.14.0": 100
 			},
 			"checks": [
 				{
@@ -16237,7 +16268,8 @@
 			"evidence": "Process row: 6 of 8 checks are committed artifacts, so level is production. Missing: #1, pre-1.0 (the workspace version is 0.12.0, Cargo.toml:49, with breaking changes marked feat! and listed in docs/MIGRATION-0.12.md) and #4 (GOVERNANCE.md ties releases to the internal roadmap; no published dates or cadence). CHANGELOG.md has a 0.12.0 section and docs/MIGRATION-0.12.md maps every cargo semver-checks break.",
 			"targets": {
 				"0.8.0": 50,
-				"1.0.0": 88
+				"1.0.0": 88,
+				"0.14.0": 88
 			},
 			"checks": [
 				{
@@ -16487,7 +16519,8 @@
 			"evidence": "Process row: 3 of 8 checks are committed, so level is production. GOVERNANCE.md:9-12 says plainly there is one maintainer with merge rights. No second organisation, sponsor, foundation, commercial support or funding channel: no FUNDING.yml in .github/ (CODEOWNERS, dependabot.yml, scripts, workflows), and a grep of README, CONTRIBUTING and GOVERNANCE for sponsor/funding finds nothing.",
 			"targets": {
 				"0.8.0": 13,
-				"1.0.0": 50
+				"1.0.0": 50,
+				"0.14.0": 50
 			},
 			"checks": [
 				{
@@ -16679,7 +16712,8 @@
 			},
 			"evidence": "Published, tested and documented integrations (book chapters, crate examples, crate tests) for Tokio, axum/tower, PG/MySQL/SQLite (+Redis) and tracing/OTel, used by the Ledger app in CI job reference-ledger (ci.yml:239-290, in ci-pass), so level is production. Not met: #6, because the only real broker is Redis Streams (crates/id_effect_redis/src/streams.rs:333 'impl MessageBroker for RedisStreamsBroker'); the other impl is the in-memory MemoryBroker (crates/id_effect_messaging/src/memory.rs:372), and there is no Kafka/NATS/AMQP. Not met: #7, because the only cloud integration is S3Store, a generic S3-protocol store (crates/id_effect_storage/src/s3.rs:1), with no GCP/Azure/AWS SDK integrations, which is too thin to count as cloud-provider integrations. Not met: #8, no third-party package count.",
 			"targets": {
-				"1.0.0": 75
+				"1.0.0": 75,
+				"0.14.0": 75
 			},
 			"checks": [
 				{
