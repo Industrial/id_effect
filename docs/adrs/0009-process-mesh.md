@@ -3,7 +3,11 @@
 ## Status
 
 Accepted, amended 2026-10-19 (see [Amendment 1](#amendment-1-2026-10-19-opt-in-at-least-once-remote-send)):
-opt-in at-least-once remote send.
+opt-in at-least-once remote send. Amendment 2 (2026-11-27, **Proposed**, see
+[Amendment 2](#amendment-2-2026-11-27-revocation-and-certificate-rotation)): revocation and
+certificate rotation in the delivery and monitor tables. [ADR 0018](0018-heterogeneous-mesh.md)
+(Proposed) amends principle 2, the handshake, membership and the "Byzantine" and "cross-version"
+non-goals.
 
 ## Context
 
@@ -232,3 +236,133 @@ Details are in the `id_effect_node::delivery` module docs (`crates/id_effect_nod
 | Primitive | Guarantee |
 |-----------|-----------|
 | Remote send, reliable (opt-in) | At-least-once to the receiving node while the sender lives; deduplicated per sender incarnation; a retransmitted message can arrive after later ones; a full target mailbox drops the message (counted) and acknowledges it; a full retransmit buffer drops the oldest message (`BufferFull`); pending messages fail on a peer restart (`PeerRestarted`) |
+
+## Amendment 2 (2026-11-27, revocation and certificate rotation)
+
+**Proposed.** Release 0.15.0, leaf `c15-adr0009-amend2`
+([#197](https://github.com/Industrial/id_effect/issues/197)), epic #179. It goes with
+[ADR 0018](0018-heterogeneous-mesh.md) (attested identities with short-lived certificates) and
+[ADR 0019](0019-channel-capabilities.md) (revocable channel capabilities). The default stays
+at-most-once. Amendment 1 is unchanged, and the "exactly-once messaging" non-goal stands.
+
+### Why
+
+Under ADR 0018 and 0019, authority can end while both nodes are up and connected: a capability is
+revoked, an identity expires unrenewed, or a root or a measurement is removed from the trust
+policy. Today the only "authority ended" reason is node loss: `ExitReason::NoConnection`
+(`crates/id_effect_process/src/exit.rs:32`), fired by `Mesh::peer_down` and by failed remote
+monitors (`crates/id_effect_node/src/mesh.rs:276-300`, `:692-705`). Delivery failures are only
+`BufferFull` and `PeerRestarted` (`crates/id_effect_node/src/delivery.rs:147-154`). Reporting
+revocation as `noconnection` would be wrong: `noconnection` invites a retry once the node is
+reachable again, and a revoked capability must not be retried.
+
+### New reasons (additive)
+
+Both enums are already `#[non_exhaustive]` (`exit.rs:14`, `delivery.rs:147`), so these are
+additive:
+
+- `ExitReason::Revoked(RevokeCause)`, on the wire as `ExitReasonWire::Revoked(cause)`, displayed
+  as `revoked`. It is abnormal and trappable, like `NoConnection`: a linked process exits unless it
+  traps exits.
+- `DeliveryFailure::Revoked(RevokeCause)`.
+- `RemoteFault::Revoked(RevokeCause)`, and `CapError::Revoked` for RPC (ADR 0019 §6).
+- `#[non_exhaustive] enum RevokeCause { CapabilityRevoked, IdentityExpired, RootRemoved,
+  MeasurementRemoved, Superseded }`. `Superseded` means the instance was replaced by a crash-only
+  hand-off (ADR 0018 §9).
+
+### When revocation happens
+
+| Event | Detected by | Scope |
+|---|---|---|
+| The exporter, or a gifter with `revocable_by`, revokes a capability (ADR 0019 §8) | the exporter at once; the holder on the `Revoked{cap}` frame or at its next use | that capability and its derivation subtree |
+| A peer's certificate reaches `not_after` without a renewal | both sides, at expiry, on the injected clock | the whole session: every capability held over it |
+| A `TrustRoots` reload removes the root a peer's chain ends in, or the policy removes its measurement | each node, at the reload | every session whose chain no longer verifies |
+| A hand-off cuts over (ADR 0018 §9, step 5) | the supervisor; the predecessor's peers | every session of the predecessor |
+
+### Rotation is not a failure
+
+- **Renewal with the same key.** The host manager issues a new leaf certificate for the same key,
+  incarnation and measurement, starting at two thirds of the old lifetime. The node sends
+  `Renew{chain, sig}` on each session. The peer verifies the chain and checks that the key,
+  `NodeId`, measurement, manifest digest and contract digests are unchanged, then extends the
+  session to the new `not_after`. Nothing is observable: no `Down`, no exit signal, no delivery
+  failure, and the retransmit buffers stay as they are.
+- **A renewal that changes anything else is refused.** The session then ends at the old
+  `not_after` with `revoked(IdentityExpired)`.
+- **There is no grace period.** The old `not_after` is hard. Renewal starts at two thirds of the
+  lifetime, which leaves a third (20 minutes at the default 1 hour) for retries.
+- **A key never changes within an incarnation.** The DICE key is per boot. A new key means a new
+  boot, which is a new incarnation, and the existing `PeerRestarted` and `noconnection` semantics
+  apply.
+- **Adding a root changes nothing live.** The operator adds the new root before removing the old
+  one (an overlap) when rotating host roots.
+- **TLS keeps its certificate.** An open TLS connection keeps the certificate from its handshake.
+  `Renew` is an application frame; new connections present the new certificate. The verified
+  identity of a session is its latest verified chain.
+
+### Guarantees (normative additions)
+
+| Primitive | On revocation |
+|---|---|
+| Remote send (at-most-once) | Dropped. If the sender's node already knows the capability is revoked (it got `Revoked`), the send fails at once with `RemoteFault::Revoked`. Otherwise the exporter drops it and counts it. |
+| Remote send, reliable (Amendment 1) | Pending messages on the revoked capability, or on a revoked session, fail with `DeliveryFailure::Revoked(cause)` to the `Mesh::monitor_delivery` monitors. They are not retransmitted. Messages already acknowledged stay delivered. A peer that comes back with a new incarnation is still `PeerRestarted`. |
+| Call | An in-flight call fails with `CallError::Down(Revoked)` (RPC: `CapError::Revoked`). The exporter interrupts the handler fiber and runs its finalizers, as for a client disconnect (ADR 0014 §2). |
+| Monitor | Still exactly one `Down`. It carries reason `revoked(cause)` when the capability it was set up through, or its session, is revoked. In a race between exit, `noconnection` and `revoked`, the first one observed wins and the others are dropped. |
+| Link | Exit signal `revoked(cause)` on both sides; trappable. |
+| Group registry (AP) | A member whose identity is revoked is removed, as on node down (ORSWOT remove). Revoking a join capability is a leave. |
+| ClusterSingleton (CP) | A node whose own identity lapses fences itself: it stops the singleton and releases the lease. |
+| Durable work | Unchanged (`id_effect_jobs`). |
+
+### Revocation stories (normative)
+
+- **Effective at the exporter.** A revocation takes effect when the exporter processes it.
+  Messages it delivered before stay delivered; frames that arrive after it are refused. Nothing
+  else orders a revocation against the holder's in-flight messages.
+- **Final.** Unlike `noconnection`, a later reconnect of the same incarnation restores neither the
+  capability nor the monitor. A supervisor restart that fails on `Revoked` counts toward the
+  restart intensity like any failure, and the restarted child must get a new grant. It does not
+  reuse the revoked capability.
+- **Partition and revocation.** The exporter enforces at once on its side. Holders on the far side
+  learn on heal (from the `Revoked` frame) or when their identity expires. If their suspicion
+  timeout passes first, their monitors fire `noconnection`, and because a monitor fires exactly
+  once, they never see `revoked`.
+- **Latency of root removal.** It is bounded by how fast the reload reaches each node, and
+  otherwise by the certificate lifetime (default 1 hour).
+- **Self-expiry.** A node whose own certificate expires unrenewed closes all its sessions. Its
+  remote monitors fire `revoked(IdentityExpired)` locally.
+- **v3 shim peers** (ADR 0018 M1) have no capabilities and never see `Revoked`. For them, revoking
+  a session is reported as `noconnection`.
+
+### Wire
+
+Mesh protocol 4 adds the frames `Renew{chain, sig}` and
+`Revoked{scope: Cap(CapId) | Session, cause}`, and `ExitReasonWire::Revoked(cause)`.
+
+### Enforcement points
+
+| Rule | Enforcement point (TestExecutor, in-memory transport with scripted partitions) |
+|---|---|
+| Reliable sends on a revoked capability fail `Revoked` and are not retransmitted | `revoked_cap_fails_pending_reliable_sends_with_revoked` |
+| Exactly one `Down`, reason `revoked` | `revoked_cap_fires_monitor_down_revoked_exactly_once`, `revoke_and_peer_loss_race_yields_one_down` |
+| Link exits are trappable | `link_exit_revoked_is_trappable` |
+| In-flight calls fail and their handlers are interrupted | `inflight_call_fails_revoked_and_handler_interrupted` |
+| Expiry, root removal and measurement removal close sessions | `identity_expiry_closes_session_with_revoked`, `trust_roots_reload_revokes_sessions_under_removed_root`, `measurement_removal_revokes_sessions` |
+| Renewal with the same key is invisible; any other change is refused | `renewal_same_key_is_invisible`, `renewal_with_changed_measurement_refused` |
+| Revoked is final | `revoked_is_not_restored_on_reconnect` |
+| At-most-once stays the default | the existing `at_most_once_remains_default` (`crates/id_effect_node/tests/reliable_delivery.rs:330`) |
+| New frames are fuzzed | the `mesh_envelope` fuzz target covers `Renew` and `Revoked` |
+
+### Migration
+
+The new variants are additive, and existing `match`es already need a wildcard arm. Code that
+treats every abnormal `Down` as "retry" should handle `Revoked` as final. `docs/MIGRATION-0.15.md`
+says so. Delivery defaults are unchanged.
+
+### Open questions (defaults taken)
+
+1. **A grace period for late renewals.** Default: none. Renewal starts at two thirds of the
+   lifetime.
+2. **`revoked` on v3 shim peers.** Default: reported as `noconnection`, since those peers have no
+   capabilities.
+3. **Fencing of a `ClusterSingleton` holder on self-expiry.** Default: yes. The alternative keeps
+   the singleton while its Postgres session lives, as today.
