@@ -24,6 +24,12 @@ ignore = [
   { id = "RUSTSEC-2023-0089", reason = "atomic-polyfill is unmaintained: transitive via heapless 0.7 <- postcard <- foca/id_effect_node" },
   { id = "RUSTSEC-2026-0381", reason = "webpki-roots 0.26.11 (via sqlx-core 0.8.6) is the semver-trick shim that re-exports webpki-roots 1 (`parent = { package = \"webpki-roots\", version = \"1\" }`), which the lockfile resolves to the fixed 1.0.10; its roots are the patched ones. Remove when sqlx moves to webpki-roots 1" },
   { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml is unmaintained: transitive via serde_yaml <- figment <- id_effect_config" },
+  # Added 2026-11-27 (#232). Unmaintained notices with no maintained release to move to.
+  { id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar is unmaintained: dev/test only, via testcontainers 0.28 <- id_effect_test (container fixtures); it unpacks archives the test harness builds itself. Remove when testcontainers drops it" },
+  { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained: transitive only, via oauth2/openidconnect (id_effect_auth feature oidc) and object_store (id_effect_storage); workspace code uses jiff. Remove when those dependencies move off chrono" },
+  { id = "RUSTSEC-2026-0542", reason = "humantime is unmaintained: transitive only, via object_store 0.14 (id_effect_storage). Remove when object_store drops it" },
+  # A vulnerability, accepted for a bounded time (THREAT-MODEL.md, accepted risk RUSTSEC-2026-0459).
+  { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys 0.30.1 bundles SQLite < 3.54.0 (uninitialized page-cache memory read when a database is opened with a sibling -wal file of another page size). It arrives via sqlx-sqlite 0.8.6 (id_effect_sql feature sqlite, bundled SQLite), which pins libsqlite3-sys 0.30; the fix (>= 0.39) needs sqlx 0.9. Exposure needs a process that opens a database and -wal pair written by a less trusted party; SqliteSqlClient opens only the URL the application configures. Accepted until the sqlx 0.9 move (#234); remove then" },
 ]
 
 [licenses]
