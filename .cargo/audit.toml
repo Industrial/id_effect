@@ -8,6 +8,13 @@
 # RUSTSEC-2026-0387: crypto-bigint 0.5.5 arrives only via openidconnect 4.0.1 -> p256/p384 0.13;
 # no workspace code does an elliptic-curve private-key operation through it (ID tokens are
 # verified by jsonwebtoken on aws-lc-rs). Remove when openidconnect moves to elliptic-curve 0.14.
+# RUSTSEC-2026-0459: libsqlite3-sys 0.30.1 (bundled SQLite < 3.54.0) via sqlx-sqlite 0.8.6; the
+# fix needs sqlx 0.9. Accepted for a bounded time: THREAT-MODEL.md, accepted risk RUSTSEC-2026-0459.
 # Keep in sync with deny.toml.
 [advisories]
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0381", "RUSTSEC-2026-0387"]
+ignore = [
+  "RUSTSEC-2023-0071",
+  "RUSTSEC-2026-0381",
+  "RUSTSEC-2026-0387",
+  "RUSTSEC-2026-0459",
+]

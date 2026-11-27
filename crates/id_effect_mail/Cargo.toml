@@ -32,7 +32,7 @@ id_effect_platform = { path = "../id_effect_platform", version = "0.13.0" }
 # MIME building and the pooled SMTP transport (D9). No native-tls; no `dkim` (it pulls rsa,
 # RUSTSEC-2023-0071 in deny.toml); no `hostname` (EHLO uses the configured name, the
 # Message-ID the sender's domain). `builder` pulls quoted_printable, licensed 0BSD.
-lettre = { version = "0.11.23", default-features = false, features = [
+lettre = { version = "0.11.24", default-features = false, features = [
   "builder",
   "smtp-transport",
   "pool",

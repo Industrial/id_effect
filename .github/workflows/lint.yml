@@ -34,7 +34,8 @@ jobs:
             . -> target
             lints/id_effect_lints -> target
       - name: Install cargo-dylint and dylint-link
-        run: cargo install --locked cargo-dylint@6.2.0 dylint-link@6.2.0
+        # 6.2 clones rust-clippy's `master`, which rust-clippy renamed to `main` (#232); 6.3+ clones `main`.
+        run: cargo install --locked cargo-dylint@6.4.0 dylint-link@6.4.0
       - name: Lint library UI tests
         working-directory: lints/id_effect_lints
         run: cargo test
