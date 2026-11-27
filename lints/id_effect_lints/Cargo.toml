@@ -17,10 +17,10 @@ exclude = ["ui", "ui_test", "examples", "rules", "utils", "sgconfig.yml"]
 crate-type = ["cdylib"]
 
 [dependencies]
-dylint_linting = "6.2"
+dylint_linting = "6.4"
 
 [dev-dependencies]
-dylint_testing = "6.2"
+dylint_testing = "6.4"
 
 # Not a member of the main workspace: a Dylint library builds with its own pinned nightly
 # (rust-toolchain.toml) and the dylint-link linker (.cargo/config.toml).

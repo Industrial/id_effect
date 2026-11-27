@@ -101,7 +101,8 @@ tokio = { version = "1.50.0", features = [
 wiremock = "0.6"
 clap = { version = "4", features = ["derive"] }
 # The MCP interop peer in tests, both directions (D7: dev-dependency only, exact pin; ADR 0015 §7).
-rmcp = { version = "=3.4.0", default-features = false, features = [
+# 3.9.0 fixes RUSTSEC-2026-0457, -0461 and -0462 (#232).
+rmcp = { version = "=3.9.0", default-features = false, features = [
   "client",
   "macros",
   "reqwest",

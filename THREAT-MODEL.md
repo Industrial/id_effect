@@ -341,6 +341,23 @@ human confirmation, and treat model output shown to users as untrusted text (the
 - **Re-check each release:** the decision stands, the token is scoped to publishing these crates,
   and `.github` reads it only in `publish.yml` and `publish-crate.sh`.
 
+### RUSTSEC-2026-0459 — bundled SQLite before 3.54.0 (#232)
+
+- **What:** SQLite before 3.54.0 can return uninitialized page-cache memory when a database file is
+  opened together with a sibling `-wal` file whose page size differs (CVE-2026-119375).
+  `libsqlite3-sys` 0.30.1 bundles an affected SQLite; 0.39.0 has the fix.
+- **Where it comes from:** `cargo tree --all-features -i libsqlite3-sys` shows one parent,
+  `sqlx-sqlite` 0.8.6 (`id_effect_sql` feature `sqlite`, which builds the bundled SQLite). sqlx 0.8
+  pins `libsqlite3-sys` 0.30, so the fix needs sqlx 0.9, which
+  is a breaking upgrade of `id_effect_sql`.
+- **Why it is accepted for now, not unreachable:** the read needs a process that opens a database
+  and `-wal` pair that a less trusted party wrote. `SqliteSqlClient` opens only the URL the
+  application configures, and no workspace code opens a database file it received from outside.
+  An application that opens user-supplied SQLite files is exposed until the upgrade.
+- **Recorded:** `deny.toml` and `.cargo/audit.toml` ignore it with this reason; any other new
+  advisory still fails CI.
+- **Bound:** remove both ignores with the sqlx 0.9 upgrade (#234), planned before 0.15.0.
+
 ### Trusted cluster (ADR 0009)
 
 A member that holds the mesh cookie (and, with mTLS, a certificate the cluster trusts) is trusted
